@@ -15,6 +15,7 @@ import yaml
 from .config import (
     ARMS,
     CAVE_URL,
+    LEAN_TOOLSETS,
     PINNED_MODEL,
     PINNED_OPENROUTER_UPSTREAM,
     PONY_REPO,
@@ -123,7 +124,7 @@ def profile_env(profile: Path) -> dict[str, str]:
 
 
 def install_arm(hermes: str, profile: Path, arm: str) -> None:
-    caveman, ponytail = ARMS.get(arm, (False, False))
+    caveman, ponytail, _lean = ARMS.get(arm, (False, False, False))
     env = profile_env(profile)
 
     if ponytail:
@@ -232,7 +233,7 @@ def prepare_workspace(
 
 
 def benchmark_prompt(instance: dict[str, Any], arm: str) -> str:
-    caveman, _ = ARMS.get(arm, (False, False))
+    caveman, _ponytail, _lean = ARMS.get(arm, (False, False, False))
     treatment: list[str] = []
 
     if caveman:
@@ -432,20 +433,25 @@ def run_one(
     usage_file = run_dir / "usage.json"
 
     env = profile_env(profile)
-    if ARMS.get(arm, (False, False))[1]:
+    _caveman, ponytail, lean = ARMS.get(arm, (False, False, False))
+    if ponytail:
         env["PONYTAIL_DEFAULT_MODE"] = "full"
 
     argv = [
         hermes,
         "-z",
         prompt,
+    ]
+    if lean:
+        argv.extend(["--toolsets", LEAN_TOOLSETS])
+    argv.extend([
         "--provider",
         "openrouter",
         "--model",
         PINNED_MODEL,
         "--usage-file",
         str(usage_file),
-    ]
+    ])
 
     started = time.perf_counter()
     try:
