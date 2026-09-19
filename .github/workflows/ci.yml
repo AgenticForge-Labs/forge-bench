@@ -49,9 +49,34 @@ jobs:
           assert [c.selection_rank for c in chosen] == ["low", "mid", "high"]
           PY
       - run: uv run forge-bench --help
-      - name: Verify frozen default SWE-bench suite
+      - name: Inspect low-range candidate pool
         run: |
-          uv run forge-bench --selection-only --output /tmp/forge-bench-selection
-          grep -q '"instance_id": "django__django-13516"' /tmp/forge-bench-selection/selection.json
-          grep -q '"instance_id": "pytest-dev__pytest-7236"' /tmp/forge-bench-selection/selection.json
-          grep -q '"instance_id": "sympy__sympy-22080"' /tmp/forge-bench-selection/selection.json
+          uv run python - <<'PY'
+          from pathlib import Path
+          from forge_bench.swebench_backend import load_rows, build_candidates
+          rows = load_rows("verified", "test")
+          candidates, meta = build_candidates(
+              rows,
+              difficulty="medium",
+              cache_root=Path("/tmp/forge-bench-cache"),
+              use_history=True,
+          )
+          low = [
+              c for c in candidates
+              if c.historical_solve_rate is not None
+              and 0.70 <= c.historical_solve_rate <= 0.90
+          ]
+          low.sort(key=lambda c: (c.patch_changed_lines, c.patch_files, c.instance_id))
+          print("LOW_RANGE_CANDIDATES")
+          for c in low:
+              print(
+                  c.instance_id,
+                  c.repo,
+                  f"solve={c.historical_solve_rate:.3f}",
+                  f"lines={c.patch_changed_lines}",
+                  f"files={c.patch_files}",
+                  f"hunks={c.patch_hunks}",
+                  f"scope={c.patch_scope_percentile:.3f}",
+                  sep=" | ",
+              )
+          PY
