@@ -358,6 +358,28 @@ def diff_stats(workspace: Path, base_commit: str) -> tuple[int, int, str]:
     return changed, diff_lines, patch
 
 
+def load_swebench_report(
+    eval_dir: Path,
+    model_name: str,
+    run_id: str,
+) -> dict[str, Any] | None:
+    """Read the run summary from SWE-bench 4.1 or newer report layouts."""
+    report_paths = [
+        eval_dir / f"{model_name}.{run_id}.json",
+        eval_dir / "logs" / "evaluation" / run_id / "results.json",
+    ]
+    for path in report_paths:
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, dict) and "resolved_ids" in payload:
+            return payload
+    return None
+
+
 def evaluate_patch(
     run_dir: Path,
     dataset_name: str,
@@ -420,25 +442,9 @@ def evaluate_patch(
     (eval_dir / "stdout.txt").write_text(proc.stdout, encoding="utf-8")
     (eval_dir / "stderr.txt").write_text(proc.stderr, encoding="utf-8")
 
-    # SWE-bench 4.1 writes <model>.<run_id>.json in CWD. Newer releases write
-    # logs/evaluation/<run_id>/results.json. Read either shape so the evidence
-    # remains understandable if the evaluator is upgraded later.
-    report_paths = [
-        eval_dir / f"{model_name}.{run_id}.json",
-        eval_dir / "logs" / "evaluation" / run_id / "results.json",
-    ]
-
-    report: dict[str, Any] | None = None
-    for path in report_paths:
-        if not path.is_file():
-            continue
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if isinstance(payload, dict) and "resolved_ids" in payload:
-            report = payload
-            break
+    # SWE-bench 4.1 writes <model>.<run_id>.json in CWD. Newer releases
+    # write logs/evaluation/<run_id>/results.json.
+    report = load_swebench_report(eval_dir, model_name, run_id)
 
     if report is None:
         detail = f"evaluator exit {proc.returncode}"
