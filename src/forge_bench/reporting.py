@@ -11,7 +11,7 @@ from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 
-from .config import LABEL, METRICS, T975, Result
+from .config import ARMS, LABEL, METRICS, T975, Result
 
 
 def mean(values: Iterable[float]) -> float:
@@ -212,11 +212,11 @@ def plot_metric(
         for value, high in zip(values, highs)
     ]
 
-    fig, ax = plt.subplots(figsize=(9.4, 5.4))
+    fig, ax = plt.subplots(figsize=(max(9.4, 1.55 * len(labels)), 6.2))
     x = list(range(len(labels)))
     bars = ax.bar(x, values, yerr=[lower, upper], capsize=7)
     ax.set_title(f"{title} by Hermes treatment")
-    ax.set_xticks(x, labels)
+    ax.set_xticks(x, labels, rotation=24, ha="right")
     ax.set_ylabel(title)
     ax.grid(axis="y", alpha=0.2)
     ax.set_axisbelow(True)
@@ -252,11 +252,11 @@ def plot_validity(
     labels = [row["label"] for row in summary]
     values = [float(row["run_resolve_rate"]) for row in summary]
 
-    fig, ax = plt.subplots(figsize=(9.4, 5.4))
+    fig, ax = plt.subplots(figsize=(max(9.4, 1.55 * len(labels)), 6.2))
     x = list(range(len(labels)))
     bars = ax.bar(x, values)
     ax.set_title("SWE-bench resolve rate by Hermes treatment")
-    ax.set_xticks(x, labels)
+    ax.set_xticks(x, labels, rotation=24, ha="right")
     ax.set_ylabel("Resolved valid runs (%)")
     ax.set_ylim(0, 105)
     ax.grid(axis="y", alpha=0.2)
@@ -279,6 +279,129 @@ def plot_validity(
     plt.close(fig)
 
 
+
+FACTOR_NAMES = {
+    0: "Caveman",
+    1: "Ponytail",
+    2: "Lean tools",
+}
+
+
+def factorial_effects(
+    task_rows: list[dict[str, Any]],
+    tasks: list[str],
+) -> list[dict[str, Any]]:
+    """Estimate each factor's marginal ON-vs-OFF effect across matched arms.
+
+    For each task, average the four ON cells and four OFF cells of the 2x2x2
+    design, then take ON - OFF. Percent effects use the OFF average as the
+    denominator. CIs are across task-level effects.
+    """
+    by_key = {
+        (row["arm"], row["task"]): row
+        for row in task_rows
+        if row["valid_runs"] > 0
+    }
+    rows: list[dict[str, Any]] = []
+
+    for factor_index, factor_name in FACTOR_NAMES.items():
+        for metric in METRICS:
+            deltas: list[float] = []
+            percents: list[float] = []
+
+            for task in tasks:
+                on_values: list[float] = []
+                off_values: list[float] = []
+                for arm, flags in ARMS.items():
+                    row = by_key.get((arm, task))
+                    if row is None:
+                        continue
+                    value = float(row[metric])
+                    if not math.isfinite(value):
+                        continue
+                    (on_values if flags[factor_index] else off_values).append(value)
+
+                if len(on_values) != 4 or len(off_values) != 4:
+                    continue
+
+                on_mean = statistics.mean(on_values)
+                off_mean = statistics.mean(off_values)
+                delta = on_mean - off_mean
+                deltas.append(delta)
+                if off_mean != 0:
+                    percents.append(100.0 * delta / off_mean)
+
+            d_mean, d_low, d_high, d_n = ci95(deltas)
+            p_mean, p_low, p_high, p_n = ci95(percents)
+            rows.append(
+                {
+                    "factor": factor_name,
+                    "metric": metric,
+                    "mean_delta_on_minus_off": d_mean,
+                    "ci95_low_delta": d_low if d_mean >= 0 else -d_high,
+                    "ci95_high_delta": d_high if d_mean >= 0 else -d_low,
+                    "mean_percent_on_minus_off": p_mean,
+                    "ci95_low_percent": p_low if p_mean >= 0 else -p_high,
+                    "ci95_high_percent": p_high if p_mean >= 0 else -p_low,
+                    "n_tasks": min(d_n, p_n) if percents else d_n,
+                }
+            )
+    return rows
+
+
+def plot_factorial_token_effects(
+    output: Path,
+    effect_rows: list[dict[str, Any]],
+) -> None:
+    rows = [row for row in effect_rows if row["metric"] == "total_tokens"]
+    labels = [row["factor"] for row in rows]
+    values = [float(row["mean_percent_on_minus_off"]) for row in rows]
+    lows = [float(row["ci95_low_percent"]) for row in rows]
+    highs = [float(row["ci95_high_percent"]) for row in rows]
+
+    lower = [
+        abs(value - low) if math.isfinite(value) and math.isfinite(low) else 0.0
+        for value, low in zip(values, lows)
+    ]
+    upper = [
+        abs(high - value) if math.isfinite(value) and math.isfinite(high) else 0.0
+        for value, high in zip(values, highs)
+    ]
+
+    fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    x = list(range(len(labels)))
+    bars = ax.bar(x, values, yerr=[lower, upper], capsize=7)
+    ax.axhline(0, linewidth=1)
+    ax.set_title("Marginal effect on total tokens")
+    ax.set_xticks(x, labels)
+    ax.set_ylabel("ON vs OFF change (%)")
+    ax.grid(axis="y", alpha=0.2)
+    ax.set_axisbelow(True)
+
+    for bar, value in zip(bars, values):
+        if math.isfinite(value):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                value,
+                f"{value:+.1f}%",
+                ha="center",
+                va="bottom" if value >= 0 else "top",
+                fontsize=9,
+            )
+
+    fig.text(
+        0.5,
+        0.015,
+        "Negative values mean fewer tokens with the factor ON; 95% Student-t CI across tasks.",
+        ha="center",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    fig.savefig(output / "factorial_total_tokens.png", dpi=180)
+    fig.savefig(output / "factorial_total_tokens.svg")
+    plt.close(fig)
+
+
 def write_html_report(
     output: Path,
     summary: list[dict[str, Any]],
@@ -295,6 +418,11 @@ def write_html_report(
         '<div class="card"><img src="resolve_rate.png" '
         'alt="SWE-bench resolve rate"></div>'
     )
+    if len(summary) == 8:
+        metric_cards += (
+            '<div class="card"><img src="factorial_total_tokens.png" '
+            'alt="Marginal token effect of each factor"></div>'
+        )
 
     table_rows: list[str] = []
     for row in summary:
@@ -375,10 +503,13 @@ def write_reports(
     ]
     per_task = task_summary(results, arms, tasks)
     summary = aggregate_summary(per_task, results, arms, tasks)
+    effects = factorial_effects(per_task, tasks) if len(arms) == 8 else []
 
     write_csv(output / "runs.csv", raw)
     write_csv(output / "task_summary.csv", per_task)
     write_csv(output / "summary.csv", summary)
+    if effects:
+        write_csv(output / "factorial_effects.csv", effects)
     (output / "runs.json").write_text(
         json.dumps(raw, indent=2) + "\n",
         encoding="utf-8",
@@ -391,4 +522,6 @@ def write_reports(
     for metric in METRICS:
         plot_metric(output, summary, metric)
     plot_validity(output, summary)
+    if effects:
+        plot_factorial_token_effects(output, effects)
     write_html_report(output, summary, meta)
