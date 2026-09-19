@@ -62,26 +62,13 @@ def source_home() -> Path:
     return Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser().resolve()
 
 
-def load_source_config(home: Path) -> dict[str, Any]:
-    path = home / "config.yaml"
-    if not path.exists():
-        raise SystemExit(f"Hermes config not found: {path}")
-    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(config, dict):
-        raise SystemExit(f"Hermes config is not a mapping: {path}")
-    return config
-
-
-def make_profile(src: Path, config: dict[str, Any], dst: Path) -> None:
-    """Create a minimal benchmark profile while copying only credentials."""
+def make_profile(src: Path, dst: Path) -> None:
+    """Create a fresh, minimal Hermes home containing only benchmark settings and credentials."""
     dst.mkdir(parents=True, exist_ok=True)
 
-    # Deliberately do not inherit personalities, hooks, memory settings, tool
-    # preferences, reasoning overrides, or other user config. Model/provider,
-    # reasoning, toolsets, and turn budget are pinned by the harness.
-    _ = config
     cfg: dict[str, Any] = {
         "plugins": {"enabled": [], "disabled": []},
+        "agent": {"max_turns": PINNED_MAX_TURNS},
         "provider_routing": {
             "only": [PINNED_OPENROUTER_UPSTREAM],
             "require_parameters": True,
@@ -107,6 +94,15 @@ def make_profile(src: Path, config: dict[str, Any], dst: Path) -> None:
         yaml.safe_dump(cfg, sort_keys=False),
         encoding="utf-8",
     )
+
+    # Prevent the official Docker image from seeding the full bundled skill
+    # catalog into each fresh benchmark profile. Caveman is installed explicitly
+    # when its treatment is active.
+    (dst / ".no-bundled-skills").write_text(
+        "Forge Bench minimal profile\n",
+        encoding="utf-8",
+    )
+
     for name in (".env", "auth.json"):
         source = src / name
         if source.exists():
@@ -127,24 +123,111 @@ def profile_env(profile: Path) -> dict[str, str]:
     return env
 
 
-def install_arm(hermes: str, profile: Path, arm: str) -> None:
+def docker_hermes_argv(
+    image: str,
+    profile: Path,
+    hermes_args: list[str],
+    *,
+    workspace: Path | None = None,
+    extra_env: dict[str, str] | None = None,
+) -> list[str]:
+    """Build an ephemeral official-Hermes Docker invocation."""
+    uid = getattr(os, "getuid", lambda: 1000)()
+    gid = getattr(os, "getgid", lambda: 1000)()
+
+    argv = [
+        "docker",
+        "run",
+        "--rm",
+        "--pull=never",
+        "-e",
+        f"PUID={uid}",
+        "-e",
+        f"PGID={gid}",
+        "-e",
+        "HERMES_ENABLE_PROJECT_PLUGINS=0",
+        "-e",
+        "XDG_CONFIG_HOME=/opt/data/xdg-config",
+        "-v",
+        f"{profile.resolve()}:/opt/data",
+    ]
+
+    # Support users who keep the OpenRouter key only in their shell rather than
+    # ~/.hermes/.env. Docker's "-e NAME" form forwards the current value.
+    if os.environ.get("OPENROUTER_API_KEY"):
+        argv.extend(["-e", "OPENROUTER_API_KEY"])
+
+    for key, value in (extra_env or {}).items():
+        argv.extend(["-e", f"{key}={value}"])
+
+    if workspace is not None:
+        argv.extend(
+            [
+                "-v",
+                f"{workspace.resolve()}:/workspace",
+                "-w",
+                "/workspace",
+            ]
+        )
+
+    argv.append(image)
+    argv.extend(hermes_args)
+    return argv
+
+
+def hermes_admin(
+    hermes: str,
+    profile: Path,
+    hermes_args: list[str],
+    *,
+    runtime: str,
+    image: str | None,
+    timeout: int,
+    input_text: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if runtime == "docker":
+        if not image:
+            raise RuntimeError("Docker Hermes image was not resolved")
+        argv = docker_hermes_argv(image, profile, hermes_args)
+        return sh(argv, timeout=timeout, input_text=input_text)
+
+    return sh(
+        [hermes, *hermes_args],
+        env=profile_env(profile),
+        timeout=timeout,
+        input_text=input_text,
+    )
+
+
+
+def install_arm(
+    hermes: str,
+    profile: Path,
+    arm: str,
+    *,
+    runtime: str = "local",
+    image: str | None = None,
+) -> None:
     caveman, ponytail, _lean = ARMS.get(arm, (False, False, False))
-    env = profile_env(profile)
 
     if ponytail:
-        proc = sh(
-            [hermes, "plugins", "install", PONY_REPO, "--ref", PONY_SHA, "--enable"],
-            env=env,
-            timeout=180,
+        proc = hermes_admin(
+            hermes,
+            profile,
+            ["plugins", "install", PONY_REPO, "--ref", PONY_SHA, "--enable"],
+            runtime=runtime,
+            image=image,
+            timeout=240,
             input_text="y\n" * 4,
         )
         if proc.returncode:
             raise RuntimeError("Ponytail install failed:\n" + proc.stdout + proc.stderr)
 
     if caveman:
-        proc = sh(
+        proc = hermes_admin(
+            hermes,
+            profile,
             [
-                hermes,
                 "skills",
                 "install",
                 CAVE_URL,
@@ -153,8 +236,9 @@ def install_arm(hermes: str, profile: Path, arm: str) -> None:
                 "--force",
                 "--yes",
             ],
-            env=env,
-            timeout=180,
+            runtime=runtime,
+            image=image,
+            timeout=240,
         )
         if proc.returncode:
             raise RuntimeError("Caveman install failed:\n" + proc.stdout + proc.stderr)
@@ -484,6 +568,8 @@ def run_one(
     timeout: int,
     evaluation_timeout: int,
     evaluate: bool,
+    hermes_runtime: str = "local",
+    hermes_image: str | None = None,
 ) -> Result:
     instance_id = str(instance["instance_id"])
     repo = str(instance["repo"])
@@ -502,40 +588,50 @@ def run_one(
 
     prompt = benchmark_prompt(instance, arm)
     (run_dir / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
-    usage_file = run_dir / "usage.json"
 
-    env = profile_env(profile)
     _caveman, ponytail, lean = ARMS.get(arm, (False, False, False))
-    if ponytail:
-        env["PONYTAIL_DEFAULT_MODE"] = "full"
-
-    argv = [
-        hermes,
+    hermes_args = [
         "-z",
         prompt,
-    ]
-    argv.extend([
+        "--ignore-rules",
         "--toolsets",
         LEAN_TOOLSETS if lean else DEFAULT_TOOLSETS,
-    ])
-    argv.extend([
         "--provider",
         "openrouter",
         "--model",
         PINNED_MODEL,
         "--reasoning",
         PINNED_REASONING,
-        "--max-turns",
-        str(PINNED_MAX_TURNS),
-        "--run-budget",
-        str(max(5, timeout - 30)),
-        "--usage-file",
-        str(usage_file),
-    ])
+    ]
+
+    if hermes_runtime == "docker":
+        if not hermes_image:
+            raise RuntimeError("Docker Hermes image was not resolved")
+        profile_usage = profile / "benchmark-usage.json"
+        hermes_args.extend(["--usage-file", "/opt/data/benchmark-usage.json"])
+        extra_env = {"PONYTAIL_DEFAULT_MODE": "full"} if ponytail else {}
+        argv = docker_hermes_argv(
+            hermes_image,
+            profile,
+            hermes_args,
+            workspace=workspace,
+            extra_env=extra_env,
+        )
+        run_cwd = None
+        run_env = None
+        usage_file = profile_usage
+    else:
+        usage_file = run_dir / "usage.json"
+        hermes_args.extend(["--usage-file", str(usage_file)])
+        argv = [hermes, *hermes_args]
+        run_cwd = workspace
+        run_env = profile_env(profile)
+        if ponytail:
+            run_env["PONYTAIL_DEFAULT_MODE"] = "full"
 
     started = time.perf_counter()
     try:
-        proc = sh(argv, cwd=workspace, env=env, timeout=timeout)
+        proc = sh(argv, cwd=run_cwd, env=run_env, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         wall = time.perf_counter() - started
         (run_dir / "stdout.txt").write_text(str(exc.stdout or ""), encoding="utf-8")
@@ -580,6 +676,9 @@ def run_one(
     wall = time.perf_counter() - started
     (run_dir / "stdout.txt").write_text(proc.stdout, encoding="utf-8")
     (run_dir / "stderr.txt").write_text(proc.stderr, encoding="utf-8")
+
+    if usage_file.exists() and usage_file != run_dir / "usage.json":
+        shutil.copy2(usage_file, run_dir / "usage.json")
 
     files_changed, diff_lines, patch = diff_stats(
         workspace,
