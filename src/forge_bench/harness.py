@@ -755,6 +755,8 @@ def run_one(
 
     model = str(usage.get("model") or PINNED_MODEL)
     provider = str(usage.get("provider") or "openrouter")
+    reasoning_tokens = as_int(usage.get("reasoning_tokens"))
+    reasoning_ok = PINNED_REASONING != "none" or reasoning_tokens == 0
     completed = (
         bool(usage.get("completed", proc.returncode == 0))
         and proc.returncode == 0
@@ -771,6 +773,7 @@ def run_one(
         completed
         and model == PINNED_MODEL
         and provider.lower() == "openrouter"
+        and reasoning_ok
         and eval_ok
     )
 
@@ -781,6 +784,8 @@ def run_one(
         errors.append("wrong model: " + model)
     if provider.lower() != "openrouter":
         errors.append("wrong API provider: " + provider)
+    if not reasoning_ok:
+        errors.append(f"reasoning was requested off but {reasoning_tokens} reasoning tokens were reported")
     if eval_error:
         errors.append(eval_error)
 
@@ -805,7 +810,7 @@ def run_one(
         session_id=session_id,
         input_tokens=as_int(usage.get("input_tokens")),
         output_tokens=as_int(usage.get("output_tokens")),
-        reasoning_tokens=as_int(usage.get("reasoning_tokens")),
+        reasoning_tokens=reasoning_tokens,
         cache_read_tokens=as_int(usage.get("cache_read_tokens")),
         cache_write_tokens=as_int(usage.get("cache_write_tokens")),
         total_tokens=(
