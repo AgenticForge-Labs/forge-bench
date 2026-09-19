@@ -15,15 +15,17 @@ Hermes' native tools, including `execute_code`, remain available normally in eve
 
 Forge Bench now uses real SWE-bench repository tasks rather than one-line algorithm repairs.
 
-The default selection is:
+The initial default suite is frozen to three SWE-bench Verified tasks, all from the official `15 min - 1 hour` (`medium`) difficulty bucket:
 
-- dataset: `SWE-bench/SWE-bench_Verified`
-- official difficulty: `15 min - 1 hour` (`medium`)
-- sample size: 3
-- sampling: low / middle / high complexity within that difficulty bucket
-- prefer three different repositories
-- 4 Hermes treatments per selected task
-- 12 randomized agent runs total
+| Tier | Instance | Repository | Gold patch | Historical solve rate |
+| --- | --- | --- | ---: | ---: |
+| Low | `django__django-13516` | django/django | 4 lines, 1 file | 84.4% |
+| Mid | `pytest-dev__pytest-7236` | pytest-dev/pytest | 11 lines, 1 file | 61.5% |
+| High | `sympy__sympy-22080` | sympy/sympy | 12 lines, 2 files | 1.5% |
+
+These were selected once by Forge Bench's smart sampler on September 19, 2026, targeting composite complexity near 0.20, 0.50, and 0.80. Freezing them makes repeated Baseline/Caveman/Ponytail comparisons directly comparable over time.
+
+The default experiment is therefore 3 fixed tasks × 4 Hermes treatments = 12 randomized agent runs.
 
 ### Smart within-bucket sampling
 
@@ -55,7 +57,7 @@ When historical Verified results are available, composite complexity is:
 
 where historical hardness increases as historical solve rate falls.
 
-For a three-task sample, Forge Bench targets composite scores near 0.20, 0.50, and 0.80. This gives a low/middle/high spread while staying inside one official human difficulty category. Repository diversity is preferred so one codebase does not dominate the comparison.
+When `--smart-sample` is requested, Forge Bench targets composite scores near 0.20, 0.50, and 0.80 for a three-task sample. This gives a low/middle/high spread while staying inside one official human difficulty category. Repository diversity is preferred so one codebase does not dominate the comparison.
 
 The historical signal is derived from public `results/results.json` files in the official `SWE-bench/experiments` repository at a recorded source revision. The exact candidate pool, selected instances, formula, source commit, and selected task features are saved with every benchmark.
 
@@ -104,7 +106,7 @@ This is the recommended first command. It makes no model calls and does not grad
 uv run forge-bench --selection-only
 ```
 
-It prints the three selected instances with:
+By default it prints the frozen three-task initial suite with:
 
 - low / mid / high tier
 - composite complexity
@@ -133,7 +135,13 @@ Repeats are averaged within task before across-task statistics are calculated.
 
 ## Other SWE-bench samples
 
-Choose a different Verified difficulty bucket:
+Re-run the smart sampler within the default medium bucket:
+
+```bash
+uv run forge-bench --smart-sample --selection-only
+```
+
+Choose a different Verified difficulty bucket (these automatically use smart sampling because the frozen suite is medium-only):
 
 ```bash
 uv run forge-bench --difficulty easy --selection-only
