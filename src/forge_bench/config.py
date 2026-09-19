@@ -5,9 +5,6 @@ from dataclasses import dataclass
 PINNED_MODEL = "deepseek/deepseek-v4-flash-0731"
 PINNED_OPENROUTER_UPSTREAM = "relace"
 
-QUIX_URL = "https://github.com/jkoppel/QuixBugs.git"
-QUIX_SHA = "4257f44b0ff1181dedaedee6a447e133219fcebf"
-
 PONY_REPO = "DietrichGebert/ponytail"
 PONY_SHA = "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156"
 
