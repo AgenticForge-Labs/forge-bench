@@ -41,7 +41,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--timeout", type=int, default=600)
-    parser.add_argument("--include-baseline", action="store_true")
     parser.add_argument(
         "--hermes",
         default=shutil.which("hermes") or "hermes",
@@ -118,8 +117,6 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
 
     arms = list(ARMS)
-    if args.include_baseline:
-        arms = ["baseline", *arms]
 
     qsrc = get_quixbugs(args.cache.resolve())
 
@@ -174,8 +171,7 @@ def main() -> int:
         for arm in arms:
             profile = Path(tempdir) / "profiles" / arm
             make_profile(home, config, profile)
-            if arm in ARMS:
-                install_arm(args.hermes, profile, arm)
+            install_arm(args.hermes, profile, arm)
             profiles[arm] = profile
 
         for item in plan:
