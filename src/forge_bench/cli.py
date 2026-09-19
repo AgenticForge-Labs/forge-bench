@@ -19,6 +19,7 @@ from .config import (
     DEFAULT_SEED,
     DEFAULT_SUITE,
     LABEL,
+    LEAN_TOOLSETS,
     PINNED_MODEL,
     PINNED_OPENROUTER_UPSTREAM,
     PONY_REPO,
@@ -400,6 +401,12 @@ def main() -> int:
         "ponytail_commit": PONY_SHA,
         "caveman_commit": CAVE_SHA,
         "arms": list(ARMS),
+        "factorial_design": {
+            "caveman": "off/on",
+            "ponytail": "off/on",
+            "lean_tools": "off/on",
+        },
+        "lean_toolsets": LEAN_TOOLSETS,
         "repeats": args.repeats,
         "seed": args.seed,
         "randomization": (
