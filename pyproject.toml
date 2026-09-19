@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "forge-bench"
+version = "0.1.0"
+description = "Reproducible benchmarks for AI coding-agent efficiency and reliability."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "matplotlib>=3.10",
+  "pyyaml>=6.0",
+]
+
+[project.scripts]
+forge-bench = "forge_bench:main"
+
+[tool.hatch.build.targets.wheel]
+include = ["forge_bench.py"]
