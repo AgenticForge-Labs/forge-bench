@@ -272,11 +272,7 @@ def _frozen_candidates(
     for entry in DEFAULT_SUITE:
         candidate = by_id[entry["instance_id"]]
         candidate.selection_rank = str(entry["selection_rank"])
-        candidate.selection_target = {
-            "low": 0.20,
-            "mid": 0.50,
-            "high": 0.80,
-        }.get(candidate.selection_rank)
+        candidate.selection_target = None
         candidate.complexity_score = float(entry["complexity_score"])
         candidate.historical_solve_rate = float(entry["historical_solve_rate"])
         candidate.patch_changed_lines = int(entry["patch_changed_lines"])
@@ -288,10 +284,11 @@ def _frozen_candidates(
         "frozen_on": "2026-09-19",
         "source_difficulty": "medium",
         "source_experiments_commit": EXPERIMENTS_SHA,
-        "selection_targets": [0.20, 0.50, 0.80],
+        "selection_band": "historical solve rate approximately 0.78-0.84",
         "note": (
-            "Use --smart-sample to select a new spread from the current "
-            "candidate pool."
+            "Initial suite intentionally favors historically high-solve tasks "
+            "while retaining variation in patch scope. Use --smart-sample to "
+            "select a new spread from the current candidate pool."
         ),
     }
     return selected, meta
