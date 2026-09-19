@@ -125,6 +125,7 @@ def _ensure_experiments_cache(cache_root: Path) -> tuple[Path, str]:
         [
             "git",
             "clone",
+            "--depth=1",
             "--filter=blob:none",
             "--no-checkout",
             EXPERIMENTS_REPO,
@@ -246,16 +247,18 @@ def build_candidates(
     rates: dict[str, float] = {}
     submissions = 0
     experiments_sha = ""
+    history_error = ""
 
     if use_history:
         try:
             rates, submissions, experiments_sha = historical_solve_rates(
                 cache_root, ids
             )
-        except Exception:
+        except Exception as exc:
             rates = {}
             submissions = 0
             experiments_sha = ""
+            history_error = str(exc)
 
     candidates: list[Candidate] = []
     for row in filtered:
@@ -326,6 +329,7 @@ def build_candidates(
         "difficulty_filter": requested,
         "historical_submissions": submissions,
         "experiments_commit": experiments_sha,
+        "history_error": history_error,
         "complexity_formula": (
             "0.55*patch_scope + 0.45*historical_hardness when history exists; "
             "patch_scope otherwise. patch_scope = "
