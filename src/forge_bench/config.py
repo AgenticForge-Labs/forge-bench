@@ -20,6 +20,35 @@ DEFAULT_DIFFICULTY = "medium"
 DEFAULT_SAMPLE_SIZE = 3
 DEFAULT_SEED = 260919
 
+# Frozen initial suite, selected once by the smart sampler from SWE-bench
+# Verified's official 15 min - 1 hour bucket on 2026-09-19.
+DEFAULT_SUITE = [
+    {
+        "instance_id": "django__django-13516",
+        "selection_rank": "low",
+        "complexity_score": 0.199,
+        "historical_solve_rate": 0.844,
+        "patch_changed_lines": 4,
+        "patch_files": 1,
+    },
+    {
+        "instance_id": "pytest-dev__pytest-7236",
+        "selection_rank": "mid",
+        "complexity_score": 0.498,
+        "historical_solve_rate": 0.615,
+        "patch_changed_lines": 11,
+        "patch_files": 1,
+    },
+    {
+        "instance_id": "sympy__sympy-22080",
+        "selection_rank": "high",
+        "complexity_score": 0.811,
+        "historical_solve_rate": 0.015,
+        "patch_changed_lines": 12,
+        "patch_files": 2,
+    },
+]
+
 ARMS = {
     "baseline": (False, False),
     "caveman": (True, False),
