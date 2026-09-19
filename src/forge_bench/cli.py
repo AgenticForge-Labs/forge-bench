@@ -32,7 +32,6 @@ from .config import (
 )
 from .harness import (
     install_arm,
-    load_source_config,
     make_profile,
     run_one,
     sh,
@@ -116,7 +115,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Generate patches/efficiency data without official Docker grading.",
     )
-    parser.add_argument("--hermes", default=shutil.which("hermes") or "hermes")
+    parser.add_argument(
+        "--hermes-runtime",
+        choices=("docker", "local"),
+        default="docker",
+        help="Run each Hermes attempt in a fresh official Docker container (default) or use the local Hermes binary.",
+    )
+    parser.add_argument(
+        "--hermes-image",
+        default="nousresearch/hermes-agent:latest",
+        help="Official Hermes Docker image reference. Pulled once, then its immutable image ID is used for every run.",
+    )
+    parser.add_argument("--hermes", default=shutil.which("hermes") or "hermes", help="Local Hermes binary; used only with --hermes-runtime local.")
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--cache",
@@ -213,57 +223,93 @@ def _print_selection(selected: list[Any]) -> None:
         )
 
 
-def _preflight(args: argparse.Namespace) -> None:
+def _preflight(args: argparse.Namespace) -> str | None:
+    """Validate runtime prerequisites and return the immutable Hermes image ID."""
     if args.selection_only:
-        return
-    if not shutil.which(args.hermes) and not Path(args.hermes).exists():
-        raise SystemExit(f"Hermes executable not found: {args.hermes}")
+        return None
     if not shutil.which("git"):
         raise SystemExit("git is required")
 
-    # Fail before paid calls if the locally installed Hermes predates features
-    # the benchmark relies on.
-    checks = [
-        (
-            [args.hermes, "--help"],
-            ["--toolsets", "--reasoning", "--usage-file", "--max-turns", "--run-budget"],
-            "Hermes one-shot CLI",
-        ),
-        (
-            [args.hermes, "plugins", "install", "--help"],
-            ["--ref", "--enable"],
-            "Hermes plugin installer",
-        ),
-        (
-            [args.hermes, "skills", "install", "--help"],
-            ["--name", "--force", "--yes"],
-            "Hermes skill installer",
-        ),
-    ]
+    need_docker = args.hermes_runtime == "docker" or not args.skip_evaluation
+    if need_docker:
+        if not shutil.which("docker"):
+            raise SystemExit(
+                "Docker is required for the selected Hermes runtime and/or official SWE-bench grading."
+            )
+        docker = sh(["docker", "info"], timeout=30)
+        if docker.returncode:
+            raise SystemExit(
+                "Docker is installed but not available to this user.\n" + docker.stderr
+            )
+
+    image_id: str | None = None
+    if args.hermes_runtime == "docker":
+        pull = sh(["docker", "pull", args.hermes_image], timeout=900)
+        if pull.returncode:
+            raise SystemExit(
+                f"Could not pull Hermes image {args.hermes_image}:\n{pull.stderr}"
+            )
+        inspect = sh(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", args.hermes_image],
+            timeout=30,
+        )
+        if inspect.returncode or not inspect.stdout.strip():
+            raise SystemExit(
+                f"Could not resolve immutable image ID for {args.hermes_image}."
+            )
+        image_id = inspect.stdout.strip()
+
+        probe_prefix = ["docker", "run", "--rm", "--pull=never", image_id]
+        checks = [
+            (
+                [*probe_prefix, "--help"],
+                ["--toolsets", "--reasoning", "--usage-file", "--ignore-rules"],
+                "Hermes Docker one-shot CLI",
+            ),
+            (
+                [*probe_prefix, "plugins", "install", "--help"],
+                ["--ref", "--enable"],
+                "Hermes Docker plugin installer",
+            ),
+            (
+                [*probe_prefix, "skills", "install", "--help"],
+                ["--name", "--force", "--yes"],
+                "Hermes Docker skill installer",
+            ),
+        ]
+    else:
+        if not shutil.which(args.hermes) and not Path(args.hermes).exists():
+            raise SystemExit(f"Hermes executable not found: {args.hermes}")
+        checks = [
+            (
+                [args.hermes, "--help"],
+                ["--toolsets", "--reasoning", "--usage-file", "--ignore-rules"],
+                "Hermes one-shot CLI",
+            ),
+            (
+                [args.hermes, "plugins", "install", "--help"],
+                ["--ref", "--enable"],
+                "Hermes plugin installer",
+            ),
+            (
+                [args.hermes, "skills", "install", "--help"],
+                ["--name", "--force", "--yes"],
+                "Hermes skill installer",
+            ),
+        ]
+
     for argv, required, label in checks:
-        probe = sh(argv, timeout=30)
+        probe = sh(argv, timeout=60)
         help_text = (probe.stdout or "") + "\n" + (probe.stderr or "")
         missing = [flag for flag in required if flag not in help_text]
         if probe.returncode not in (0, 1) or missing:
             detail = ", ".join(missing) if missing else f"exit {probe.returncode}"
             raise SystemExit(
                 f"{label} is incompatible with Forge Bench ({detail}). "
-                "Update Hermes before running the paid benchmark."
+                "Update Hermes/the Docker image before running paid calls."
             )
 
-    if not args.skip_evaluation:
-        if not shutil.which("docker"):
-            raise SystemExit(
-                "Docker is required for official SWE-bench grading. "
-                "Install/start Docker or use --skip-evaluation."
-            )
-        docker = sh(["docker", "info"], timeout=30)
-        if docker.returncode:
-            raise SystemExit(
-                "Docker is installed but not available to this user. "
-                "Start Docker/fix permissions or use --skip-evaluation.\n"
-                + docker.stderr
-            )
+    return image_id
 
 
 def _use_frozen_default(
@@ -435,6 +481,9 @@ def main() -> int:
         "reasoning": PINNED_REASONING,
         "max_turns": PINNED_MAX_TURNS,
         "swebench_version": "4.1.0",
+        "hermes_runtime": args.hermes_runtime,
+        "hermes_image_ref": args.hermes_image if args.hermes_runtime == "docker" else None,
+        "hermes_image_id": None,
         "ponytail_repo": PONY_REPO,
         "ponytail_commit": PONY_SHA,
         "caveman_commit": CAVE_SHA,
@@ -463,10 +512,15 @@ def main() -> int:
         print("Manifest:", output / "selection.json")
         return 0
 
-    _preflight(args)
+    hermes_image = _preflight(args)
+    if hermes_image:
+        meta["hermes_image_id"] = hermes_image
+        (output / "metadata.json").write_text(
+            json.dumps(meta, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     home = source_home()
-    config = load_source_config(home)
 
     arms = list(ARMS)
     instances = [row_by_id[candidate.instance_id] for candidate in selected]
@@ -489,6 +543,10 @@ def main() -> int:
     print("\nForge Bench execution")
     print("  model:", PINNED_MODEL)
     print("  OpenRouter upstream:", PINNED_OPENROUTER_UPSTREAM)
+    print("  reasoning:", PINNED_REASONING)
+    print("  Hermes runtime:", args.hermes_runtime)
+    if hermes_image:
+        print("  Hermes image:", hermes_image)
     print("  randomized runs:", len(plan), "seed=", args.seed)
     print("  official grading:", not args.skip_evaluation)
     print("  output:", output)
@@ -505,8 +563,14 @@ def main() -> int:
         # tasks or repeats.
         for arm in arms:
             template = root / "templates" / arm
-            make_profile(home, config, template)
-            install_arm(args.hermes, template, arm)
+            make_profile(home, template)
+            install_arm(
+                args.hermes,
+                template,
+                arm,
+                runtime=args.hermes_runtime,
+                image=hermes_image,
+            )
             for state_name in ("state.db", "state.db-shm", "state.db-wal"):
                 state = template / state_name
                 if state.exists():
@@ -543,6 +607,8 @@ def main() -> int:
                     args.timeout,
                     args.evaluation_timeout,
                     not args.skip_evaluation,
+                    hermes_runtime=args.hermes_runtime,
+                    hermes_image=hermes_image,
                 )
             except Exception as exc:
                 run_dir = (
