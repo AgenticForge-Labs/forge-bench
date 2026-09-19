@@ -49,3 +49,5 @@ jobs:
           assert [c.selection_rank for c in chosen] == ["low", "mid", "high"]
           PY
       - run: uv run forge-bench --help
+      - name: Preview default SWE-bench sample
+        run: uv run forge-bench --selection-only --output /tmp/forge-bench-selection
