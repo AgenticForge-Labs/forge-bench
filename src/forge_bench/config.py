@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 PINNED_MODEL = "deepseek/deepseek-v4-flash-0731"
 PINNED_OPENROUTER_UPSTREAM = "relace"
-PINNED_REASONING = "low"
+PINNED_REASONING = "none"
 PINNED_MAX_TURNS = 50
 
 PONY_REPO = "DietrichGebert/ponytail"
