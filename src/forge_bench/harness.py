@@ -130,7 +130,7 @@ def profile_env(profile: Path) -> dict[str, str]:
 
 
 def install_arm(hermes: str, profile: Path, arm: str) -> None:
-    caveman, ponytail, _ = ARMS.get(arm, (False, False, False))
+    caveman, ponytail = ARMS.get(arm, (False, False))
     env = profile_env(profile)
 
     if ponytail:
@@ -259,25 +259,13 @@ print(f"PASS {{TASK}} ({{count}} vectors)")
 
 
 def benchmark_prompt(task: str, arm: str) -> str:
-    caveman, _, execute_code = ARMS.get(arm, (False, False, False))
+    caveman, _ = ARMS.get(arm, (False, False))
     treatment: list[str] = []
 
     if caveman:
         treatment.append(
             "Load and follow the installed caveman skill in full mode, "
             "without dropping exact commands or test evidence."
-        )
-
-    if execute_code:
-        treatment.append(
-            "You MUST use execute_code for at least one batch containing 3 or more "
-            "related inspection or verification operations. Use that batch to inspect "
-            "relevant files/run diagnostics, and filter intermediate output inside "
-            "execute_code so only concise findings enter model context."
-        )
-    else:
-        treatment.append(
-            "Do not use execute_code in this run; use normal individual tools."
         )
 
     return "\n".join(
@@ -368,7 +356,7 @@ def run_one(
     usage_file = run_dir / "usage.json"
 
     env = profile_env(profile)
-    if ARMS.get(arm, (False, False, False))[1]:
+    if ARMS.get(arm, (False, False))[1]:
         env["PONYTAIL_DEFAULT_MODE"] = "full"
 
     argv = [
