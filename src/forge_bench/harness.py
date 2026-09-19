@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -20,8 +19,6 @@ from .config import (
     PINNED_OPENROUTER_UPSTREAM,
     PONY_REPO,
     PONY_SHA,
-    QUIX_SHA,
-    QUIX_URL,
     Result,
 )
 
@@ -57,10 +54,6 @@ def sh(
     return proc
 
 
-def hashfile(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def source_home() -> Path:
     return Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser().resolve()
 
@@ -76,7 +69,7 @@ def load_source_config(home: Path) -> dict[str, Any]:
 
 
 def make_profile(src: Path, config: dict[str, Any], dst: Path) -> None:
-    """Clone credentials while normalizing model/provider routing."""
+    """Clone credentials while making model/provider behavior deterministic."""
     dst.mkdir(parents=True, exist_ok=True)
     cfg = json.loads(json.dumps(config))
 
@@ -100,8 +93,8 @@ def make_profile(src: Path, config: dict[str, Any], dst: Path) -> None:
         },
     }
 
-    # These short one-shot jobs should never need compression. Disabling title
-    # upgrades also keeps auxiliary LLM calls out of the treatment comparison.
+    # Avoid auxiliary model calls changing the treatment totals. The selected
+    # SWE-bench tasks are short enough that compression should not be necessary.
     cfg["compression"] = {"enabled": False}
     auxiliary = cfg.get("auxiliary") if isinstance(cfg.get("auxiliary"), dict) else {}
     auxiliary["title_generation"] = {
@@ -162,121 +155,113 @@ def install_arm(hermes: str, profile: Path, arm: str) -> None:
             raise RuntimeError("Caveman install failed:\n" + proc.stdout + proc.stderr)
 
 
-def get_quixbugs(cache: Path) -> Path:
-    dst = cache / ("QuixBugs-" + QUIX_SHA[:12])
-    marker = dst / ".forge-bench-pin"
-    if (
-        dst.exists()
-        and marker.exists()
-        and marker.read_text(encoding="utf-8").strip() == QUIX_SHA
-    ):
-        return dst
+def ensure_repo_cache(cache_root: Path, repo: str, base_commit: str) -> Path:
+    """Create a base-commit-only bare cache.
 
-    if dst.exists():
-        shutil.rmtree(dst)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    sh(["git", "clone", "--quiet", QUIX_URL, str(dst)], timeout=180, check=True)
-    sh(
-        ["git", "checkout", "--quiet", QUIX_SHA],
-        cwd=dst,
-        timeout=60,
-        check=True,
+    We intentionally do not clone repository heads. This prevents an agent from
+    inspecting later commits or the solution PR through local git history.
+    """
+    bare = cache_root / "repos" / (repo.replace("/", "__") + ".git")
+    if not bare.exists():
+        bare.parent.mkdir(parents=True, exist_ok=True)
+        init = sh(["git", "init", "--bare", str(bare)])
+        if init.returncode:
+            raise RuntimeError("git init failed: " + init.stderr)
+        remote = sh(
+            [
+                "git",
+                "--git-dir",
+                str(bare),
+                "remote",
+                "add",
+                "origin",
+                f"https://github.com/{repo}.git",
+            ]
+        )
+        if remote.returncode:
+            raise RuntimeError("git remote add failed: " + remote.stderr)
+
+    fetch = sh(
+        [
+            "git",
+            "--git-dir",
+            str(bare),
+            "fetch",
+            "--filter=blob:none",
+            "--depth=1",
+            "origin",
+            base_commit,
+        ],
+        timeout=300,
     )
-    marker.write_text(QUIX_SHA + "\n", encoding="utf-8")
-    return dst
+    if fetch.returncode:
+        raise RuntimeError(
+            f"Could not fetch {repo}@{base_commit}: " + fetch.stderr
+        )
+
+    return bare
 
 
-def prepare_workspace(source: Path, task: str, dst: Path) -> dict[str, str]:
-    (dst / "python_programs").mkdir(parents=True)
-    (dst / "json_testcases").mkdir()
-    shutil.copy2(
-        source / "python_programs" / f"{task}.py",
-        dst / "python_programs" / f"{task}.py",
+def prepare_workspace(
+    cache_root: Path,
+    repo: str,
+    base_commit: str,
+    destination: Path,
+) -> None:
+    if destination.exists():
+        shutil.rmtree(destination)
+
+    bare = ensure_repo_cache(cache_root, repo, base_commit)
+    clone = sh(["git", "clone", "--shared", str(bare), str(destination)], timeout=300)
+    if clone.returncode:
+        raise RuntimeError("workspace clone failed: " + clone.stderr)
+
+    checkout = sh(
+        ["git", "checkout", "--detach", base_commit],
+        cwd=destination,
+        timeout=120,
     )
-    shutil.copy2(
-        source / "json_testcases" / f"{task}.json",
-        dst / "json_testcases" / f"{task}.json",
-    )
-    (dst / "python_programs" / "__init__.py").write_text("", encoding="utf-8")
+    if checkout.returncode:
+        raise RuntimeError("base commit checkout failed: " + checkout.stderr)
 
-    verifier = f'''import importlib, json
-from pathlib import Path
-
-TASK = {task!r}
-func = getattr(importlib.import_module("python_programs." + TASK), TASK)
-failures = []
-count = 0
-for count, line in enumerate((Path("json_testcases") / (TASK + ".json")).read_text().splitlines(), 1):
-    args, expected = json.loads(line)
-    try:
-        actual = func(*args)
-    except Exception as exc:
-        failures.append((count, repr(exc), expected))
-        continue
-    if actual != expected:
-        failures.append((count, actual, expected))
-
-if failures:
-    print(*failures[:5], sep="\\n")
-    raise SystemExit(1)
-print(f"PASS {{TASK}} ({{count}} vectors)")
-'''
-    (dst / "verify.py").write_text(verifier, encoding="utf-8")
-    (dst / "BENCHMARK.md").write_text(
-        f"QuixBugs repair benchmark. Source commit: {QUIX_SHA}. "
-        "Correct implementations are absent.\n",
-        encoding="utf-8",
-    )
-
-    protected = {
-        "verify.py": hashfile(dst / "verify.py"),
-        f"json_testcases/{task}.json": hashfile(
-            dst / "json_testcases" / f"{task}.json"
-        ),
-    }
-
-    if sh([sys.executable, "verify.py"], cwd=dst, timeout=20).returncode == 0:
-        raise RuntimeError(f"{task} unexpectedly passes before repair")
-
-    sh(["git", "init", "--quiet"], cwd=dst, check=True)
-    sh(
-        ["git", "config", "user.email", "benchmark@forge-bench.local"],
-        cwd=dst,
-        check=True,
-    )
-    sh(
-        ["git", "config", "user.name", "Forge Bench"],
-        cwd=dst,
-        check=True,
-    )
-    sh(["git", "add", "."], cwd=dst, check=True)
-    sh(
-        ["git", "commit", "--quiet", "-m", "benchmark baseline"],
-        cwd=dst,
-        check=True,
-    )
-    return protected
+    # Remove network remotes from the agent workspace. The issue statement and
+    # base commit are the only task information the agent should receive.
+    sh(["git", "remote", "remove", "origin"], cwd=destination)
+    sh(["git", "reset", "--hard", base_commit], cwd=destination, check=True)
+    sh(["git", "clean", "-fdx"], cwd=destination, check=True)
 
 
-def benchmark_prompt(task: str, arm: str) -> str:
+def benchmark_prompt(instance: dict[str, Any], arm: str) -> str:
     caveman, _ = ARMS.get(arm, (False, False))
     treatment: list[str] = []
 
     if caveman:
         treatment.append(
             "Load and follow the installed caveman skill in full mode, "
-            "without dropping exact commands or test evidence."
+            "without dropping commands or verification evidence."
         )
 
+    issue = str(instance.get("problem_statement") or "").strip()
     return "\n".join(
         [
-            f"Repair the QuixBugs Python task {task} in this repository.",
-            f"Fix only python_programs/{task}.py unless absolutely necessary.",
-            "Do not edit verify.py, json_testcases, or BENCHMARK.md.",
-            "Do not fetch or look up a solution online. Do not delegate to a subagent.",
-            "Make the smallest correct fix. Run python verify.py and finish only after it passes.",
-            *treatment,
-            "Final reply: state only what changed and whether python verify.py passed.",
+            "You are solving a SWE-bench software engineering task.",
+            f"Repository: {instance['repo']}",
+            f"Instance: {instance['instance_id']}",
+            "",
+            "Issue:",
+            issue,
+            "",
+            "Constraints:",
+            "- Work only from this repository state and the issue above.",
+            "- Do not look up the issue, pull request, gold patch, or solution online.",
+            "- Do not git fetch or add a network git remote.",
+            "- Make the smallest complete production-code fix that addresses the issue.",
+            "- Inspect relevant code before editing.",
+            "- Run relevant tests or targeted checks when the local environment permits.",
+            "- Do not modify tests merely to make them pass.",
+            *[f"- {item}" for item in treatment],
+            "",
+            "Finish with a concise summary of the fix and checks performed.",
         ]
     )
 
@@ -325,33 +310,123 @@ def session_db_values(profile: Path, session_id: str) -> dict[str, Any]:
         return {}
 
 
-def diff_stats(workspace: Path) -> tuple[int, int]:
-    lines = sh(["git", "diff", "--numstat"], cwd=workspace).stdout.splitlines()
-    changed = len(lines)
+def diff_stats(workspace: Path) -> tuple[int, int, str]:
+    patch = sh(["git", "diff", "--binary"], cwd=workspace).stdout
+    numstat = sh(["git", "diff", "--numstat"], cwd=workspace).stdout.splitlines()
+    changed = len(numstat)
     diff_lines = 0
-    for line in lines:
+    for line in numstat:
         fields = line.split("\t")[:2]
         diff_lines += sum(int(value) for value in fields if value.isdigit())
-    return changed, diff_lines
+    return changed, diff_lines, patch
+
+
+def evaluate_patch(
+    run_dir: Path,
+    dataset_name: str,
+    instance_id: str,
+    patch: str,
+    *,
+    timeout: int,
+) -> tuple[bool, bool, float, str]:
+    """Grade one patch with the official SWE-bench Docker harness."""
+    if not patch.strip():
+        return False, False, 0.0, "empty patch"
+
+    eval_dir = run_dir / "evaluation"
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    prediction = eval_dir / "prediction.jsonl"
+    prediction.write_text(
+        json.dumps(
+            {
+                "instance_id": instance_id,
+                "model_name_or_path": "forge-bench",
+                "model_patch": patch,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_id = "forge_bench_" + run_dir.name.replace("-", "_")
+    argv = [
+        sys.executable,
+        "-m",
+        "swebench.harness.run_evaluation",
+        "--dataset_name",
+        dataset_name,
+        "--predictions_path",
+        str(prediction),
+        "--max_workers",
+        "1",
+        "--run_id",
+        run_id,
+        "--instance_ids",
+        instance_id,
+        "--cache_level",
+        "instance",
+    ]
+
+    started = time.perf_counter()
+    try:
+        proc = sh(argv, cwd=eval_dir, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        elapsed = time.perf_counter() - started
+        (eval_dir / "stdout.txt").write_text(str(exc.stdout or ""), encoding="utf-8")
+        (eval_dir / "stderr.txt").write_text(str(exc.stderr or ""), encoding="utf-8")
+        return False, False, elapsed, "evaluation timeout"
+
+    elapsed = time.perf_counter() - started
+    (eval_dir / "stdout.txt").write_text(proc.stdout, encoding="utf-8")
+    (eval_dir / "stderr.txt").write_text(proc.stderr, encoding="utf-8")
+
+    report = None
+    for path in sorted(eval_dir.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, dict) and "resolved_ids" in payload:
+            report = payload
+            break
+
+    if report is None:
+        return False, False, elapsed, "evaluation report not found"
+
+    resolved = instance_id in set(report.get("resolved_ids") or [])
+    return True, resolved, elapsed, ""
 
 
 def run_one(
     hermes: str,
     profile: Path,
+    instance: dict[str, Any],
+    dataset_name: str,
     arm: str,
-    task: str,
     repeat: int,
     run_index: int,
-    qsrc: Path,
+    cache_root: Path,
     output: Path,
     timeout: int,
+    evaluation_timeout: int,
+    evaluate: bool,
 ) -> Result:
-    run_dir = output / "runs" / f"{run_index:02d}__{arm}__{task}__r{repeat}"
+    instance_id = str(instance["instance_id"])
+    repo = str(instance["repo"])
+    difficulty = str(instance.get("difficulty") or "")
+    task_slug = instance_id.replace("/", "__")
+    run_dir = output / "runs" / f"{run_index:02d}__{arm}__{task_slug}__r{repeat}"
     run_dir.mkdir(parents=True, exist_ok=True)
     workspace = run_dir / "workspace"
-    protected = prepare_workspace(qsrc, task, workspace)
 
-    prompt = benchmark_prompt(task, arm)
+    prepare_workspace(
+        cache_root,
+        repo,
+        str(instance["base_commit"]),
+        workspace,
+    )
+
+    prompt = benchmark_prompt(instance, arm)
     (run_dir / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
     usage_file = run_dir / "usage.json"
 
@@ -376,63 +451,73 @@ def run_one(
         proc = sh(argv, cwd=workspace, env=env, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         wall = time.perf_counter() - started
-        (run_dir / "stdout.txt").write_text(
-            str(exc.stdout or ""),
-            encoding="utf-8",
-        )
-        (run_dir / "stderr.txt").write_text(
-            str(exc.stderr or ""),
-            encoding="utf-8",
-        )
+        (run_dir / "stdout.txt").write_text(str(exc.stdout or ""), encoding="utf-8")
+        (run_dir / "stderr.txt").write_text(str(exc.stderr or ""), encoding="utf-8")
         return Result(
-            arm,
-            task,
-            repeat,
-            run_index,
-            False,
-            False,
-            True,
-            False,
-            124,
-            wall,
-            PINNED_MODEL,
-            "openrouter",
-            PINNED_OPENROUTER_UPSTREAM,
-            "",
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            None,
-            None,
-            None,
-            "unavailable",
-            None,
-            0,
-            0,
-            str(run_dir),
-            "timeout",
+            arm=arm,
+            task=instance_id,
+            repeat=repeat,
+            run_index=run_index,
+            valid=False,
+            resolved=False,
+            evaluation_completed=False,
+            patch_nonempty=False,
+            completed=False,
+            exit_code=124,
+            wall_seconds=wall,
+            evaluation_seconds=0.0,
+            repo=repo,
+            difficulty=difficulty,
+            model=PINNED_MODEL,
+            api_provider="openrouter",
+            upstream_provider=PINNED_OPENROUTER_UPSTREAM,
+            session_id="",
+            input_tokens=0,
+            output_tokens=0,
+            reasoning_tokens=0,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            total_tokens=0,
+            api_calls=0,
+            estimated_cost_usd=None,
+            actual_cost_usd=None,
+            cost_usd=None,
+            cost_source="unavailable",
+            tool_calls=None,
+            files_changed=0,
+            diff_lines=0,
+            run_dir=str(run_dir),
+            error="Hermes timeout",
         )
 
     wall = time.perf_counter() - started
     (run_dir / "stdout.txt").write_text(proc.stdout, encoding="utf-8")
     (run_dir / "stderr.txt").write_text(proc.stderr, encoding="utf-8")
 
-    verify = sh([sys.executable, "verify.py"], cwd=workspace, timeout=20)
-    (run_dir / "verify.txt").write_text(
-        verify.stdout + verify.stderr,
-        encoding="utf-8",
-    )
+    files_changed, diff_lines, patch = diff_stats(workspace)
+    (run_dir / "model.patch").write_text(patch, encoding="utf-8")
+    patch_nonempty = bool(patch.strip())
 
-    tests_passed = verify.returncode == 0
-    tests_untouched = all(
-        hashfile(workspace / rel) == expected
-        for rel, expected in protected.items()
-    )
-    files_changed, diff_lines = diff_stats(workspace)
+    evaluation_completed = False
+    resolved = False
+    evaluation_seconds = 0.0
+    eval_error = ""
+
+    if evaluate:
+        (
+            evaluation_completed,
+            resolved,
+            evaluation_seconds,
+            eval_error,
+        ) = evaluate_patch(
+            run_dir,
+            dataset_name,
+            instance_id,
+            patch,
+            timeout=evaluation_timeout,
+        )
+    elif not patch_nonempty:
+        eval_error = "evaluation skipped; empty patch"
 
     try:
         usage = (
@@ -473,37 +558,45 @@ def run_one(
         and proc.returncode == 0
     )
 
+    # "valid" means the agent run is usable for efficiency analysis. An
+    # unresolved SWE-bench task is a legitimate outcome and stays in the data.
+    eval_ok = (
+        not evaluate
+        or evaluation_completed
+        or not patch_nonempty
+    )
     valid = (
-        tests_passed
-        and tests_untouched
-        and completed
+        completed
         and model == PINNED_MODEL
         and provider.lower() == "openrouter"
+        and eval_ok
     )
 
     errors: list[str] = []
-    if not tests_passed:
-        errors.append("verification failed")
-    if not tests_untouched:
-        errors.append("protected tests modified")
     if not completed:
         errors.append("Hermes incomplete")
     if model != PINNED_MODEL:
         errors.append("wrong model: " + model)
     if provider.lower() != "openrouter":
         errors.append("wrong API provider: " + provider)
+    if eval_error:
+        errors.append(eval_error)
 
     result = Result(
         arm=arm,
-        task=task,
+        task=instance_id,
         repeat=repeat,
         run_index=run_index,
         valid=valid,
-        tests_passed=tests_passed,
-        tests_untouched=tests_untouched,
+        resolved=resolved,
+        evaluation_completed=evaluation_completed,
+        patch_nonempty=patch_nonempty,
         completed=completed,
         exit_code=proc.returncode,
         wall_seconds=wall,
+        evaluation_seconds=evaluation_seconds,
+        repo=repo,
+        difficulty=difficulty,
         model=model,
         api_provider=provider,
         upstream_provider=PINNED_OPENROUTER_UPSTREAM,
