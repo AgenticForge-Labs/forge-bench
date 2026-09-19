@@ -49,6 +49,7 @@ DEFAULT_SUITE = [
     },
 ]
 
+DEFAULT_TOOLSETS = "hermes-cli"
 LEAN_TOOLSETS = "file,terminal,skills,code_execution"
 
 # Full 2 x 2 x 2 factorial:
