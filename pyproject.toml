@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-forge-bench = "forge_bench:main"
+forge-bench = "forge_bench.cli:main"
 
 [tool.hatch.build.targets.wheel]
-include = ["forge_bench.py"]
+packages = ["src/forge_bench"]
