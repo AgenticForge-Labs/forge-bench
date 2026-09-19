@@ -19,11 +19,11 @@ The initial default suite is frozen to three SWE-bench Verified tasks, all from 
 
 | Tier | Instance | Repository | Gold patch | Historical solve rate |
 | --- | --- | --- | ---: | ---: |
-| Low | `django__django-13516` | django/django | 4 lines, 1 file | 84.4% |
-| Mid | `pytest-dev__pytest-7236` | pytest-dev/pytest | 11 lines, 1 file | 61.5% |
-| High | `sympy__sympy-22080` | sympy/sympy | 12 lines, 2 files | 1.5% |
+| Low-1 | `django__django-13516` | django/django | 4 lines, 1 file | 84.4% |
+| Low-2 | `pytest-dev__pytest-7571` | pytest-dev/pytest | 4 lines, 1 file, 3 hunks | 79.3% |
+| Low-3 | `sympy__sympy-20154` | sympy/sympy | 23 lines, 1 file, 3 hunks | 78.5% |
 
-These were selected once by Forge Bench's smart sampler on September 19, 2026, targeting composite complexity near 0.20, 0.50, and 0.80. Freezing them makes repeated Baseline/Caveman/Ponytail comparisons directly comparable over time.
+These are intentionally all from the historically high-solve end of the official 15–60 minute bucket. The initial experiment is meant to compare token/cost efficiency on tasks that most capable agents can actually finish, while retaining some variation in patch scope. Freezing them makes repeated Baseline/Caveman/Ponytail comparisons directly comparable over time.
 
 The default experiment is therefore 3 fixed tasks × 4 Hermes treatments = 12 randomized agent runs.
 
