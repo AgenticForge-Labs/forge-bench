@@ -471,8 +471,7 @@ def load_swebench_report(
 
 def evaluate_patch(
     run_dir: Path,
-    dataset_name: str,
-    instance_id: str,
+    instance: dict[str, Any],
     patch: str,
     *,
     timeout: int,
@@ -481,8 +480,18 @@ def evaluate_patch(
     if not patch.strip():
         return False, False, 0.0, "empty patch"
 
+    instance_id = str(instance["instance_id"])
     eval_dir = run_dir / "evaluation"
     eval_dir.mkdir(parents=True, exist_ok=True)
+    # Freeze grading to the exact task row already loaded by Forge Bench.
+    # SWE-bench 4.1 accepts a local JSON dataset path, avoiding a second
+    # mutable Hugging Face fetch during evaluation.
+    dataset_file = eval_dir / "dataset.json"
+    dataset_file.write_text(
+        json.dumps([instance], indent=2, default=str) + "\n",
+        encoding="utf-8",
+    )
+
     prediction = eval_dir / "prediction.jsonl"
     model_name = "forge-bench"
     prediction.write_text(
@@ -503,7 +512,7 @@ def evaluate_patch(
         "-m",
         "swebench.harness.run_evaluation",
         "--dataset_name",
-        dataset_name,
+        str(dataset_file),
         "--predictions_path",
         str(prediction),
         "--max_workers",
@@ -705,8 +714,7 @@ def run_one(
             eval_error,
         ) = evaluate_patch(
             run_dir,
-            dataset_name,
-            instance_id,
+            instance,
             patch,
             timeout=evaluation_timeout,
         )
