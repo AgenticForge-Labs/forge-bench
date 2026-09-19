@@ -37,7 +37,12 @@ jobs:
               make_profile,
           )
           from forge_bench.reporting import ci95
-          from forge_bench.swebench_backend import Candidate, patch_features, select_spread
+          from forge_bench.swebench_backend import (
+              Candidate,
+              dataset_revision,
+              patch_features,
+              select_spread,
+          )
 
           assert len(ARMS) == 5
           assert DEFAULT_TOOLSETS == "hermes-cli"
@@ -45,6 +50,7 @@ jobs:
           assert PINNED_REASONING == "none"
           assert PINNED_MAX_TURNS == 50
           assert version("swebench") == "4.1.0"
+          assert dataset_revision("verified") == "78f471bf655a3137b2e8a75af1501690ec009ec3"
 
           m, lo, hi, n = ci95([1, 2, 3])
           assert n == 3 and lo <= m <= hi
@@ -71,8 +77,11 @@ jobs:
               )
               assert argv[:4] == ["docker", "run", "--rm", "--pull=never"]
               assert "sha256:test" in argv
-              assert "/opt/data" in " ".join(argv)
-              assert "/workspace" in " ".join(argv)
+              joined = " ".join(argv)
+              assert "/opt/data" in joined
+              assert "/workspace" in joined
+              assert "HERMES_UID=" in joined
+              assert "HERMES_GID=" in joined
 
           # Patch capture must include both committed changes and untracked files.
           with tempfile.TemporaryDirectory() as td:
