@@ -22,18 +22,17 @@ DEFAULT_TASKS = ["quicksort", "next_permutation", "shunting_yard"]
 DEFAULT_SEED = 260919
 
 ARMS = {
-    "caveman": (True, False, False),
-    "ponytail": (False, True, False),
-    "execute_code": (False, False, True),
-    "all_three": (True, True, True),
+    "baseline": (False, False),
+    "caveman": (True, False),
+    "ponytail": (False, True),
+    "caveman_ponytail": (True, True),
 }
 
 LABEL = {
-    "baseline": "Baseline",
+    "baseline": "Baseline Hermes",
     "caveman": "Caveman",
     "ponytail": "Ponytail",
-    "execute_code": "execute_code",
-    "all_three": "All three",
+    "caveman_ponytail": "Caveman + Ponytail",
 }
 
 METRICS = {
