@@ -235,7 +235,7 @@ def plot_metric(
     fig.text(
         0.5,
         0.015,
-        "Mean across three QuixBugs tasks; error bars are 95% Student-t CIs across task means.",
+        "Mean across selected SWE-bench tasks; error bars are 95% Student-t CIs across task means.",
         ha="center",
         fontsize=9,
     )
