@@ -69,6 +69,11 @@ def task_summary(
                     "runs": len(raw),
                     "valid_runs": len(good),
                     "all_runs_valid": bool(raw) and len(good) == len(raw),
+                    "resolved_runs": sum(result.resolved for result in good),
+                    "resolve_rate": (
+                        100 * sum(result.resolved for result in good) / len(good)
+                        if good else math.nan
+                    ),
                     "total_tokens": mean(
                         result.total_tokens for result in good
                     ),
@@ -125,6 +130,13 @@ def aggregate_summary(
             "run_valid_rate": (
                 100 * sum(result.valid for result in raw) / len(raw)
                 if raw
+                else math.nan
+            ),
+            "run_resolve_rate": (
+                100
+                * sum(result.resolved for result in raw if result.valid)
+                / sum(result.valid for result in raw)
+                if any(result.valid for result in raw)
                 else math.nan
             ),
             "tasks_expected": len(expected_tasks),
@@ -238,14 +250,14 @@ def plot_validity(
     summary: list[dict[str, Any]],
 ) -> None:
     labels = [row["label"] for row in summary]
-    values = [float(row["run_valid_rate"]) for row in summary]
+    values = [float(row["run_resolve_rate"]) for row in summary]
 
     fig, ax = plt.subplots(figsize=(9.4, 5.4))
     x = list(range(len(labels)))
     bars = ax.bar(x, values)
-    ax.set_title("Valid repair rate by Hermes treatment")
+    ax.set_title("SWE-bench resolve rate by Hermes treatment")
     ax.set_xticks(x, labels)
-    ax.set_ylabel("Valid runs (%)")
+    ax.set_ylabel("Resolved valid runs (%)")
     ax.set_ylim(0, 105)
     ax.grid(axis="y", alpha=0.2)
     ax.set_axisbelow(True)
@@ -262,8 +274,8 @@ def plot_validity(
             )
 
     fig.tight_layout()
-    fig.savefig(output / "valid_repair_rate.png", dpi=180)
-    fig.savefig(output / "valid_repair_rate.svg")
+    fig.savefig(output / "resolve_rate.png", dpi=180)
+    fig.savefig(output / "resolve_rate.svg")
     plt.close(fig)
 
 
@@ -280,8 +292,8 @@ def write_html_report(
         for metric in METRICS
     )
     metric_cards += (
-        '<div class="card"><img src="valid_repair_rate.png" '
-        'alt="Valid repair rate"></div>'
+        '<div class="card"><img src="resolve_rate.png" '
+        'alt="SWE-bench resolve rate"></div>'
     )
 
     table_rows: list[str] = []
@@ -299,6 +311,7 @@ def write_html_report(
             f"<td>{format_value(row['mean_wall_seconds'], 'seconds')} "
             f"[{format_value(row['ci95_low_wall_seconds'], 'seconds')}, "
             f"{format_value(row['ci95_high_wall_seconds'], 'seconds')}]</td>"
+            f"<td>{row['run_resolve_rate']:.0f}%</td>"
             f"<td>{row['run_valid_rate']:.0f}%</td>"
             "</tr>"
         )
@@ -324,9 +337,10 @@ th{{background:#f1f5f9;color:#475569}}
 <p><code>{html.escape(meta['model'])}</code> via OpenRouter, pinned to
 <code>{html.escape(meta['upstream_provider'])}</code>. Randomization seed:
 <code>{meta['seed']}</code>.</p>
-<p class="note">Primary bars are means across task-level means, not pooled agent calls.
-Error bars are two-sided 95% Student-t confidence intervals across the three
-QuixBugs tasks. With n=3 tasks these intervals are deliberately wide.</p>
+<p class="note">Primary efficiency bars are means across task-level means, not pooled agent calls.
+Unresolved tasks remain in token, cost, and time averages when the agent run itself is usable.
+Error bars are two-sided 95% Student-t confidence intervals across the selected SWE-bench tasks.
+With only three tasks these intervals are deliberately wide.</p>
 <div class="grid">{metric_cards}</div>
 <h2>Across-task summary</h2>
 <table>
@@ -336,7 +350,8 @@ QuixBugs tasks. With n=3 tasks these intervals are deliberately wide.</p>
 <th>Total tokens (95% CI)</th>
 <th>Cost (95% CI)</th>
 <th>Time (95% CI)</th>
-<th>Valid runs</th>
+<th>Resolved runs</th>
+<th>Usable runs</th>
 </tr></thead>
 <tbody>{''.join(table_rows)}</tbody>
 </table>
