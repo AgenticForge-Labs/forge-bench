@@ -301,7 +301,12 @@ def prepare_workspace(
         shutil.rmtree(destination)
 
     bare = ensure_repo_cache(cache_root, repo, base_commit)
-    clone = sh(["git", "clone", "--shared", str(bare), str(destination)], timeout=300)
+    # Independent object store: Docker sees only the workspace mount, so Git
+    # alternates from --shared would point at an inaccessible host cache path.
+    clone = sh(
+        ["git", "clone", "--no-hardlinks", str(bare), str(destination)],
+        timeout=300,
+    )
     if clone.returncode:
         raise RuntimeError("workspace clone failed: " + clone.stderr)
 
