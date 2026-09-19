@@ -2,14 +2,24 @@
 
 Forge Bench is a reproducible benchmark harness for comparing AI coding-agent strategies on correctness, token use, cost, latency, and tool behavior.
 
-The default experiment compares four Hermes Agent treatments:
+The default experiment is a full 2×2×2 factorial over three token-saving factors:
+
+- Caveman: OFF / ON
+- Ponytail: OFF / ON
+- Lean toolset: OFF / ON
+
+That produces eight Hermes treatments:
 
 - Baseline Hermes
-- Caveman only
-- Ponytail only
+- Lean tools
+- Caveman
+- Caveman + Lean
+- Ponytail
+- Ponytail + Lean
 - Caveman + Ponytail
+- Caveman + Ponytail + Lean
 
-Hermes' native tools, including `execute_code`, remain available normally in every treatment. Forge Bench does not force or suppress native tool selection; the treatments differ only by the added Caveman and/or Ponytail behavior.
+When the lean factor is ON, Hermes is invoked with exactly `file,terminal,skills,code_execution`. When it is OFF, Hermes gets its normal CLI toolset. This lets Forge Bench measure the cost of advertising broad tools such as browser, web, memory, delegation, vision, computer use, cron jobs, and other irrelevant capabilities during coding work.
 
 ## Default SWE-bench experiment
 
@@ -23,9 +33,9 @@ The initial default suite is frozen to three SWE-bench Verified tasks, all from 
 | Low-2 | `pytest-dev__pytest-7571` | pytest-dev/pytest | 4 lines, 1 file, 3 hunks | 79.3% |
 | Low-3 | `sympy__sympy-20154` | sympy/sympy | 23 lines, 1 file, 3 hunks | 78.5% |
 
-These are intentionally all from the historically high-solve end of the official 15–60 minute bucket. The initial experiment is meant to compare token/cost efficiency on tasks that most capable agents can actually finish, while retaining some variation in patch scope. Freezing them makes repeated Baseline/Caveman/Ponytail comparisons directly comparable over time.
+These are intentionally all from the historically high-solve end of the official 15–60 minute bucket. The initial experiment is meant to compare token/cost efficiency on tasks that most capable agents can actually finish, while retaining some variation in patch scope. Freezing them makes repeated factorial comparisons directly comparable over time.
 
-The default experiment is therefore 3 fixed tasks × 4 Hermes treatments = 12 randomized agent runs.
+The default experiment is therefore 3 fixed tasks × 8 Hermes treatments = 24 randomized agent runs.
 
 ### Smart within-bucket sampling
 
@@ -108,8 +118,8 @@ uv run forge-bench --selection-only
 
 By default it prints the frozen three-task initial suite with:
 
-- low / mid / high tier
-- composite complexity
+- frozen low-range tier
+- patch-scope percentile
 - historical solve rate
 - gold-patch changed-line count
 - files touched
@@ -123,7 +133,7 @@ It also saves `selection.json`, `selection.csv`, `candidate_pool.csv`, and `meta
 uv run forge-bench
 ```
 
-The default is 3 selected tasks × 4 treatments = 12 randomized Hermes runs.
+The default is 3 selected tasks × 8 treatments = 24 randomized Hermes runs.
 
 For repeated stochastic attempts:
 
@@ -210,8 +220,9 @@ Each benchmark writes a timestamped directory under `benchmark-results/` contain
 - `runs.csv` / `runs.json` — raw run-level results
 - `task_summary.csv` — repeats averaged within treatment × task
 - `summary.csv` — across-task treatment means and 95% confidence intervals
+- `factorial_effects.csv` — marginal ON-vs-OFF effects for Caveman, Ponytail, and Lean tools
 - `report.html`
-- PNG and SVG figures for tokens, cost, agent wall time, API calls, and SWE-bench resolve rate
+- PNG and SVG figures for tokens, cost, agent wall time, API calls, SWE-bench resolve rate, and marginal token effects
 - one evidence directory per run containing the prompt, Hermes stdout/stderr, usage JSON, generated patch, official evaluation output, and final workspace
 
 ## Confidence intervals
