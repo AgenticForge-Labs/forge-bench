@@ -39,7 +39,7 @@ Then:
 git clone https://github.com/AgenticForge-Labs/forge-bench.git
 cd forge-bench
 uv sync
-uv run python forge_bench.py
+uv run forge-bench
 ```
 
 The default run is 3 tasks × 4 treatments = 12 Hermes runs.
@@ -47,13 +47,13 @@ The default run is 3 tasks × 4 treatments = 12 Hermes runs.
 For repeated stochastic runs:
 
 ```bash
-uv run python forge_bench.py --repeats 3
+uv run forge-bench --repeats 3
 ```
 
 An optional untreated Hermes baseline can also be added:
 
 ```bash
-uv run python forge_bench.py --include-baseline
+uv run forge-bench --include-baseline
 ```
 
 ## Outputs
