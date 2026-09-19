@@ -19,6 +19,11 @@ DATASET_ALIASES = {
     "full": "SWE-bench/SWE-bench",
 }
 
+DATASET_REVISIONS = {
+    # Current Verified data snapshot used to freeze the initial three tasks.
+    "SWE-bench/SWE-bench_Verified": "78f471bf655a3137b2e8a75af1501690ec009ec3",
+}
+
 DIFFICULTY_ALIASES = {
     "easy": {"<15 min fix", "<15 min"},
     "medium": {"15 min - 1 hour", "15 min–1 hour", "15 min-1 hour"},
@@ -75,9 +80,15 @@ def normalize_difficulty(value: str) -> str:
     return text
 
 
+def dataset_revision(dataset_name: str) -> str | None:
+    return DATASET_REVISIONS.get(resolve_dataset_name(dataset_name))
+
+
 def load_rows(dataset_name: str, split: str = "test") -> list[dict[str, Any]]:
     resolved = resolve_dataset_name(dataset_name)
-    ds = load_dataset(resolved, split=split)
+    revision = DATASET_REVISIONS.get(resolved)
+    kwargs = {"revision": revision} if revision else {}
+    ds = load_dataset(resolved, split=split, **kwargs)
     return [dict(row) for row in ds]
 
 
