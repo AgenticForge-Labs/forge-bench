@@ -18,7 +18,9 @@ CAVE_URL = (
     + "/skills/caveman/SKILL.md"
 )
 
-DEFAULT_TASKS = ["quicksort", "next_permutation", "shunting_yard"]
+DEFAULT_DATASET = "verified"
+DEFAULT_DIFFICULTY = "medium"
+DEFAULT_SAMPLE_SIZE = 3
 DEFAULT_SEED = 260919
 
 ARMS = {
@@ -64,11 +66,15 @@ class Result:
     repeat: int
     run_index: int
     valid: bool
-    tests_passed: bool
-    tests_untouched: bool
+    resolved: bool
+    evaluation_completed: bool
+    patch_nonempty: bool
     completed: bool
     exit_code: int
     wall_seconds: float
+    evaluation_seconds: float
+    repo: str
+    difficulty: str
     model: str
     api_provider: str
     upstream_provider: str
