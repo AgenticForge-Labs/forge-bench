@@ -23,6 +23,8 @@ The default experiment pins:
 
 Forge Bench creates a fresh temporary Hermes home and a fresh Git workspace for each treatment. Model fallbacks and smart model routing are disabled for the benchmark profiles. OpenRouter provider routing is restricted to the pinned upstream provider.
 
+The default upstream is Baidu Qianfan because the pinned DeepSeek endpoint is inexpensive, supports tools/tool choice/reasoning parameters, and was showing very high uptime when this benchmark was created. OpenRouter currently marks Baidu Qianfan as retaining prompts, so the default suite intentionally uses only public QuixBugs fixtures rather than private project code. Change the upstream before adapting Forge Bench to sensitive repositories.
+
 ## Run
 
 Prerequisites:
