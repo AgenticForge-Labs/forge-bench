@@ -2,45 +2,112 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import shutil
 import tempfile
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .config import (
     ARMS,
     CAVE_SHA,
+    DEFAULT_DATASET,
+    DEFAULT_DIFFICULTY,
+    DEFAULT_SAMPLE_SIZE,
     DEFAULT_SEED,
-    DEFAULT_TASKS,
     LABEL,
     PINNED_MODEL,
     PINNED_OPENROUTER_UPSTREAM,
     PONY_REPO,
     PONY_SHA,
-    QUIX_SHA,
-    QUIX_URL,
     Result,
 )
 from .harness import (
-    get_quixbugs,
     install_arm,
     load_source_config,
     make_profile,
     run_one,
+    sh,
     source_home,
 )
 from .reporting import write_csv, write_reports
+from .swebench_backend import (
+    EXPERIMENTS_SHA,
+    build_candidates,
+    candidate_rows,
+    load_rows,
+    normalize_difficulty,
+    resolve_dataset_name,
+    select_spread,
+)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Benchmark Hermes token-saving strategies on pinned QuixBugs tasks."
+        description=(
+            "Benchmark Hermes token-saving strategies on sampled SWE-bench tasks."
+        )
     )
-    parser.add_argument("--tasks", nargs="+", default=DEFAULT_TASKS)
+    parser.add_argument(
+        "--dataset",
+        default=DEFAULT_DATASET,
+        help=(
+            "SWE-bench dataset alias (verified, lite, full) or Hugging Face dataset id. "
+            "Default: verified."
+        ),
+    )
+    parser.add_argument("--split", default="test")
+    parser.add_argument(
+        "--difficulty",
+        default="auto",
+        help=(
+            "Difficulty filter. For Verified, aliases easy/medium/hard/expert are accepted. "
+            "Default 'auto' means medium for Verified and no filter otherwise."
+        ),
+    )
+    parser.add_argument("--sample-size", type=int, default=DEFAULT_SAMPLE_SIZE)
+    parser.add_argument(
+        "--instance-ids",
+        nargs="+",
+        help="Explicit SWE-bench instance IDs; overrides smart sampling.",
+    )
+    parser.add_argument(
+        "--selection-only",
+        action="store_true",
+        help="Choose and save instances without running Hermes or Docker evaluation.",
+    )
+    parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help="Do not use official historical Verified leaderboard results in sampling.",
+    )
+    parser.add_argument(
+        "--allow-same-repo",
+        action="store_true",
+        help="Allow multiple sampled tasks from the same repository.",
+    )
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
-    parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=1800,
+        help="Maximum seconds for each Hermes attempt.",
+    )
+    parser.add_argument(
+        "--evaluation-timeout",
+        type=int,
+        default=3600,
+        help="Maximum seconds for official SWE-bench grading of each patch.",
+    )
+    parser.add_argument(
+        "--skip-evaluation",
+        action="store_true",
+        help="Generate patches and efficiency data without Docker grading.",
+    )
     parser.add_argument(
         "--hermes",
         default=shutil.which("hermes") or "hermes",
@@ -56,7 +123,7 @@ def parse_args() -> argparse.Namespace:
 
 def failed_result(
     arm: str,
-    task: str,
+    instance: dict[str, Any],
     repeat: int,
     run_index: int,
     run_dir: Path,
@@ -64,15 +131,19 @@ def failed_result(
 ) -> Result:
     return Result(
         arm=arm,
-        task=task,
+        task=str(instance["instance_id"]),
         repeat=repeat,
         run_index=run_index,
         valid=False,
-        tests_passed=False,
-        tests_untouched=False,
+        resolved=False,
+        evaluation_completed=False,
+        patch_nonempty=False,
         completed=False,
         exit_code=2,
         wall_seconds=0.0,
+        evaluation_seconds=0.0,
+        repo=str(instance["repo"]),
+        difficulty=str(instance.get("difficulty") or ""),
         model=PINNED_MODEL,
         api_provider="openrouter",
         upstream_provider=PINNED_OPENROUTER_UPSTREAM,
@@ -96,18 +167,74 @@ def failed_result(
     )
 
 
-def main() -> int:
-    args = parse_args()
+def _difficulty_filter(args: argparse.Namespace, resolved_dataset: str) -> str | None:
+    value = str(args.difficulty or "").strip()
+    if value.lower() == "auto":
+        return DEFAULT_DIFFICULTY if resolved_dataset.endswith("SWE-bench_Verified") else None
+    if value.lower() in {"none", "all", "*", ""}:
+        return None
+    return value
 
-    if args.repeats < 1:
-        raise SystemExit("--repeats must be >= 1")
+
+def _selection_manifest_row(candidate: Any) -> dict[str, Any]:
+    row = asdict(candidate)
+    row.pop("problem_statement", None)
+    return row
+
+
+def _print_selection(selected: list[Any]) -> None:
+    print("\nSelected SWE-bench instances")
+    print("  tier   complexity  hist-solve  patch-lines  files  repository / instance")
+    for candidate in selected:
+        history = (
+            "n/a"
+            if candidate.historical_solve_rate is None
+            else f"{100 * candidate.historical_solve_rate:5.1f}%"
+        )
+        print(
+            f"  {candidate.selection_rank:5s}  "
+            f"{candidate.complexity_score:10.3f}  "
+            f"{history:>10s}  "
+            f"{candidate.patch_changed_lines:11d}  "
+            f"{candidate.patch_files:5d}  "
+            f"{candidate.repo} / {candidate.instance_id}"
+        )
+
+
+def _preflight(args: argparse.Namespace) -> None:
+    if args.selection_only:
+        return
     if not shutil.which(args.hermes) and not Path(args.hermes).exists():
         raise SystemExit(f"Hermes executable not found: {args.hermes}")
     if not shutil.which("git"):
         raise SystemExit("git is required")
 
-    home = source_home()
-    config = load_source_config(home)
+    if not args.skip_evaluation:
+        if not shutil.which("docker"):
+            raise SystemExit(
+                "Docker is required for official SWE-bench grading. "
+                "Install/start Docker or use --skip-evaluation."
+            )
+        docker = sh(["docker", "info"], timeout=30)
+        if docker.returncode:
+            raise SystemExit(
+                "Docker is installed but not available to this user. "
+                "Start Docker/fix permissions or use --skip-evaluation.\n"
+                + docker.stderr
+            )
+
+
+def main() -> int:
+    args = parse_args()
+
+    if args.repeats < 1:
+        raise SystemExit("--repeats must be >= 1")
+    if args.sample_size < 1:
+        raise SystemExit("--sample-size must be >= 1")
+
+    resolved_dataset = resolve_dataset_name(args.dataset)
+    difficulty = _difficulty_filter(args, resolved_dataset)
+    cache_root = args.cache.expanduser().resolve()
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     output = (
@@ -116,51 +243,147 @@ def main() -> int:
     ).resolve()
     output.mkdir(parents=True, exist_ok=True)
 
-    arms = list(ARMS)
+    print("Forge Bench task selection")
+    print("  dataset:", resolved_dataset)
+    print("  split:", args.split)
+    print("  difficulty:", difficulty or "unfiltered")
 
-    qsrc = get_quixbugs(args.cache.resolve())
+    rows = load_rows(resolved_dataset, args.split)
+    row_by_id = {str(row["instance_id"]): row for row in rows}
 
-    plan = [
-        {"arm": arm, "task": task, "repeat": repeat}
-        for repeat in range(1, args.repeats + 1)
-        for task in args.tasks
-        for arm in arms
-    ]
-    random.Random(args.seed).shuffle(plan)
-    for index, item in enumerate(plan, 1):
-        item["run_index"] = index
+    verified_dataset = resolved_dataset.endswith("SWE-bench_Verified")
+    use_history = verified_dataset and not args.no_history
 
-    write_csv(output / "run_plan.csv", plan)
+    if args.instance_ids:
+        missing = [
+            instance_id
+            for instance_id in args.instance_ids
+            if instance_id not in row_by_id
+        ]
+        if missing:
+            raise SystemExit(
+                "Unknown instance IDs for selected dataset: " + ", ".join(missing)
+            )
+
+        # Still calculate objective features/history for the manifest, but do not
+        # let the requested difficulty filter remove explicit user selections.
+        candidates, sampler_meta = build_candidates(
+            [row_by_id[instance_id] for instance_id in args.instance_ids],
+            difficulty=None,
+            cache_root=cache_root,
+            use_history=use_history,
+        )
+        by_id = {candidate.instance_id: candidate for candidate in candidates}
+        selected = [by_id[instance_id] for instance_id in args.instance_ids]
+        if len(selected) == 3:
+            for label, target, candidate in zip(
+                ("low", "mid", "high"),
+                (0.2, 0.5, 0.8),
+                selected,
+            ):
+                candidate.selection_rank = label
+                candidate.selection_target = target
+        else:
+            for index, candidate in enumerate(selected, 1):
+                candidate.selection_rank = f"explicit-{index}"
+        sampler_meta["strategy"] = "explicit instance ids"
+    else:
+        candidates, sampler_meta = build_candidates(
+            rows,
+            difficulty=difficulty,
+            cache_root=cache_root,
+            use_history=use_history,
+        )
+        selected = select_spread(
+            candidates,
+            count=args.sample_size,
+            diverse_repos=not args.allow_same_repo,
+        )
+        sampler_meta["strategy"] = (
+            "spread targets from 0.20 to 0.80 on composite complexity; "
+            "unique repositories preferred"
+        )
+
+        pool_rows = candidate_rows(candidates)
+        for row in pool_rows:
+            row.pop("problem_statement", None)
+        write_csv(output / "candidate_pool.csv", pool_rows)
+
+    selected_rows = [_selection_manifest_row(candidate) for candidate in selected]
+    write_csv(output / "selection.csv", selected_rows)
+    (output / "selection.json").write_text(
+        json.dumps(selected_rows, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    _print_selection(selected)
 
     meta = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "dataset": resolved_dataset,
+        "split": args.split,
+        "difficulty_filter": normalize_difficulty(difficulty or "") if difficulty else None,
+        "selected_instance_ids": [candidate.instance_id for candidate in selected],
+        "sampler": sampler_meta,
+        "experiments_source_pin": EXPERIMENTS_SHA,
         "model": PINNED_MODEL,
         "api_provider": "openrouter",
         "upstream_provider": PINNED_OPENROUTER_UPSTREAM,
-        "quixbugs_repo": QUIX_URL,
-        "quixbugs_commit": QUIX_SHA,
         "ponytail_repo": PONY_REPO,
         "ponytail_commit": PONY_SHA,
         "caveman_commit": CAVE_SHA,
-        "tasks": args.tasks,
-        "arms": arms,
+        "arms": list(ARMS),
         "repeats": args.repeats,
         "seed": args.seed,
-        "randomization": "global shuffle across treatment x task x repeat runs",
+        "randomization": "global shuffle across treatment x selected instance x repeat",
         "confidence_interval": (
-            "two-sided 95% Student-t across task means; "
+            "two-sided 95% Student-t across selected task means; "
             "repeats are averaged within task first"
         ),
+        "official_evaluation": not args.skip_evaluation,
     }
     (output / "metadata.json").write_text(
         json.dumps(meta, indent=2) + "\n",
         encoding="utf-8",
     )
 
-    print("Forge Bench")
+    if args.selection_only:
+        print("\nSelection only; no model calls were made.")
+        print("Manifest:", output / "selection.json")
+        return 0
+
+    _preflight(args)
+
+    home = source_home()
+    config = load_source_config(home)
+
+    arms = list(ARMS)
+    instances = [row_by_id[candidate.instance_id] for candidate in selected]
+    task_ids = [str(instance["instance_id"]) for instance in instances]
+    instance_by_id = {
+        str(instance["instance_id"]): instance for instance in instances
+    }
+
+    plan = [
+        {
+            "arm": arm,
+            "instance_id": instance_id,
+            "repeat": repeat,
+        }
+        for repeat in range(1, args.repeats + 1)
+        for instance_id in task_ids
+        for arm in arms
+    ]
+    random.Random(args.seed).shuffle(plan)
+    for index, item in enumerate(plan, 1):
+        item["run_index"] = index
+    write_csv(output / "run_plan.csv", plan)
+
+    print("\nForge Bench execution")
     print("  model:", PINNED_MODEL)
     print("  OpenRouter upstream:", PINNED_OPENROUTER_UPSTREAM)
     print("  randomized runs:", len(plan), "seed=", args.seed)
+    print("  official grading:", not args.skip_evaluation)
     print("  output:", output)
 
     results: list[Result] = []
@@ -176,32 +399,36 @@ def main() -> int:
 
         for item in plan:
             arm = str(item["arm"])
-            task = str(item["task"])
+            instance_id = str(item["instance_id"])
+            instance = instance_by_id[instance_id]
             repeat = int(item["repeat"])
             run_index = int(item["run_index"])
 
             print(
                 f"[{run_index:02d}/{len(plan):02d}] "
-                f"{LABEL[arm]} / {task} / r{repeat}"
+                f"{LABEL[arm]} / {instance_id} / r{repeat}"
             )
 
             try:
                 result = run_one(
                     args.hermes,
                     profiles[arm],
+                    instance,
+                    resolved_dataset,
                     arm,
-                    task,
                     repeat,
                     run_index,
-                    qsrc,
+                    cache_root,
                     output,
                     args.timeout,
+                    args.evaluation_timeout,
+                    not args.skip_evaluation,
                 )
             except Exception as exc:
                 run_dir = (
                     output
                     / "runs"
-                    / f"{run_index:02d}__{arm}__{task}__r{repeat}"
+                    / f"{run_index:02d}__{arm}__{instance_id}__r{repeat}"
                 )
                 run_dir.mkdir(parents=True, exist_ok=True)
                 (run_dir / "harness_error.txt").write_text(
@@ -210,7 +437,7 @@ def main() -> int:
                 )
                 result = failed_result(
                     arm,
-                    task,
+                    instance,
                     repeat,
                     run_index,
                     run_dir,
@@ -218,8 +445,6 @@ def main() -> int:
                 )
 
             results.append(result)
-
-            # Preserve partial raw evidence if a long benchmark is interrupted.
             (output / "runs.partial.json").write_text(
                 json.dumps(
                     [result.__dict__ for result in results],
@@ -234,26 +459,35 @@ def main() -> int:
                 if result.cost_usd is None
                 else "$" + f"{result.cost_usd:.4f}"
             )
+            status = (
+                "RESOLVED"
+                if result.resolved
+                else "UNRESOLVED"
+                if result.valid
+                else "INVALID"
+            )
             print(
                 "   ",
-                "VALID" if result.valid else "INVALID",
+                status,
                 f"tokens={result.total_tokens:,}",
                 f"cost={cost}",
-                f"time={result.wall_seconds:.1f}s",
+                f"agent={result.wall_seconds:.1f}s",
+                f"eval={result.evaluation_seconds:.1f}s",
                 f"api_calls={result.api_calls}",
             )
 
-    write_reports(output, results, arms, args.tasks, meta)
+    write_reports(output, results, arms, task_ids, meta)
 
     partial = output / "runs.partial.json"
     if partial.exists():
         partial.unlink()
 
-    valid = sum(result.valid for result in results)
-    print(f"\nCompleted: {valid}/{len(results)} valid runs")
+    usable = sum(result.valid for result in results)
+    solved = sum(result.resolved for result in results if result.valid)
+    print(f"\nCompleted: {usable}/{len(results)} usable runs; {solved} resolved")
     print("Report:", output / "report.html")
     print("PNG figures:", output / "*.png")
-    return 0 if valid == len(results) else 1
+    return 0 if usable == len(results) else 1
 
 
 if __name__ == "__main__":
