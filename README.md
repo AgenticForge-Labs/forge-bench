@@ -4,10 +4,12 @@ Forge Bench is a reproducible benchmark harness for comparing AI coding-agent st
 
 The first experiment compares four Hermes Agent treatments on three pinned QuixBugs program-repair tasks:
 
+- Baseline Hermes
 - Caveman only
 - Ponytail only
-- Hermes `execute_code` strategy only
-- Caveman + Ponytail + `execute_code`
+- Caveman + Ponytail
+
+Hermes' native tools, including `execute_code`, remain available normally in every treatment. Forge Bench does not force or suppress native tool selection; the treatments differ only by the added Caveman and/or Ponytail behavior.
 
 ## Reproducibility pins
 
@@ -52,11 +54,6 @@ For repeated stochastic runs:
 uv run forge-bench --repeats 3
 ```
 
-An optional untreated Hermes baseline can also be added:
-
-```bash
-uv run forge-bench --include-baseline
-```
 
 ## Outputs
 
