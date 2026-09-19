@@ -221,6 +221,36 @@ def _preflight(args: argparse.Namespace) -> None:
     if not shutil.which("git"):
         raise SystemExit("git is required")
 
+    # Fail before paid calls if the locally installed Hermes predates features
+    # the benchmark relies on.
+    checks = [
+        (
+            [args.hermes, "--help"],
+            ["--toolsets", "--reasoning", "--usage-file", "--max-turns", "--run-budget"],
+            "Hermes one-shot CLI",
+        ),
+        (
+            [args.hermes, "plugins", "install", "--help"],
+            ["--ref", "--enable"],
+            "Hermes plugin installer",
+        ),
+        (
+            [args.hermes, "skills", "install", "--help"],
+            ["--name", "--force", "--yes"],
+            "Hermes skill installer",
+        ),
+    ]
+    for argv, required, label in checks:
+        probe = sh(argv, timeout=30)
+        help_text = (probe.stdout or "") + "\n" + (probe.stderr or "")
+        missing = [flag for flag in required if flag not in help_text]
+        if probe.returncode not in (0, 1) or missing:
+            detail = ", ".join(missing) if missing else f"exit {probe.returncode}"
+            raise SystemExit(
+                f"{label} is incompatible with Forge Bench ({detail}). "
+                "Update Hermes before running the paid benchmark."
+            )
+
     if not args.skip_evaluation:
         if not shutil.which("docker"):
             raise SystemExit(
