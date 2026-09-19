@@ -49,18 +49,30 @@ DEFAULT_SUITE = [
     },
 ]
 
+LEAN_TOOLSETS = "file,terminal,skills,code_execution"
+
+# Full 2 x 2 x 2 factorial:
+# (Caveman, Ponytail, lean toolset)
 ARMS = {
-    "baseline": (False, False),
-    "caveman": (True, False),
-    "ponytail": (False, True),
-    "caveman_ponytail": (True, True),
+    "baseline": (False, False, False),
+    "lean_tools": (False, False, True),
+    "caveman": (True, False, False),
+    "caveman_lean": (True, False, True),
+    "ponytail": (False, True, False),
+    "ponytail_lean": (False, True, True),
+    "caveman_ponytail": (True, True, False),
+    "all_three": (True, True, True),
 }
 
 LABEL = {
     "baseline": "Baseline Hermes",
+    "lean_tools": "Lean tools",
     "caveman": "Caveman",
+    "caveman_lean": "Caveman + Lean",
     "ponytail": "Ponytail",
+    "ponytail_lean": "Ponytail + Lean",
     "caveman_ponytail": "Caveman + Ponytail",
+    "all_three": "Caveman + Ponytail + Lean",
 }
 
 METRICS = {
