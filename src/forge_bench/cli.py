@@ -402,11 +402,7 @@ def main() -> int:
         "ponytail_commit": PONY_SHA,
         "caveman_commit": CAVE_SHA,
         "arms": list(ARMS),
-        "factorial_design": {
-            "caveman": "off/on",
-            "ponytail": "off/on",
-            "lean_tools": "off/on",
-        },
+        "treatment_design": "baseline; each approach alone; all three together",
         "default_toolsets": DEFAULT_TOOLSETS,
         "lean_toolsets": LEAN_TOOLSETS,
         "repeats": args.repeats,
