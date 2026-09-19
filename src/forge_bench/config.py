@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 PINNED_MODEL = "deepseek/deepseek-v4-flash-0731"
-PINNED_OPENROUTER_UPSTREAM = "baidu"
+PINNED_OPENROUTER_UPSTREAM = "relace"
 
 QUIX_URL = "https://github.com/jkoppel/QuixBugs.git"
 QUIX_SHA = "4257f44b0ff1181dedaedee6a447e133219fcebf"
