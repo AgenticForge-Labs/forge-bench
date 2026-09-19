@@ -15,17 +15,96 @@ jobs:
       - run: uv run python -m compileall -q src
       - run: |
           uv run python - <<'PY'
-          from forge_bench.config import ARMS, DEFAULT_TOOLSETS, LEAN_TOOLSETS
+          import json
+          import subprocess
+          import tempfile
+          from importlib.metadata import version
+          from pathlib import Path
+
+          import yaml
+
+          from forge_bench.config import (
+              ARMS,
+              DEFAULT_TOOLSETS,
+              LEAN_TOOLSETS,
+              PINNED_MAX_TURNS,
+              PINNED_REASONING,
+          )
+          from forge_bench.harness import (
+              diff_stats,
+              docker_hermes_argv,
+              load_swebench_report,
+              make_profile,
+          )
           from forge_bench.reporting import ci95
           from forge_bench.swebench_backend import Candidate, patch_features, select_spread
 
           assert len(ARMS) == 5
           assert DEFAULT_TOOLSETS == "hermes-cli"
           assert LEAN_TOOLSETS == "file,terminal,skills,code_execution"
+          assert PINNED_REASONING == "none"
+          assert PINNED_MAX_TURNS == 50
+          assert version("swebench") == "4.1.0"
 
           m, lo, hi, n = ci95([1, 2, 3])
           assert n == 3 and lo <= m <= hi
 
+          # Fresh profile contains only benchmark config/credentials, opts out
+          # of bundled skill seeding, and pins the tool-loop budget.
+          with tempfile.TemporaryDirectory() as td:
+              root = Path(td)
+              src = root / "src"
+              dst = root / "dst"
+              src.mkdir()
+              (src / ".env").write_text("OPENROUTER_API_KEY=test-only\n")
+              make_profile(src, dst)
+              cfg = yaml.safe_load((dst / "config.yaml").read_text())
+              assert cfg["agent"]["max_turns"] == 50
+              assert (dst / ".no-bundled-skills").is_file()
+              assert (dst / ".env").is_file()
+
+              argv = docker_hermes_argv(
+                  "sha256:test",
+                  dst,
+                  ["-z", "hello"],
+                  workspace=src,
+              )
+              assert argv[:4] == ["docker", "run", "--rm", "--pull=never"]
+              assert "sha256:test" in argv
+              assert "/opt/data" in " ".join(argv)
+              assert "/workspace" in " ".join(argv)
+
+          # Patch capture must include both committed changes and untracked files.
+          with tempfile.TemporaryDirectory() as td:
+              repo = Path(td)
+              subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+              subprocess.run(["git", "config", "user.email", "ci@example.test"], cwd=repo, check=True)
+              subprocess.run(["git", "config", "user.name", "CI"], cwd=repo, check=True)
+              (repo / "a.txt").write_text("base\n")
+              subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
+              subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+              base = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+              (repo / "a.txt").write_text("committed change\n")
+              subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
+              subprocess.run(["git", "commit", "-qm", "agent commit"], cwd=repo, check=True)
+              (repo / "new.txt").write_text("untracked\n")
+              files, lines, patch = diff_stats(repo, base)
+              assert files == 2
+              assert lines >= 2
+              assert "a.txt" in patch and "new.txt" in patch
+
+          # Support the SWE-bench 4.1 report location and newer location.
+          with tempfile.TemporaryDirectory() as td:
+              root = Path(td)
+              run_id = "run1"
+              old_report = root / f"forge-bench.{run_id}.json"
+              old_report.write_text(json.dumps({"resolved_ids": ["x"]}))
+              assert load_swebench_report(root, "forge-bench", run_id)["resolved_ids"] == ["x"]
+              old_report.unlink()
+              new_report = root / "logs" / "evaluation" / run_id / "results.json"
+              new_report.parent.mkdir(parents=True)
+              new_report.write_text(json.dumps({"resolved_ids": []}))
+              assert load_swebench_report(root, "forge-bench", run_id)["resolved_ids"] == []
 
           f = patch_features("""diff --git a/a.py b/a.py
           --- a/a.py
