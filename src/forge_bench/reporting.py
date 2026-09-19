@@ -39,6 +39,26 @@ def ci95(values: Iterable[float]) -> tuple[float, float, float, int]:
     return center, max(0.0, center - half), center + half, n
 
 
+def ci95_signed(values: Iterable[float]) -> tuple[float, float, float, int]:
+    vals = [
+        float(value)
+        for value in values
+        if value is not None and math.isfinite(float(value))
+    ]
+    n = len(vals)
+    if not vals:
+        return math.nan, math.nan, math.nan, 0
+
+    center = statistics.mean(vals)
+    if n < 2:
+        return center, center, center, n
+
+    sem = statistics.stdev(vals) / math.sqrt(n)
+    critical = T975.get(n - 1, 1.959964)
+    half = critical * sem
+    return center, center - half, center + half, n
+
+
 def task_summary(
     results: list[Result],
     arms: list[str],
@@ -331,18 +351,18 @@ def factorial_effects(
                 if off_mean != 0:
                     percents.append(100.0 * delta / off_mean)
 
-            d_mean, d_low, d_high, d_n = ci95(deltas)
-            p_mean, p_low, p_high, p_n = ci95(percents)
+            d_mean, d_low, d_high, d_n = ci95_signed(deltas)
+            p_mean, p_low, p_high, p_n = ci95_signed(percents)
             rows.append(
                 {
                     "factor": factor_name,
                     "metric": metric,
                     "mean_delta_on_minus_off": d_mean,
-                    "ci95_low_delta": d_low if d_mean >= 0 else -d_high,
-                    "ci95_high_delta": d_high if d_mean >= 0 else -d_low,
+                    "ci95_low_delta": d_low,
+                    "ci95_high_delta": d_high,
                     "mean_percent_on_minus_off": p_mean,
-                    "ci95_low_percent": p_low if p_mean >= 0 else -p_high,
-                    "ci95_high_percent": p_high if p_mean >= 0 else -p_low,
+                    "ci95_low_percent": p_low,
+                    "ci95_high_percent": p_high,
                     "n_tasks": min(d_n, p_n) if percents else d_n,
                 }
             )
