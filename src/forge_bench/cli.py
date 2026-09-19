@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import random
 import shutil
 import tempfile
@@ -18,6 +17,7 @@ from .config import (
     DEFAULT_DIFFICULTY,
     DEFAULT_SAMPLE_SIZE,
     DEFAULT_SEED,
+    DEFAULT_SUITE,
     LABEL,
     PINNED_MODEL,
     PINNED_OPENROUTER_UPSTREAM,
@@ -47,47 +47,50 @@ from .swebench_backend import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Benchmark Hermes token-saving strategies on sampled SWE-bench tasks."
-        )
+        description="Benchmark Hermes token-saving strategies on SWE-bench tasks."
     )
     parser.add_argument(
         "--dataset",
         default=DEFAULT_DATASET,
-        help=(
-            "SWE-bench dataset alias (verified, lite, full) or Hugging Face dataset id. "
-            "Default: verified."
-        ),
+        help="Alias (verified, lite, full) or Hugging Face SWE-bench dataset id.",
     )
     parser.add_argument("--split", default="test")
     parser.add_argument(
         "--difficulty",
         default="auto",
         help=(
-            "Difficulty filter. For Verified, aliases easy/medium/hard/expert are accepted. "
-            "Default 'auto' means medium for Verified and no filter otherwise."
+            "Difficulty filter. Verified accepts easy/medium/hard/expert. "
+            "auto = medium for Verified, unfiltered otherwise."
         ),
     )
     parser.add_argument("--sample-size", type=int, default=DEFAULT_SAMPLE_SIZE)
     parser.add_argument(
+        "--smart-sample",
+        action="store_true",
+        help=(
+            "Re-run the low/mid/high smart sampler instead of using the frozen "
+            "initial three-task default suite."
+        ),
+    )
+    parser.add_argument(
         "--instance-ids",
         nargs="+",
-        help="Explicit SWE-bench instance IDs; overrides smart sampling.",
+        help="Explicit SWE-bench instance IDs; overrides default and smart sampling.",
     )
     parser.add_argument(
         "--selection-only",
         action="store_true",
-        help="Choose and save instances without running Hermes or Docker evaluation.",
+        help="Save/print selected instances without model calls or Docker grading.",
     )
     parser.add_argument(
         "--no-history",
         action="store_true",
-        help="Do not use official historical Verified leaderboard results in sampling.",
+        help="Disable historical Verified solve-rate signal during smart sampling.",
     )
     parser.add_argument(
         "--allow-same-repo",
         action="store_true",
-        help="Allow multiple sampled tasks from the same repository.",
+        help="Allow multiple smart-sampled tasks from the same repository.",
     )
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
@@ -106,12 +109,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-evaluation",
         action="store_true",
-        help="Generate patches and efficiency data without Docker grading.",
+        help="Generate patches/efficiency data without official Docker grading.",
     )
-    parser.add_argument(
-        "--hermes",
-        default=shutil.which("hermes") or "hermes",
-    )
+    parser.add_argument("--hermes", default=shutil.which("hermes") or "hermes")
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--cache",
@@ -167,10 +167,17 @@ def failed_result(
     )
 
 
-def _difficulty_filter(args: argparse.Namespace, resolved_dataset: str) -> str | None:
+def _difficulty_filter(
+    args: argparse.Namespace,
+    resolved_dataset: str,
+) -> str | None:
     value = str(args.difficulty or "").strip()
     if value.lower() == "auto":
-        return DEFAULT_DIFFICULTY if resolved_dataset.endswith("SWE-bench_Verified") else None
+        return (
+            DEFAULT_DIFFICULTY
+            if resolved_dataset.endswith("SWE-bench_Verified")
+            else None
+        )
     if value.lower() in {"none", "all", "*", ""}:
         return None
     return value
@@ -224,6 +231,72 @@ def _preflight(args: argparse.Namespace) -> None:
             )
 
 
+def _use_frozen_default(
+    args: argparse.Namespace,
+    resolved_dataset: str,
+    difficulty: str | None,
+) -> bool:
+    return (
+        not args.instance_ids
+        and not args.smart_sample
+        and resolved_dataset.endswith("SWE-bench_Verified")
+        and normalize_difficulty(difficulty or "") == DEFAULT_DIFFICULTY
+        and args.sample_size == len(DEFAULT_SUITE)
+    )
+
+
+def _frozen_candidates(
+    row_by_id: dict[str, dict[str, Any]],
+    cache_root: Path,
+) -> tuple[list[Any], dict[str, Any]]:
+    ids = [entry["instance_id"] for entry in DEFAULT_SUITE]
+    missing = [instance_id for instance_id in ids if instance_id not in row_by_id]
+    if missing:
+        raise SystemExit(
+            "Frozen default instance IDs are missing from the selected dataset: "
+            + ", ".join(missing)
+        )
+
+    # Build normal Candidate objects from the current pinned dataset contents,
+    # but do not rescan historical submissions. Then restore the selection
+    # statistics recorded when the suite was frozen.
+    candidates, _ = build_candidates(
+        [row_by_id[instance_id] for instance_id in ids],
+        difficulty=None,
+        cache_root=cache_root,
+        use_history=False,
+    )
+    by_id = {candidate.instance_id: candidate for candidate in candidates}
+
+    selected = []
+    for entry in DEFAULT_SUITE:
+        candidate = by_id[entry["instance_id"]]
+        candidate.selection_rank = str(entry["selection_rank"])
+        candidate.selection_target = {
+            "low": 0.20,
+            "mid": 0.50,
+            "high": 0.80,
+        }.get(candidate.selection_rank)
+        candidate.complexity_score = float(entry["complexity_score"])
+        candidate.historical_solve_rate = float(entry["historical_solve_rate"])
+        candidate.patch_changed_lines = int(entry["patch_changed_lines"])
+        candidate.patch_files = int(entry["patch_files"])
+        selected.append(candidate)
+
+    meta = {
+        "strategy": "frozen initial suite selected once by smart sampler",
+        "frozen_on": "2026-09-19",
+        "source_difficulty": "medium",
+        "source_experiments_commit": EXPERIMENTS_SHA,
+        "selection_targets": [0.20, 0.50, 0.80],
+        "note": (
+            "Use --smart-sample to select a new spread from the current "
+            "candidate pool."
+        ),
+    }
+    return selected, meta
+
+
 def main() -> int:
     args = parse_args()
 
@@ -265,8 +338,6 @@ def main() -> int:
                 "Unknown instance IDs for selected dataset: " + ", ".join(missing)
             )
 
-        # Still calculate objective features/history for the manifest, but do not
-        # let the requested difficulty filter remove explicit user selections.
         candidates, sampler_meta = build_candidates(
             [row_by_id[instance_id] for instance_id in args.instance_ids],
             difficulty=None,
@@ -275,18 +346,14 @@ def main() -> int:
         )
         by_id = {candidate.instance_id: candidate for candidate in candidates}
         selected = [by_id[instance_id] for instance_id in args.instance_ids]
-        if len(selected) == 3:
-            for label, target, candidate in zip(
-                ("low", "mid", "high"),
-                (0.2, 0.5, 0.8),
-                selected,
-            ):
-                candidate.selection_rank = label
-                candidate.selection_target = target
-        else:
-            for index, candidate in enumerate(selected, 1):
-                candidate.selection_rank = f"explicit-{index}"
+        for index, candidate in enumerate(selected, 1):
+            candidate.selection_rank = f"explicit-{index}"
         sampler_meta["strategy"] = "explicit instance ids"
+
+    elif _use_frozen_default(args, resolved_dataset, difficulty):
+        selected, sampler_meta = _frozen_candidates(row_by_id, cache_root)
+        print("  selection: frozen initial suite")
+
     else:
         candidates, sampler_meta = build_candidates(
             rows,
@@ -300,7 +367,7 @@ def main() -> int:
             diverse_repos=not args.allow_same_repo,
         )
         sampler_meta["strategy"] = (
-            "spread targets from 0.20 to 0.80 on composite complexity; "
+            "smart spread from 0.20 to 0.80 on composite complexity; "
             "unique repositories preferred"
         )
 
@@ -322,7 +389,9 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "dataset": resolved_dataset,
         "split": args.split,
-        "difficulty_filter": normalize_difficulty(difficulty or "") if difficulty else None,
+        "difficulty_filter": (
+            normalize_difficulty(difficulty or "") if difficulty else None
+        ),
         "selected_instance_ids": [candidate.instance_id for candidate in selected],
         "sampler": sampler_meta,
         "experiments_source_pin": EXPERIMENTS_SHA,
@@ -335,7 +404,9 @@ def main() -> int:
         "arms": list(ARMS),
         "repeats": args.repeats,
         "seed": args.seed,
-        "randomization": "global shuffle across treatment x selected instance x repeat",
+        "randomization": (
+            "global shuffle across treatment x selected instance x repeat"
+        ),
         "confidence_interval": (
             "two-sided 95% Student-t across selected task means; "
             "repeats are averaged within task first"
@@ -365,11 +436,7 @@ def main() -> int:
     }
 
     plan = [
-        {
-            "arm": arm,
-            "instance_id": instance_id,
-            "repeat": repeat,
-        }
+        {"arm": arm, "instance_id": instance_id, "repeat": repeat}
         for repeat in range(1, args.repeats + 1)
         for instance_id in task_ids
         for arm in arms
@@ -436,12 +503,7 @@ def main() -> int:
                     encoding="utf-8",
                 )
                 result = failed_result(
-                    arm,
-                    instance,
-                    repeat,
-                    run_index,
-                    run_dir,
-                    exc,
+                    arm, instance, repeat, run_index, run_dir, exc
                 )
 
             results.append(result)
