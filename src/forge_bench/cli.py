@@ -15,14 +15,17 @@ from .config import (
     CAVE_SHA,
     DEFAULT_DATASET,
     DEFAULT_DIFFICULTY,
+    DEFAULT_HISTORICAL_SUBMISSIONS,
     DEFAULT_SAMPLE_SIZE,
     DEFAULT_SEED,
     DEFAULT_TOOLSETS,
     DEFAULT_SUITE,
     LABEL,
     LEAN_TOOLSETS,
+    PINNED_MAX_TURNS,
     PINNED_MODEL,
     PINNED_OPENROUTER_UPSTREAM,
+    PINNED_REASONING,
     PONY_REPO,
     PONY_SHA,
     Result,
@@ -278,6 +281,7 @@ def _frozen_candidates(
         candidate.patch_scope_percentile = float(entry["patch_scope_percentile"])
         candidate.complexity_score = candidate.patch_scope_percentile
         candidate.historical_solve_rate = float(entry["historical_solve_rate"])
+        candidate.historical_submissions = DEFAULT_HISTORICAL_SUBMISSIONS
         candidate.patch_changed_lines = int(entry["patch_changed_lines"])
         candidate.patch_files = int(entry["patch_files"])
         selected.append(candidate)
@@ -398,6 +402,9 @@ def main() -> int:
         "model": PINNED_MODEL,
         "api_provider": "openrouter",
         "upstream_provider": PINNED_OPENROUTER_UPSTREAM,
+        "reasoning": PINNED_REASONING,
+        "max_turns": PINNED_MAX_TURNS,
+        "swebench_version": "4.1.0",
         "ponytail_repo": PONY_REPO,
         "ponytail_commit": PONY_SHA,
         "caveman_commit": CAVE_SHA,
@@ -459,13 +466,22 @@ def main() -> int:
     results: list[Result] = []
 
     with tempfile.TemporaryDirectory(prefix="forge-bench-") as tempdir:
-        profiles: dict[str, Path] = {}
+        root = Path(tempdir)
+        templates: dict[str, Path] = {}
 
+        # Install treatment additions once per arm, then clone the resulting
+        # profile for every individual run. This prevents state.db, memory,
+        # Ponytail state, or any other session artifact from leaking between
+        # tasks or repeats.
         for arm in arms:
-            profile = Path(tempdir) / "profiles" / arm
-            make_profile(home, config, profile)
-            install_arm(args.hermes, profile, arm)
-            profiles[arm] = profile
+            template = root / "templates" / arm
+            make_profile(home, config, template)
+            install_arm(args.hermes, template, arm)
+            for state_name in ("state.db", "state.db-shm", "state.db-wal"):
+                state = template / state_name
+                if state.exists():
+                    state.unlink()
+            templates[arm] = template
 
         for item in plan:
             arm = str(item["arm"])
@@ -479,10 +495,14 @@ def main() -> int:
                 f"{LABEL[arm]} / {instance_id} / r{repeat}"
             )
 
+            run_profile = root / "run-profiles" / f"{run_index:02d}__{arm}"
+            run_profile.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(templates[arm], run_profile, symlinks=True)
+
             try:
                 result = run_one(
                     args.hermes,
-                    profiles[arm],
+                    run_profile,
                     instance,
                     resolved_dataset,
                     arm,
@@ -508,6 +528,8 @@ def main() -> int:
                 result = failed_result(
                     arm, instance, repeat, run_index, run_dir, exc
                 )
+            finally:
+                shutil.rmtree(run_profile, ignore_errors=True)
 
             results.append(result)
             (output / "runs.partial.json").write_text(
