@@ -381,7 +381,8 @@ def evaluate_patch(
     (eval_dir / "stderr.txt").write_text(proc.stderr, encoding="utf-8")
 
     report = None
-    for path in sorted(eval_dir.glob("*.json")):
+    report_root = eval_dir / "logs" / "evaluation" / run_id
+    for path in sorted(report_root.rglob("results.json")):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
