@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 PINNED_MODEL = "deepseek/deepseek-v4-flash-0731"
 PINNED_OPENROUTER_UPSTREAM = "relace"
+PINNED_REASONING = "low"
+PINNED_MAX_TURNS = 50
 
 PONY_REPO = "DietrichGebert/ponytail"
 PONY_SHA = "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156"
@@ -19,6 +21,7 @@ DEFAULT_DATASET = "verified"
 DEFAULT_DIFFICULTY = "medium"
 DEFAULT_SAMPLE_SIZE = 3
 DEFAULT_SEED = 260919
+DEFAULT_HISTORICAL_SUBMISSIONS = 135
 
 # Frozen initial suite, selected once by the smart sampler from SWE-bench
 # Verified's official 15 min - 1 hour bucket on 2026-09-19.
