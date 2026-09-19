@@ -42,6 +42,7 @@ from .swebench_backend import (
     EXPERIMENTS_SHA,
     build_candidates,
     candidate_rows,
+    dataset_revision,
     load_rows,
     normalize_difficulty,
     resolve_dataset_name,
@@ -468,6 +469,7 @@ def main() -> int:
     meta = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "dataset": resolved_dataset,
+        "dataset_revision": dataset_revision(resolved_dataset),
         "split": args.split,
         "difficulty_filter": (
             normalize_difficulty(difficulty or "") if difficulty else None
