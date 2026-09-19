@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run python -m compileall -q src
+      - run: uv run python -c "from forge_bench.reporting import ci95; m,lo,hi,n=ci95([1,2,3]); assert n==3 and lo <= m <= hi"
+      - run: uv run forge-bench --help
