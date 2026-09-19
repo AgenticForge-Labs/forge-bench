@@ -15,6 +15,7 @@ import yaml
 from .config import (
     ARMS,
     CAVE_URL,
+    DEFAULT_TOOLSETS,
     LEAN_TOOLSETS,
     PINNED_MODEL,
     PINNED_OPENROUTER_UPSTREAM,
@@ -80,8 +81,21 @@ def make_profile(src: Path, config: dict[str, Any], dst: Path) -> None:
     terminal = cfg.get("terminal") if isinstance(cfg.get("terminal"), dict) else {}
     cfg["terminal"] = {**terminal, "cwd": "."}
 
-    for key in ("fallback_model", "fallback_providers", "smart_model_routing", "moa"):
+    for key in (
+        "fallback_model",
+        "fallback_providers",
+        "smart_model_routing",
+        "moa",
+        "mcp_servers",
+    ):
         cfg.pop(key, None)
+
+    # The benchmark pins toolsets per invocation. Remove user-level global
+    # suppressions so "default" means the Hermes hermes-cli preset rather than
+    # whatever happens to be disabled in the user's normal profile.
+    agent_cfg = cfg.get("agent") if isinstance(cfg.get("agent"), dict) else {}
+    agent_cfg.pop("disabled_toolsets", None)
+    cfg["agent"] = agent_cfg
 
     cfg["provider_routing"] = {
         "only": [PINNED_OPENROUTER_UPSTREAM],
@@ -442,8 +456,10 @@ def run_one(
         "-z",
         prompt,
     ]
-    if lean:
-        argv.extend(["--toolsets", LEAN_TOOLSETS])
+    argv.extend([
+        "--toolsets",
+        LEAN_TOOLSETS if lean else DEFAULT_TOOLSETS,
+    ])
     argv.extend([
         "--provider",
         "openrouter",
