@@ -273,7 +273,8 @@ def _frozen_candidates(
         candidate = by_id[entry["instance_id"]]
         candidate.selection_rank = str(entry["selection_rank"])
         candidate.selection_target = None
-        candidate.complexity_score = float(entry["complexity_score"])
+        candidate.patch_scope_percentile = float(entry["patch_scope_percentile"])
+        candidate.complexity_score = candidate.patch_scope_percentile
         candidate.historical_solve_rate = float(entry["historical_solve_rate"])
         candidate.patch_changed_lines = int(entry["patch_changed_lines"])
         candidate.patch_files = int(entry["patch_files"])
