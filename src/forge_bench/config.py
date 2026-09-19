@@ -26,7 +26,7 @@ DEFAULT_SUITE = [
     {
         "instance_id": "django__django-13516",
         "selection_rank": "low-1",
-        "complexity_score": 0.285,
+        "patch_scope_percentile": 0.285,
         "historical_solve_rate": 0.844,
         "patch_changed_lines": 4,
         "patch_files": 1,
@@ -34,7 +34,7 @@ DEFAULT_SUITE = [
     {
         "instance_id": "pytest-dev__pytest-7571",
         "selection_rank": "low-2",
-        "complexity_score": 0.362,
+        "patch_scope_percentile": 0.362,
         "historical_solve_rate": 0.793,
         "patch_changed_lines": 4,
         "patch_files": 1,
@@ -42,7 +42,7 @@ DEFAULT_SUITE = [
     {
         "instance_id": "sympy__sympy-20154",
         "selection_rank": "low-3",
-        "complexity_score": 0.714,
+        "patch_scope_percentile": 0.714,
         "historical_solve_rate": 0.785,
         "patch_changed_lines": 23,
         "patch_files": 1,
