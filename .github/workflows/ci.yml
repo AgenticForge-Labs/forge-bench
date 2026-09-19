@@ -15,11 +15,19 @@ jobs:
       - run: uv run python -m compileall -q src
       - run: |
           uv run python - <<'PY'
-          from forge_bench.reporting import ci95
+          from forge_bench.config import ARMS, DEFAULT_TOOLSETS, LEAN_TOOLSETS
+          from forge_bench.reporting import ci95, ci95_signed
           from forge_bench.swebench_backend import Candidate, patch_features, select_spread
+
+          assert len(ARMS) == 8
+          assert DEFAULT_TOOLSETS == "hermes-cli"
+          assert LEAN_TOOLSETS == "file,terminal,skills,code_execution"
 
           m, lo, hi, n = ci95([1, 2, 3])
           assert n == 3 and lo <= m <= hi
+
+          m, lo, hi, n = ci95_signed([-3, -2, -1])
+          assert n == 3 and lo < m < hi and m < 0
 
           f = patch_features("""diff --git a/a.py b/a.py
           --- a/a.py
