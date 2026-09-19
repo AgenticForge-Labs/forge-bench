@@ -17,8 +17,10 @@ from .config import (
     CAVE_URL,
     DEFAULT_TOOLSETS,
     LEAN_TOOLSETS,
+    PINNED_MAX_TURNS,
     PINNED_MODEL,
     PINNED_OPENROUTER_UPSTREAM,
+    PINNED_REASONING,
     PONY_REPO,
     PONY_SHA,
     Result,
@@ -71,54 +73,35 @@ def load_source_config(home: Path) -> dict[str, Any]:
 
 
 def make_profile(src: Path, config: dict[str, Any], dst: Path) -> None:
-    """Clone credentials while making model/provider behavior deterministic."""
+    """Create a minimal benchmark profile while copying only credentials."""
     dst.mkdir(parents=True, exist_ok=True)
-    cfg = json.loads(json.dumps(config))
 
-    plugins = cfg.get("plugins") if isinstance(cfg.get("plugins"), dict) else {}
-    cfg["plugins"] = {**plugins, "enabled": [], "disabled": []}
-
-    terminal = cfg.get("terminal") if isinstance(cfg.get("terminal"), dict) else {}
-    cfg["terminal"] = {**terminal, "cwd": "."}
-
-    for key in (
-        "fallback_model",
-        "fallback_providers",
-        "smart_model_routing",
-        "moa",
-        "mcp_servers",
-    ):
-        cfg.pop(key, None)
-
-    # The benchmark pins toolsets per invocation. Remove user-level global
-    # suppressions so "default" means the Hermes hermes-cli preset rather than
-    # whatever happens to be disabled in the user's normal profile.
-    agent_cfg = cfg.get("agent") if isinstance(cfg.get("agent"), dict) else {}
-    agent_cfg.pop("disabled_toolsets", None)
-    cfg["agent"] = agent_cfg
-
-    cfg["provider_routing"] = {
-        "only": [PINNED_OPENROUTER_UPSTREAM],
-        "require_parameters": True,
-        "models": {
-            PINNED_MODEL: {
-                "only": [PINNED_OPENROUTER_UPSTREAM],
-                "require_parameters": True,
+    # Deliberately do not inherit personalities, hooks, memory settings, tool
+    # preferences, reasoning overrides, or other user config. Model/provider,
+    # reasoning, toolsets, and turn budget are pinned by the harness.
+    _ = config
+    cfg: dict[str, Any] = {
+        "plugins": {"enabled": [], "disabled": []},
+        "provider_routing": {
+            "only": [PINNED_OPENROUTER_UPSTREAM],
+            "require_parameters": True,
+            "models": {
+                PINNED_MODEL: {
+                    "only": [PINNED_OPENROUTER_UPSTREAM],
+                    "require_parameters": True,
+                }
+            },
+        },
+        "compression": {"enabled": False},
+        "auxiliary": {
+            "title_generation": {
+                "enabled": False,
+                "model_upgrade_enabled": False,
+                "provider": "auto",
+                "model": "",
             }
         },
     }
-
-    # Avoid auxiliary model calls changing the treatment totals. The selected
-    # SWE-bench tasks are short enough that compression should not be necessary.
-    cfg["compression"] = {"enabled": False}
-    auxiliary = cfg.get("auxiliary") if isinstance(cfg.get("auxiliary"), dict) else {}
-    auxiliary["title_generation"] = {
-        "enabled": False,
-        "model_upgrade_enabled": False,
-        "provider": "auto",
-        "model": "",
-    }
-    cfg["auxiliary"] = auxiliary
 
     (dst / "config.yaml").write_text(
         yaml.safe_dump(cfg, sort_keys=False),
@@ -132,8 +115,15 @@ def make_profile(src: Path, config: dict[str, Any], dst: Path) -> None:
 
 def profile_env(profile: Path) -> dict[str, str]:
     env = os.environ.copy()
+    for key in list(env):
+        if key.startswith("HERMES_") or key.startswith("PONYTAIL_"):
+            env.pop(key, None)
+
+    xdg = profile / "xdg-config"
+    xdg.mkdir(parents=True, exist_ok=True)
     env["HERMES_HOME"] = str(profile)
     env["HERMES_ENABLE_PROJECT_PLUGINS"] = "0"
+    env["XDG_CONFIG_HOME"] = str(xdg)
     return env
 
 
@@ -325,9 +315,41 @@ def session_db_values(profile: Path, session_id: str) -> dict[str, Any]:
         return {}
 
 
-def diff_stats(workspace: Path) -> tuple[int, int, str]:
-    patch = sh(["git", "diff", "--binary"], cwd=workspace).stdout
-    numstat = sh(["git", "diff", "--numstat"], cwd=workspace).stdout.splitlines()
+def diff_stats(workspace: Path, base_commit: str) -> tuple[int, int, str]:
+    """Capture the full working tree relative to base without touching its real index.
+
+    A temporary index makes committed changes, staged changes, deletions, and
+    untracked non-ignored files all appear in the model patch.
+    """
+    index_path = workspace.parent / ".forge-bench-index"
+    if index_path.exists():
+        index_path.unlink()
+
+    env = os.environ.copy()
+    env["GIT_INDEX_FILE"] = str(index_path)
+
+    try:
+        sh(["git", "read-tree", base_commit], cwd=workspace, env=env, check=True)
+        sh(["git", "add", "-A", "--", "."], cwd=workspace, env=env, check=True)
+
+        patch_proc = sh(
+            ["git", "diff", "--cached", "--binary", base_commit],
+            cwd=workspace,
+            env=env,
+            check=True,
+        )
+        numstat_proc = sh(
+            ["git", "diff", "--cached", "--numstat", base_commit],
+            cwd=workspace,
+            env=env,
+            check=True,
+        )
+        patch = patch_proc.stdout
+        numstat = numstat_proc.stdout.splitlines()
+    finally:
+        if index_path.exists():
+            index_path.unlink()
+
     changed = len(numstat)
     diff_lines = 0
     for line in numstat:
@@ -351,11 +373,12 @@ def evaluate_patch(
     eval_dir = run_dir / "evaluation"
     eval_dir.mkdir(parents=True, exist_ok=True)
     prediction = eval_dir / "prediction.jsonl"
+    model_name = "forge-bench"
     prediction.write_text(
         json.dumps(
             {
                 "instance_id": instance_id,
-                "model_name_or_path": "forge-bench",
+                "model_name_or_path": model_name,
                 "model_patch": patch,
             }
         )
@@ -378,6 +401,8 @@ def evaluate_patch(
         run_id,
         "--instance_ids",
         instance_id,
+        # Forge Bench pins swebench 4.1.0. Keeping the instance image lets the
+        # remaining treatment arms reuse it instead of rebuilding the same task.
         "--cache_level",
         "instance",
     ]
@@ -395,9 +420,18 @@ def evaluate_patch(
     (eval_dir / "stdout.txt").write_text(proc.stdout, encoding="utf-8")
     (eval_dir / "stderr.txt").write_text(proc.stderr, encoding="utf-8")
 
-    report = None
-    report_root = eval_dir / "logs" / "evaluation" / run_id
-    for path in sorted(report_root.rglob("results.json")):
+    # SWE-bench 4.1 writes <model>.<run_id>.json in CWD. Newer releases write
+    # logs/evaluation/<run_id>/results.json. Read either shape so the evidence
+    # remains understandable if the evaluator is upgraded later.
+    report_paths = [
+        eval_dir / f"{model_name}.{run_id}.json",
+        eval_dir / "logs" / "evaluation" / run_id / "results.json",
+    ]
+
+    report: dict[str, Any] | None = None
+    for path in report_paths:
+        if not path.is_file():
+            continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
@@ -407,10 +441,28 @@ def evaluate_patch(
             break
 
     if report is None:
-        return False, False, elapsed, "evaluation report not found"
+        detail = f"evaluator exit {proc.returncode}"
+        if proc.stderr.strip():
+            detail += ": " + proc.stderr.strip().splitlines()[-1][:300]
+        return False, False, elapsed, "evaluation report not found; " + detail
 
-    resolved = instance_id in set(report.get("resolved_ids") or [])
-    return True, resolved, elapsed, ""
+    error_ids = set(report.get("error_ids") or [])
+    if instance_id in error_ids:
+        return False, False, elapsed, "SWE-bench evaluator reported an infrastructure/test error"
+
+    resolved_ids = set(report.get("resolved_ids") or [])
+    unresolved_ids = set(report.get("unresolved_ids") or [])
+    completed_ids = set(report.get("completed_ids") or [])
+
+    completed = (
+        instance_id in completed_ids
+        or instance_id in resolved_ids
+        or instance_id in unresolved_ids
+    )
+    if not completed:
+        return False, False, elapsed, "SWE-bench evaluation did not complete for instance"
+
+    return True, instance_id in resolved_ids, elapsed, ""
 
 
 def run_one(
@@ -465,6 +517,12 @@ def run_one(
         "openrouter",
         "--model",
         PINNED_MODEL,
+        "--reasoning",
+        PINNED_REASONING,
+        "--max-turns",
+        str(PINNED_MAX_TURNS),
+        "--run-budget",
+        str(max(5, timeout - 30)),
         "--usage-file",
         str(usage_file),
     ])
@@ -517,7 +575,10 @@ def run_one(
     (run_dir / "stdout.txt").write_text(proc.stdout, encoding="utf-8")
     (run_dir / "stderr.txt").write_text(proc.stderr, encoding="utf-8")
 
-    files_changed, diff_lines, patch = diff_stats(workspace)
+    files_changed, diff_lines, patch = diff_stats(
+        workspace,
+        str(instance["base_commit"]),
+    )
     (run_dir / "model.patch").write_text(patch, encoding="utf-8")
     patch_nonempty = bool(patch.strip())
 
