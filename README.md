@@ -10,7 +10,7 @@ The initial experiment compares each token-saving approach by itself, plus all t
 - Lean tools only
 - Caveman + Ponytail + Lean
 
-For the lean-tools treatment, Hermes is invoked with exactly `file,terminal,skills,code_execution`. Baseline and the non-lean treatments use the explicit `hermes-cli` preset. This lets Forge Bench measure the effect of removing broad tool-schema context such as browser, web, memory, delegation, vision, computer use, cron jobs, and other capabilities that are unnecessary for these coding tasks.
+For the lean-tools treatment, Hermes is invoked with exactly `file,terminal,skills,code_execution`. Baseline and the non-lean treatments use the explicit `hermes-cli` preset. This lets Forge Bench measure the context cost of advertising broad tool schemas such as browser, web, memory, delegation, vision, computer use, cron jobs, and other capabilities that are unnecessary for these coding tasks. The task prompt forbids actually using those irrelevant/network tools, so the intended comparison is schema/context overhead rather than different solution strategies.
 
 ## Default SWE-bench experiment
 
@@ -69,16 +69,23 @@ For datasets without official difficulty or compatible historical results, Forge
 The default experiment currently pins:
 
 - model: `deepseek/deepseek-v4-flash-0731`
+- reasoning: `none` (runs reporting reasoning tokens are invalid)
 - API aggregator: OpenRouter
 - upstream provider: `relace`
+- Hermes runtime: official `nousresearch/hermes-agent:latest` image, pulled once at benchmark start and resolved to its immutable image ID for all runs in that experiment
+- Hermes maximum tool-loop iterations: 50
+- SWE-bench evaluator: `swebench==4.1.0`
+- SWE-bench Verified dataset revision: `78f471bf655a3137b2e8a75af1501690ec009ec3`
 - SWE-bench experiments source: `40f164d5b8f1d249bf95a6df8b74b577fd8e519d`
 - Ponytail: `e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156`
 - Caveman: `542442bab314973709f95b85b1ac0b3f6f5b5dc6`
 - randomization seed: `260919`
 
-Each treatment gets an isolated temporary Hermes home. Each agent run gets a fresh repository containing only the requested SWE-bench base commit; the workspace has no network Git remote and does not contain the solution PR.
+Every individual observation starts from a fresh minimal Hermes home and a brand-new `docker run --rm` container. The profile contains only benchmark configuration, credentials, and the treatment being tested; user personalities, memories, hooks, project plugins, bundled skills, and prior sessions are not inherited. Treatment templates are installed once, then copied into a pristine per-run profile before the container starts.
 
-Model fallbacks and smart model routing are disabled in benchmark profiles. OpenRouter routing is restricted to the pinned upstream provider.
+Each agent run also gets a fresh self-contained repository at the requested SWE-bench base commit. The workspace has no network Git remote and does not contain the solution PR. Model fallbacks and compression are disabled, reasoning is explicitly off, and OpenRouter routing is restricted to the pinned upstream provider.
+
+The exact selected SWE-bench row is written to a local JSON file after the agent finishes and passed to the official evaluator. This prevents grading from silently changing because a remote dataset branch moved.
 
 ## Install
 
@@ -87,11 +94,16 @@ Prerequisites:
 - Python 3.12+
 - `uv`
 - `git`
-- Hermes Agent available as `hermes`
-- a working OpenRouter credential in the normal Hermes configuration
-- Docker for official SWE-bench grading
+- Docker
+- a working OpenRouter credential in the normal Hermes `~/.hermes/.env` or `auth.json` (or `OPENROUTER_API_KEY` in the shell)
 
-The official SWE-bench evaluator is containerized. Its first use can require substantial downloads and disk space.
+By default you do **not** need a host Hermes installation. Forge Bench pulls the official Hermes image, resolves the pulled image to an immutable Docker image ID, and starts a fresh container for every observation. The official SWE-bench evaluator also uses Docker, so the first run can require substantial image downloads and disk space.
+
+A host Hermes installation remains available as an explicit fallback:
+
+```bash
+uv run forge-bench --hermes-runtime local
+```
 
 ```bash
 git clone https://github.com/AgenticForge-Labs/forge-bench.git
@@ -177,24 +189,27 @@ Disable the historical leaderboard signal and sample only from patch scope:
 uv run forge-bench --no-history --selection-only
 ```
 
-Generate Hermes patches without Docker grading:
+Generate Hermes patches without SWE-bench grading:
 
 ```bash
 uv run forge-bench --skip-evaluation
 ```
 
-This is useful for plumbing tests, but it should not be used for correctness comparisons.
+With the default Hermes runtime this still uses Docker for the fresh Hermes containers. To avoid Docker entirely for a local plumbing test, combine it with `--hermes-runtime local`. Skipped evaluation should not be used for correctness comparisons.
 
 ## Agent and evaluation separation
 
 For each selected SWE-bench instance Forge Bench:
 
-1. fetches only the exact `base_commit` into an isolated local repository cache;
-2. creates a fresh workspace for the treatment;
-3. removes the Git network remote;
-4. gives Hermes only the issue statement, repository state, and treatment instructions;
-5. records the resulting Git diff;
-6. sends that diff to the official SWE-bench Docker evaluator.
+1. loads the task from the pinned SWE-bench dataset revision;
+2. fetches only the exact `base_commit` into an isolated local repository cache;
+3. creates a fresh self-contained workspace and removes its Git network remote;
+4. copies the treatment template into a brand-new minimal Hermes home;
+5. starts a new official Hermes Docker container with that profile and workspace mounted in;
+6. gives Hermes only the issue statement, repository state, and treatment instructions, with reasoning disabled;
+7. removes the Hermes container after the one-shot run;
+8. captures the complete working tree relative to the base commit, including committed and untracked changes;
+9. grades that patch with SWE-bench 4.1 against the exact frozen task row.
 
 The gold solution patch and test patch are never exposed to Hermes.
 
