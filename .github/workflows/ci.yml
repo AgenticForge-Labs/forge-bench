@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, model-factorial-multivariate-trajectories]
+    branches: [main]
   pull_request:
 
 jobs:
