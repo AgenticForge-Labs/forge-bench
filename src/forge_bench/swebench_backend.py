@@ -55,6 +55,7 @@ class Candidate:
     complexity_score: float = 0.0
     selection_target: float | None = None
     selection_rank: str = ""
+    anchor_distance: float | None = None
 
 
 def _run(argv: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -418,6 +419,125 @@ def select_spread(
 
     return chosen
 
+
+
+def select_anchor_neighborhood(
+    candidates: list[Candidate],
+    *,
+    anchor_ids: list[str] | tuple[str, ...],
+    count: int = 5,
+) -> list[Candidate]:
+    """Select a homogeneous task block around known-good anchor tasks.
+
+    This deliberately optimizes for low expected between-task variance rather
+    than benchmark-wide representativeness. Anchors are retained exactly; the
+    remaining tasks are ranked by similarity in patch scope, test burden,
+    issue-statement length, and historical solve rate.
+    """
+    if count < len(anchor_ids):
+        raise ValueError("count must be at least the number of anchors")
+
+    by_id = {candidate.instance_id: candidate for candidate in candidates}
+    missing = [instance_id for instance_id in anchor_ids if instance_id not in by_id]
+    if missing:
+        raise ValueError("Anchor tasks missing from candidate pool: " + ", ".join(missing))
+
+    anchors = [by_id[instance_id] for instance_id in anchor_ids]
+
+    def mean(values: list[float]) -> float:
+        return sum(values) / len(values)
+
+    target_lines = mean([float(c.patch_changed_lines) for c in anchors])
+    target_hunks = mean([float(c.patch_hunks) for c in anchors])
+    target_patch_log = mean([math.log1p(float(c.patch_chars)) for c in anchors])
+    target_f2p = mean([float(c.fail_to_pass_count) for c in anchors])
+    target_p2p = mean([float(c.pass_to_pass_count) for c in anchors])
+    target_issue_log = mean(
+        [math.log1p(float(len(c.problem_statement.split()))) for c in anchors]
+    )
+    anchor_rates = [
+        float(c.historical_solve_rate)
+        for c in anchors
+        if c.historical_solve_rate is not None
+    ]
+    target_rate = mean(anchor_rates) if anchor_rates else None
+
+    # Keep the candidate neighborhood intentionally narrow around the observed
+    # anchors: one-file fixes, small patches, and historically high solve rates.
+    eligible: list[Candidate] = []
+    for candidate in candidates:
+        if candidate.instance_id in anchor_ids:
+            continue
+        if candidate.patch_files != 1:
+            continue
+        if not (2 <= candidate.patch_changed_lines <= 10):
+            continue
+        if candidate.patch_hunks > max(3, int(math.ceil(target_hunks + 1))):
+            continue
+        if (
+            target_rate is not None
+            and candidate.historical_solve_rate is not None
+            and candidate.historical_solve_rate < target_rate - 0.10
+        ):
+            continue
+        eligible.append(candidate)
+
+    if len(eligible) < count - len(anchors):
+        raise ValueError(
+            "Not enough homogeneous candidates around anchors; "
+            f"need {count - len(anchors)}, found {len(eligible)}"
+        )
+
+    def scaled_abs(value: float, target: float, scale: float) -> float:
+        return abs(value - target) / max(scale, 1e-9)
+
+    def distance(candidate: Candidate) -> float:
+        score = 0.0
+        score += 0.30 * scaled_abs(
+            float(candidate.patch_changed_lines), target_lines, max(target_lines, 2.0)
+        )
+        score += 0.15 * scaled_abs(
+            float(candidate.patch_hunks), target_hunks, max(target_hunks, 1.0)
+        )
+        score += 0.10 * scaled_abs(
+            math.log1p(float(candidate.patch_chars)), target_patch_log, 1.0
+        )
+        score += 0.10 * scaled_abs(
+            float(candidate.fail_to_pass_count), target_f2p, max(target_f2p, 1.0)
+        )
+        score += 0.05 * scaled_abs(
+            float(candidate.pass_to_pass_count), target_p2p, max(target_p2p, 1.0)
+        )
+        score += 0.15 * scaled_abs(
+            math.log1p(float(len(candidate.problem_statement.split()))),
+            target_issue_log,
+            1.0,
+        )
+        if target_rate is not None and candidate.historical_solve_rate is not None:
+            score += 0.15 * scaled_abs(
+                float(candidate.historical_solve_rate), target_rate, 0.10
+            )
+        return score
+
+    for candidate in eligible:
+        candidate.anchor_distance = distance(candidate)
+
+    matches = sorted(
+        eligible,
+        key=lambda candidate: (
+            candidate.anchor_distance if candidate.anchor_distance is not None else math.inf,
+            candidate.instance_id,
+        ),
+    )[: count - len(anchors)]
+
+    selected = [*anchors, *matches]
+    for index, candidate in enumerate(anchors, 1):
+        candidate.selection_rank = f"anchor-{index}"
+        candidate.anchor_distance = 0.0
+    for index, candidate in enumerate(matches, 1):
+        candidate.selection_rank = f"match-{index}"
+
+    return selected
 
 def candidate_rows(candidates: list[Candidate]) -> list[dict[str, Any]]:
     return [asdict(candidate) for candidate in candidates]
