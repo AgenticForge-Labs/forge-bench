@@ -29,6 +29,17 @@ def mean(values: Iterable[float]) -> float:
     return statistics.mean(values) if values else math.nan
 
 
+def safe_ratio(numerator: float | int | None, denominator: float | int | None) -> float:
+    try:
+        n = float(numerator) if numerator is not None else math.nan
+        d = float(denominator) if denominator is not None else math.nan
+    except (TypeError, ValueError):
+        return math.nan
+    if not math.isfinite(n) or not math.isfinite(d) or d <= 0:
+        return math.nan
+    return n / d
+
+
 def ci95(values: Iterable[float]) -> tuple[float, float, float, int]:
     vals = [
         float(value)
@@ -125,6 +136,43 @@ def task_summary(
                     ),
                     "api_calls": mean(
                         result.api_calls for result in good
+                    ),
+                    "tool_calls": mean(
+                        result.tool_calls
+                        for result in good
+                        if result.tool_calls is not None
+                    ),
+                    # Per-run ratios are averaged within task so one unusually
+                    # large run cannot dominate by simple ratio-of-totals.
+                    "tokens_per_second": mean(
+                        safe_ratio(result.total_tokens, result.wall_seconds)
+                        for result in good
+                    ),
+                    "seconds_per_api_call": mean(
+                        safe_ratio(result.wall_seconds, result.api_calls)
+                        for result in good
+                    ),
+                    "tokens_per_api_call": mean(
+                        safe_ratio(result.total_tokens, result.api_calls)
+                        for result in good
+                    ),
+                    "cost_per_api_call": mean(
+                        safe_ratio(result.cost_usd, result.api_calls)
+                        for result in good
+                    ),
+                    "cost_per_second": mean(
+                        safe_ratio(result.cost_usd, result.wall_seconds)
+                        for result in good
+                    ),
+                    "seconds_per_tool_call": mean(
+                        safe_ratio(result.wall_seconds, result.tool_calls)
+                        for result in good
+                        if result.tool_calls is not None
+                    ),
+                    "tool_calls_per_api_call": mean(
+                        safe_ratio(result.tool_calls, result.api_calls)
+                        for result in good
+                        if result.tool_calls is not None
                     ),
                     "diff_lines": mean(
                         result.diff_lines for result in good
