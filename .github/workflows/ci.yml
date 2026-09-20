@@ -35,6 +35,7 @@ jobs:
               PINNED_REASONING,
           )
           from forge_bench.advanced_analysis import (
+              cost_time_analysis,
               factorial_regression,
               paired_effects,
               pca_analysis,
@@ -228,15 +229,23 @@ jobs:
           }
           scores, loadings, explained = pca_analysis(analysis_rows)
           assert len(scores) == 20 and len(loadings) >= 2 and len(explained) >= 2
+          cost_time, cost_time_corr = cost_time_analysis(analysis_rows)
+          assert len(cost_time) == 4
+          assert all("pareto_efficient" in row for row in cost_time)
+          assert -1.0 <= cost_time_corr <= 1.0
 
           with tempfile.TemporaryDirectory() as td:
               analysis_dir = Path(td)
               generated = write_advanced_analysis(analysis_dir, analysis_rows)
               assert "advanced_paired_effects.csv" in generated
-              assert (analysis_dir / "advanced_pca.light.png").is_file()
-              assert (analysis_dir / "advanced_pca.dark.png").is_file()
+              assert (analysis_dir / "advanced_pca_biplot.light.png").is_file()
+              assert (analysis_dir / "advanced_pca_biplot.dark.png").is_file()
+              assert (analysis_dir / "advanced_pca_scree.light.svg").is_file()
+              assert (analysis_dir / "advanced_pca_loadings.dark.svg").is_file()
               assert (analysis_dir / "advanced_clusters.light.svg").is_file()
               assert (analysis_dir / "advanced_correlations.dark.svg").is_file()
+              assert (analysis_dir / "advanced_cost_time.light.png").is_file()
+              assert (analysis_dir / "advanced_cost_time.dark.svg").is_file()
           PY
       - run: uv run forge-bench --help
       - name: Verify reanalysis CLI accepts existing output
