@@ -306,30 +306,53 @@ def prepare_workspace(
     base_commit: str,
     destination: Path,
 ) -> None:
+    """Materialize exactly one SWE-bench base commit into a self-contained repo."""
     if destination.exists():
         shutil.rmtree(destination)
 
     bare = ensure_repo_cache(cache_root, repo, base_commit)
-    # Independent object store: Docker sees only the workspace mount, so Git
-    # alternates from --shared would point at an inaccessible host cache path.
-    clone = sh(
-        ["git", "clone", "--no-hardlinks", str(bare), str(destination)],
+    destination.mkdir(parents=True, exist_ok=True)
+
+    init = sh(["git", "init", "-q"], cwd=destination, timeout=60)
+    if init.returncode:
+        raise RuntimeError("workspace git init failed: " + init.stderr)
+
+    # Fetch the exact cached commit into a real local ref. The bare cache keeps
+    # exact-SHA fetches only in FETCH_HEAD, so a normal clone can legitimately
+    # omit them because no branch points at the object.
+    fetch = sh(
+        [
+            "git",
+            "-c",
+            "protocol.file.allow=always",
+            "fetch",
+            "--no-tags",
+            "--depth=1",
+            str(bare),
+            base_commit,
+        ],
+        cwd=destination,
         timeout=300,
     )
-    if clone.returncode:
-        raise RuntimeError("workspace clone failed: " + clone.stderr)
+    if fetch.returncode:
+        raise RuntimeError("workspace fetch from cache failed: " + fetch.stderr)
 
     checkout = sh(
-        ["git", "checkout", "--detach", base_commit],
+        ["git", "checkout", "--detach", "FETCH_HEAD"],
         cwd=destination,
         timeout=120,
     )
     if checkout.returncode:
         raise RuntimeError("base commit checkout failed: " + checkout.stderr)
 
-    # Remove network remotes from the agent workspace. The issue statement and
-    # base commit are the only task information the agent should receive.
-    sh(["git", "remote", "remove", "origin"], cwd=destination)
+    actual = sh(["git", "rev-parse", "HEAD"], cwd=destination, check=True).stdout.strip()
+    if actual != base_commit:
+        raise RuntimeError(
+            f"workspace commit mismatch: expected {base_commit}, got {actual}"
+        )
+
+    # No remote is configured in this workspace. Hermes receives only the
+    # checked-out base commit and cannot inspect later repository history.
     sh(["git", "reset", "--hard", base_commit], cwd=destination, check=True)
     sh(["git", "clean", "-fdx"], cwd=destination, check=True)
 
