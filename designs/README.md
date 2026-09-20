@@ -135,10 +135,15 @@ models/<model-key>/
 ```
 
 The root report also writes both vertical-bar and horizontal-bar shared-scale
-model subpanels for the core metrics. The corresponding machine-readable files
-include `model_treatment_regression_2x4.csv`,
+model subpanels for the core metrics. Resolve-rate panels follow the same
+task-level rule: repeated runs are averaged within task, then task resolve rates
+are summarized across tasks. The corresponding machine-readable files include
+`model_treatment_regression_2x4.csv`,
 `model_caveman_ponytail_regression_2x2x2.csv`,
 `multivariate_*.csv`, `trajectory_*.csv`, and `workflow_*.csv`.
+The multivariate outputs include standardized factorial coefficient vectors and
+task-paired distances as well as PCA. Trajectory outputs also include cumulative
+tokens/API-call and tool-calls/API-call efficiency curves.
 
 
 This prevents model identity from being accidentally treated as a repeated
