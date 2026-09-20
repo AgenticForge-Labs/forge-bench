@@ -137,12 +137,19 @@ Root-level analysis additionally includes:
 - an eight-condition cost-time Pareto analysis;
 - shared-panel direct API/tool/unattributed wall-time decomposition;
 - multivariate PCA of task-level agent behavior and condition centroids;
+- a task-blocked multivariate model × treatment coefficient matrix in the same
+  standardized behavior space;
+- task-paired multivariate distances for each harness versus its own-model
+  baseline and for V4.1 versus V4 within the same treatment;
 - standardized vector-angle/cosine comparisons asking whether model upgrades
   move behavior in the same multivariate direction as harness interventions;
 - normalized 0–100% within-run trajectories for context growth, cumulative
   tokens, API wait, tool execution, API calls, and tool calls;
-- workflow timing/rework summaries such as first edit, first execution,
-  repeated-state fraction, edit→execute transitions, and late-run activity;
+- workflow timing/rework summaries such as first inspect/search/edit/execution,
+  last edit/execution, repeated-state fraction, edit→execute transitions, and
+  late-run activity;
+- within-run efficiency trajectories for cumulative tokens/API call and tool
+  calls/API call;
 - task-normalized workflow state-transition matrices.
 
 Trace events are observations along a trajectory, not statistical replicates.
