@@ -1328,6 +1328,367 @@ def plot_trajectory_panels(
         _save(fig, output, f"trajectory_{metric}", theme)
 
 
+
+def timing_budget_summary(
+    task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    components = ("api_wait_seconds", "tool_execution_seconds", "unattributed_wall_seconds")
+    rows: list[dict[str, Any]] = []
+    for descriptor in descriptors:
+        for arm in _ordered_arms(task_rows):
+            subset = [
+                row for row in task_rows
+                if row.get("model") == descriptor["model"]
+                and row.get("arm") == arm
+                and row.get("valid_runs", 0) > 0
+            ]
+            if not subset:
+                continue
+            entry: dict[str, Any] = {
+                "model": descriptor["model"],
+                "model_key": descriptor["key"],
+                "model_label": descriptor["label"],
+                "arm": arm,
+                "label": LABEL.get(arm, arm),
+                "n_tasks": len(subset),
+            }
+            for component in components:
+                vals = [float(row[component]) for row in subset if _finite(row.get(component))]
+                entry[f"mean_{component}"] = _mean(vals)
+                entry[f"n_tasks_{component}"] = len(vals)
+            rows.append(entry)
+    return rows
+
+
+def plot_timing_budget_facets(
+    output: Path,
+    rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> None:
+    if not rows:
+        return
+    arms = _ordered_arms(rows)
+    components = (
+        ("api_wait_seconds", "API wait"),
+        ("tool_execution_seconds", "Tool execution"),
+        ("unattributed_wall_seconds", "Unattributed"),
+    )
+    all_totals = []
+    for row in rows:
+        total = sum(
+            float(row.get(f"mean_{key}", 0.0))
+            for key, _ in components
+            if _finite(row.get(f"mean_{key}"))
+        )
+        all_totals.append(total)
+    if not all_totals or max(all_totals) <= 0:
+        return
+    ymax = max(all_totals) * 1.12
+    for theme in ("light", "dark"):
+        palette = _theme(theme)
+        component_colors = (
+            "#38BDF8" if theme == "dark" else "#0284C7",
+            "#C084FC" if theme == "dark" else "#9333EA",
+            "#FBBF24" if theme == "dark" else "#D97706",
+        )
+        fig, axes = plt.subplots(
+            1, len(descriptors), figsize=(7 * len(descriptors), 6.6),
+            sharey=True, squeeze=False,
+        )
+        for index, (ax, descriptor) in enumerate(zip(axes[0], descriptors)):
+            _style_axes(fig, ax, theme)
+            by_arm = {
+                str(row["arm"]): row
+                for row in rows if row.get("model") == descriptor["model"]
+            }
+            x = np.arange(len(arms))
+            bottom = np.zeros(len(arms))
+            for (key, label), color in zip(components, component_colors):
+                values = np.asarray([
+                    float(by_arm.get(arm, {}).get(f"mean_{key}", 0.0))
+                    if _finite(by_arm.get(arm, {}).get(f"mean_{key}"))
+                    else 0.0
+                    for arm in arms
+                ])
+                ax.bar(
+                    x, values, bottom=bottom, label=label,
+                    color=color, edgecolor=palette["edge"], linewidth=0.8,
+                )
+                bottom += values
+            ax.set_title(str(descriptor["label"]), fontsize=15, fontweight="bold")
+            ax.set_xticks(x, [LABEL.get(arm, arm) for arm in arms], rotation=18, ha="right")
+            ax.set_ylim(0, ymax)
+            if index == 0:
+                ax.set_ylabel("Seconds")
+            ax.legend(frameon=True, fontsize=9)
+        fig.suptitle(
+            "Direct wall-time decomposition by model and treatment",
+            fontsize=19, fontweight="bold", color=palette["text"],
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        _save(fig, output, "model_treatment_time_budget", theme)
+
+
+def workflow_summaries(
+    workflow_runs: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    metrics = (
+        "state_events",
+        "first_edit_progress",
+        "first_execute_progress",
+        "inspect_search_before_first_edit",
+        "consecutive_same_state_fraction",
+        "edit_to_execute_transitions",
+        "late_state_fraction",
+    )
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in workflow_runs:
+        grouped[(str(row["model"]), str(row["arm"]), str(row["task"]))].append(row)
+    task_rows: list[dict[str, Any]] = []
+    for (model, arm, task), rows in grouped.items():
+        first = rows[0]
+        entry: dict[str, Any] = {
+            "model": model,
+            "model_key": first["model_key"],
+            "model_label": first["model_label"],
+            "arm": arm,
+            "label": first["label"],
+            "task": task,
+            "valid_runs": len(rows),
+        }
+        for metric in metrics:
+            entry[metric] = _mean(row.get(metric) for row in rows)
+        task_rows.append(entry)
+
+    summary: list[dict[str, Any]] = []
+    grouped_summary: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in task_rows:
+        grouped_summary[(str(row["model"]), str(row["arm"]))].append(row)
+    for (model, arm), rows in grouped_summary.items():
+        first = rows[0]
+        entry: dict[str, Any] = {
+            "model": model,
+            "model_key": first["model_key"],
+            "model_label": first["model_label"],
+            "arm": arm,
+            "label": first["label"],
+            "tasks_valid": len(rows),
+        }
+        for metric in metrics:
+            center, low, high, n = _ci95((row.get(metric) for row in rows), signed=True)
+            entry[f"mean_{metric}"] = center
+            entry[f"ci95_low_{metric}"] = low
+            entry[f"ci95_high_{metric}"] = high
+            entry[f"n_tasks_{metric}"] = n
+        summary.append(entry)
+    return task_rows, summary
+
+
+def plot_workflow_metric_facets(
+    output: Path,
+    task_rows: list[dict[str, Any]],
+    summary_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+    metric: str,
+) -> None:
+    values = [
+        float(row.get(f"mean_{metric}", math.nan))
+        for row in summary_rows if _finite(row.get(f"mean_{metric}"))
+    ]
+    if not values:
+        return
+    arms = _ordered_arms(summary_rows)
+    titles = {
+        "first_edit_progress": "First edit progress",
+        "first_execute_progress": "First execution progress",
+        "consecutive_same_state_fraction": "Repeated-state fraction",
+        "edit_to_execute_transitions": "Edit → execute transitions",
+        "late_state_fraction": "Late workflow fraction",
+        "inspect_search_before_first_edit": "Inspect/search events before first edit",
+    }
+    title = titles.get(metric, metric.replace("_", " ").title())
+    ymax = max(values + [
+        float(row.get(f"ci95_high_{metric}", math.nan))
+        for row in summary_rows if _finite(row.get(f"ci95_high_{metric}"))
+    ]) * 1.12
+    if ymax <= 0:
+        ymax = 1.0
+    for theme in ("light", "dark"):
+        colors = treatment_colors(arms, theme)
+        palette = _theme(theme)
+        fig, axes = plt.subplots(
+            1, len(descriptors), figsize=(7 * len(descriptors), 6.2),
+            sharey=True, squeeze=False,
+        )
+        for index, (ax, descriptor) in enumerate(zip(axes[0], descriptors)):
+            _style_axes(fig, ax, theme)
+            by_arm = {
+                str(row["arm"]): row
+                for row in summary_rows if row.get("model") == descriptor["model"]
+            }
+            x = np.arange(len(arms))
+            means = [float(by_arm.get(a, {}).get(f"mean_{metric}", math.nan)) for a in arms]
+            low = [float(by_arm.get(a, {}).get(f"ci95_low_{metric}", math.nan)) for a in arms]
+            high = [float(by_arm.get(a, {}).get(f"ci95_high_{metric}", math.nan)) for a in arms]
+            ax.bar(
+                x, means, color=[colors[a] for a in arms],
+                yerr=[
+                    [max(0.0, m - l) if _finite(m) and _finite(l) else 0.0 for m, l in zip(means, low)],
+                    [max(0.0, h - m) if _finite(m) and _finite(h) else 0.0 for m, h in zip(means, high)],
+                ],
+                capsize=5, edgecolor=palette["edge"],
+                error_kw={"ecolor": palette["text"], "elinewidth": 1.5},
+            )
+            task_order = sorted({
+                str(row["task"]) for row in task_rows if row.get("model") == descriptor["model"]
+            })
+            offsets = np.linspace(-0.10, 0.10, max(1, len(task_order)))
+            offset_by_task = {task: float(offsets[i]) for i, task in enumerate(task_order)}
+            for arm_i, arm in enumerate(arms):
+                points = [
+                    row for row in task_rows
+                    if row.get("model") == descriptor["model"]
+                    and row.get("arm") == arm and _finite(row.get(metric))
+                ]
+                ax.scatter(
+                    [arm_i + offset_by_task.get(str(row["task"]), 0.0) for row in points],
+                    [float(row[metric]) for row in points],
+                    s=30, facecolors="none", edgecolors=palette["text"], linewidths=0.9,
+                )
+            ax.set_xticks(x, [LABEL.get(a, a) for a in arms], rotation=18, ha="right")
+            ax.set_ylim(0, ymax)
+            ax.set_title(str(descriptor["label"]), fontsize=15, fontweight="bold")
+            if index == 0:
+                ax.set_ylabel(title)
+        fig.suptitle(
+            f"{title} by model and treatment",
+            fontsize=19, fontweight="bold", color=palette["text"],
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        _save(fig, output, f"workflow_{metric}", theme)
+
+
+def transition_summaries(
+    transitions: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    # Pool repeated runs within task first, then normalize source rows.
+    counts: dict[tuple[str, str, str, str, str], int] = defaultdict(int)
+    first_by_condition: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in transitions:
+        key3 = (str(row["model"]), str(row["arm"]), str(row["task"]))
+        first_by_condition.setdefault(key3, row)
+        counts[(*key3, str(row["source_state"]), str(row["target_state"]))] += int(row["count"])
+
+    task_rows: list[dict[str, Any]] = []
+    for (model, arm, task), first in first_by_condition.items():
+        for source in STATE_ORDER:
+            source_total = sum(
+                counts.get((model, arm, task, source, target), 0)
+                for target in STATE_ORDER
+            )
+            if source_total <= 0:
+                continue
+            for target in STATE_ORDER:
+                count = counts.get((model, arm, task, source, target), 0)
+                task_rows.append({
+                    "model": model,
+                    "model_key": first["model_key"],
+                    "model_label": first["model_label"],
+                    "arm": arm,
+                    "label": first["label"],
+                    "task": task,
+                    "source_state": source,
+                    "target_state": target,
+                    "count": count,
+                    "probability": count / source_total,
+                })
+
+    summary: list[dict[str, Any]] = []
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in task_rows:
+        grouped[(
+            str(row["model"]), str(row["arm"]),
+            str(row["source_state"]), str(row["target_state"]),
+        )].append(row)
+    for (model, arm, source, target), rows in grouped.items():
+        first = rows[0]
+        center, low, high, n = _ci95((row["probability"] for row in rows), signed=False)
+        summary.append({
+            "model": model,
+            "model_key": first["model_key"],
+            "model_label": first["model_label"],
+            "arm": arm,
+            "label": first["label"],
+            "source_state": source,
+            "target_state": target,
+            "mean_probability": center,
+            "ci95_low_probability": low,
+            "ci95_high_probability": high,
+            "n_tasks": n,
+        })
+    return task_rows, summary
+
+
+def plot_transition_heatmaps(
+    output: Path,
+    summary: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> None:
+    if not summary:
+        return
+    arms = _ordered_arms(summary)
+    lookup = {
+        (str(row["model"]), str(row["arm"]), str(row["source_state"]), str(row["target_state"])): float(row["mean_probability"])
+        for row in summary if _finite(row.get("mean_probability"))
+    }
+    for theme in ("light", "dark"):
+        palette = _theme(theme)
+        fig, axes = plt.subplots(
+            len(descriptors), len(arms),
+            figsize=(4.1 * len(arms), 3.8 * len(descriptors)),
+            sharex=True, sharey=True, squeeze=False,
+        )
+        image = None
+        for model_i, descriptor in enumerate(descriptors):
+            for arm_i, arm in enumerate(arms):
+                ax = axes[model_i][arm_i]
+                matrix = np.asarray([
+                    [
+                        lookup.get((descriptor["model"], arm, source, target), math.nan)
+                        for target in STATE_ORDER
+                    ]
+                    for source in STATE_ORDER
+                ], dtype=float)
+                masked = np.ma.masked_invalid(matrix)
+                image = ax.imshow(masked, vmin=0.0, vmax=1.0, aspect="auto")
+                ax.set_facecolor(palette["axes"])
+                ax.tick_params(colors=palette["text"], labelsize=8)
+                if model_i == len(descriptors) - 1:
+                    ax.set_xticks(range(len(STATE_ORDER)), STATE_ORDER, rotation=45, ha="right")
+                else:
+                    ax.set_xticks(range(len(STATE_ORDER)), [])
+                if arm_i == 0:
+                    ax.set_yticks(range(len(STATE_ORDER)), STATE_ORDER)
+                    ax.set_ylabel(str(descriptor["label"]), color=palette["text"], fontsize=10)
+                else:
+                    ax.set_yticks(range(len(STATE_ORDER)), [])
+                if model_i == 0:
+                    ax.set_title(LABEL.get(arm, arm), color=palette["text"], fontsize=10, fontweight="bold")
+        fig.patch.set_facecolor(palette["figure"])
+        if image is not None:
+            cbar = fig.colorbar(image, ax=axes.ravel().tolist(), shrink=0.72)
+            cbar.set_label("Mean transition probability", color=palette["text"])
+            cbar.ax.tick_params(colors=palette["text"])
+        fig.suptitle(
+            "Workflow state-transition matrices",
+            fontsize=18, fontweight="bold", color=palette["text"],
+        )
+        fig.text(0.5, 0.01, "Rows = source state; columns = next state. Probabilities are normalized within task before across-task averaging.", ha="center", fontsize=9.5, color=palette["muted"])
+        fig.subplots_adjust(left=0.08, right=0.91, top=0.88, bottom=0.14, wspace=0.12, hspace=0.18)
+        _save(fig, output, "workflow_state_transitions", theme)
+
+
 def write_multi_model_analysis(
     output: Path,
     results: list[Result],
@@ -1382,14 +1743,37 @@ def write_multi_model_analysis(
         )
     plot_multivariate_pca(output, scores, loadings, explained, centroids, descriptors)
 
-    raw_progress, task_progress, trajectory_summary, workflow_metrics, transitions = trajectory_rows(
+    timing_rows = timing_budget_summary(task_rows, descriptors)
+    _write_csv(output / "model_treatment_time_budget.csv", timing_rows)
+    plot_timing_budget_facets(output, timing_rows, descriptors)
+
+    raw_progress, task_progress, trajectory_summary, workflow_runs, transitions = trajectory_rows(
         results, descriptors
     )
     _write_csv(output / "trajectory_run_progress.csv", raw_progress)
     _write_csv(output / "trajectory_task_progress.csv", task_progress)
     _write_csv(output / "trajectory_summary.csv", trajectory_summary)
-    _write_csv(output / "workflow_run_metrics.csv", workflow_metrics)
-    _write_csv(output / "workflow_state_transitions.csv", transitions)
+    _write_csv(output / "workflow_run_metrics.csv", workflow_runs)
+
+    workflow_task, workflow_summary = workflow_summaries(workflow_runs)
+    _write_csv(output / "workflow_task_metrics.csv", workflow_task)
+    _write_csv(output / "workflow_summary.csv", workflow_summary)
+    for metric in (
+        "first_edit_progress",
+        "first_execute_progress",
+        "inspect_search_before_first_edit",
+        "consecutive_same_state_fraction",
+        "edit_to_execute_transitions",
+        "late_state_fraction",
+    ):
+        plot_workflow_metric_facets(output, workflow_task, workflow_summary, descriptors, metric)
+
+    transition_task, transition_summary = transition_summaries(transitions)
+    _write_csv(output / "workflow_state_transitions_run.csv", transitions)
+    _write_csv(output / "workflow_state_transitions_task.csv", transition_task)
+    _write_csv(output / "workflow_state_transitions.csv", transition_summary)
+    plot_transition_heatmaps(output, transition_summary, descriptors)
+
     for metric in (
         "cumulative_tokens", "context_tokens", "api_wait_seconds",
         "tool_execution_seconds", "api_calls", "tool_calls",
