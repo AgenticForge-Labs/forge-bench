@@ -32,6 +32,17 @@ DEFAULT_ANCHOR_IDS = (
     "pytest-dev__pytest-7571",
 )
 
+# Expected deterministic result of the pinned anchor-neighborhood selector.
+# CI verifies this exact set so a future selector/data change cannot silently
+# alter the second-stage experiment.
+DEFAULT_EXPECTED_IDS = (
+    "django__django-13516",
+    "pytest-dev__pytest-7571",
+    "django__django-15731",
+    "django__django-16662",
+    "django__django-7530",
+)
+
 DEFAULT_TOOLSETS = "hermes-cli"
 LEAN_TOOLSETS = "file,terminal,skills,code_execution"
 
