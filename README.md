@@ -60,6 +60,69 @@ pinned, the selection is deterministic.
 The default experiment is therefore **5 tasks × 4 treatments = 20 randomized
 Hermes runs** per repeat.
 
+## YAML experiment designs
+
+For model-comparison experiments, Forge Bench can now load a versioned YAML
+design instead of hard-coding the scientific factors in CLI flags. A design can
+pin the exact model IDs, OpenRouter upstream, reasoning mode, task IDs,
+treatments, block count, randomization seed, Hermes turn budget, and analysis
+mode.
+
+The first model-comparison design is:
+
+```text
+designs/deepseek-v4-v41-relace.yaml
+```
+
+It compares:
+
+- `deepseek/deepseek-v4-flash-0731`
+- `deepseek/deepseek-v4.1-flash-20260910`
+
+Both are pinned to the **Relace** OpenRouter upstream with reasoning disabled.
+The design uses the same five frozen SWE-bench tasks and the four
+Caveman × Ponytail treatments.
+
+One block is therefore:
+
+```text
+2 models × 4 treatments × 5 tasks = 40 runs
+```
+
+All 40 cells are constructed first and then shuffled together once using the
+design seed. Forge Bench does **not** run one model as a batch followed by the
+other. The model, treatment, and task dimensions are all interleaved within the
+same randomized complete block.
+
+Preview the exact order without making any model calls:
+
+```bash
+uv run forge-bench \
+  --design designs/deepseek-v4-v41-relace.yaml \
+  --plan-only
+```
+
+Run the design:
+
+```bash
+uv run forge-bench \
+  --design designs/deepseek-v4-v41-relace.yaml
+```
+
+The source YAML is copied into the result directory as `design.yaml`.
+`run_plan.csv` records model key/ID, treatment, task, block, block seed,
+within-block position, and global run index.
+
+For multi-model designs, raw runs remain in one root experiment directory so
+the execution order is preserved. Treatment statistics are then generated
+separately under `models/<model-key>/` so model identity is never mistaken for
+a repeat of the same treatment. Root-level
+`model_treatment_summary.csv` and `model_pairwise_effects.csv` provide the
+cross-model comparison.
+
+See `designs/README.md` for the version-1 schema and how to add additional
+models or blocks.
+
 ### Optional broad within-bucket sampling
 
 Forge Bench deliberately does not pick the first three tasks or randomly sample three tasks and call them representative.
@@ -268,7 +331,7 @@ Or include the legacy combined lean treatment:
 uv run forge-bench --arms baseline caveman ponytail caveman_ponytail lean_tools all_three
 ```
 
-For repeated stochastic attempts:
+For repeated stochastic attempts in the default single-model design:
 
 ```bash
 uv run forge-bench --repeats 3 --seed 260920
@@ -278,6 +341,10 @@ This creates three separately randomized 20-run blocks. Each repeat gets a
 different deterministic `repeat_seed`, recorded in both `metadata.json` and
 `run_plan.csv`; no repeat reuses the same execution order. Repeats are averaged
 within task × treatment before across-task statistics are calculated.
+
+For YAML designs, put the desired block count and seed under
+`randomization:`. Each block then contains the complete
+model × treatment × task factorial before shuffling.
 
 ## Other SWE-bench samples
 

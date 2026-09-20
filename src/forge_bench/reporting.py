@@ -712,6 +712,270 @@ def write_reports(
     )
 
 
+
+def _slug(value: str) -> str:
+    text = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in value)
+    return "-".join(part for part in text.split("-") if part) or "model"
+
+
+def _model_descriptors(
+    results: list[Result],
+    meta: dict[str, Any],
+) -> list[dict[str, str]]:
+    configured = meta.get("models")
+    configured_order: list[dict[str, str]] = []
+    by_id: dict[str, dict[str, str]] = {}
+    if isinstance(configured, list):
+        for row in configured:
+            if not isinstance(row, dict) or not row.get("model"):
+                continue
+            model_id = str(row["model"])
+            descriptor = {
+                "key": str(row.get("key") or _slug(model_id.rsplit("/", 1)[-1])),
+                "label": str(row.get("label") or model_id),
+                "model": model_id,
+                "upstream_provider": str(row.get("upstream_provider") or ""),
+            }
+            configured_order.append(descriptor)
+            by_id[model_id] = descriptor
+
+    observed_order: list[str] = []
+    observed_upstream: dict[str, str] = {}
+    for result in sorted(results, key=lambda item: item.run_index):
+        if result.model not in observed_order:
+            observed_order.append(result.model)
+        observed_upstream.setdefault(result.model, result.upstream_provider)
+
+    observed = set(observed_order)
+    descriptors = [
+        descriptor
+        for descriptor in configured_order
+        if descriptor["model"] in observed
+    ]
+    configured_ids = {descriptor["model"] for descriptor in descriptors}
+    for model_id in observed_order:
+        if model_id in configured_ids:
+            continue
+        descriptors.append(
+            by_id.get(
+                model_id,
+                {
+                    "key": _slug(model_id.rsplit("/", 1)[-1]),
+                    "label": model_id,
+                    "model": model_id,
+                    "upstream_provider": observed_upstream.get(model_id, ""),
+                },
+            )
+        )
+    return descriptors
+
+
+def model_pairwise_effects(
+    model_task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Paired task-level B-A effects for two-model experiment designs."""
+    if len(descriptors) != 2:
+        return []
+    a, b = descriptors
+    out: list[dict[str, Any]] = []
+    metrics = ("total_tokens", "cost_usd", "wall_seconds", "api_calls")
+    arms = _ordered_arms(row["arm"] for row in model_task_rows)
+    for arm in arms:
+        a_rows = {
+            str(row["task"]): row
+            for row in model_task_rows
+            if row.get("model") == a["model"]
+            and row.get("arm") == arm
+            and row.get("valid_runs", 0) > 0
+        }
+        b_rows = {
+            str(row["task"]): row
+            for row in model_task_rows
+            if row.get("model") == b["model"]
+            and row.get("arm") == arm
+            and row.get("valid_runs", 0) > 0
+        }
+        common = sorted(set(a_rows) & set(b_rows))
+        for metric in metrics:
+            deltas: list[float] = []
+            pct: list[float] = []
+            a_values: list[float] = []
+            b_values: list[float] = []
+            for task in common:
+                av = float(a_rows[task].get(metric, math.nan))
+                bv = float(b_rows[task].get(metric, math.nan))
+                if not math.isfinite(av) or not math.isfinite(bv):
+                    continue
+                a_values.append(av)
+                b_values.append(bv)
+                deltas.append(bv - av)
+                if av != 0:
+                    pct.append(100.0 * (bv - av) / av)
+            center, low, high, n = ci95_signed(deltas)
+            out.append(
+                {
+                    "arm": arm,
+                    "label": LABEL.get(arm, arm),
+                    "metric": metric,
+                    "model_a": a["model"],
+                    "model_a_label": a["label"],
+                    "model_b": b["model"],
+                    "model_b_label": b["label"],
+                    "n_paired_tasks": n,
+                    "mean_model_a": mean(a_values),
+                    "mean_model_b": mean(b_values),
+                    "mean_delta_b_minus_a": center,
+                    "ci95_low_delta": low,
+                    "ci95_high_delta": high,
+                    "mean_percent_change_b_vs_a": mean(pct),
+                }
+            )
+    return out
+
+
+def _write_multi_model_index(
+    output: Path,
+    descriptors: list[dict[str, str]],
+    comparison: list[dict[str, Any]],
+    meta: dict[str, Any],
+) -> None:
+    table_rows = []
+    for row in comparison:
+        table_rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(row['model_label']))}</td>"
+            f"<td>{html.escape(str(row['label']))}</td>"
+            f"<td>{format_value(float(row['mean_total_tokens']), 'tokens')}</td>"
+            f"<td>{format_value(float(row['mean_cost_usd']), 'usd')}</td>"
+            f"<td>{format_value(float(row['mean_wall_seconds']), 'seconds')}</td>"
+            f"<td>{float(row['run_resolve_rate']):.0f}%</td>"
+            "</tr>"
+        )
+    model_links = " ".join(
+        f'<a href="models/{html.escape(model["key"])}/report-{{theme}}.html">'
+        f'{html.escape(model["label"])}</a>'
+        for model in descriptors
+    )
+    for theme in ("light", "dark"):
+        if theme == "dark":
+            bg, fg, muted, card, border = "#090e1a", "#f8fafc", "#cbd5e1", "#111827", "#334155"
+        else:
+            bg, fg, muted, card, border = "#f8fafc", "#111827", "#64748b", "#ffffff", "#e5e7eb"
+        links = model_links.replace("{theme}", theme)
+        body = f"""<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forge Bench multi-model report ({theme})</title>
+<style>
+body{{font-family:Inter,system-ui,Arial,sans-serif;background:{bg};color:{fg};max-width:1180px;margin:auto;padding:36px 24px 72px}}
+p{{color:{muted};line-height:1.55}} a{{color:inherit;font-weight:650}}
+table{{width:100%;border-collapse:collapse;background:{card};border:1px solid {border}}}
+th,td{{padding:12px;border-bottom:1px solid {border};text-align:right}} th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){{text-align:left}}
+</style>
+<h1>Forge Bench multi-model experiment</h1>
+<p>Design <code>{html.escape(str(meta.get("design_name", "unnamed")))}</code>.
+One execution plan is randomized across model × treatment × task cells; model-specific
+reports keep treatment inference separated by model.</p>
+<p>Model reports: {links}</p>
+<table><thead><tr><th>Model</th><th>Treatment</th><th>Tokens</th><th>Cost</th><th>Time</th><th>Resolve</th></tr></thead>
+<tbody>{''.join(table_rows)}</tbody></table>
+<p>Cross-model paired task effects are in <code>model_pairwise_effects.csv</code>.
+Raw execution evidence remains in <code>runs/</code>, <code>runs.json</code>, and
+<code>run_plan.csv</code>.</p>
+"""
+        (output / f"report-{theme}.html").write_text(body, encoding="utf-8")
+    shutil.copyfile(output / "report-light.html", output / "report.html")
+
+
+def write_experiment_reports(
+    output: Path,
+    results: list[Result],
+    arms: list[str],
+    tasks: list[str],
+    meta: dict[str, Any],
+    *,
+    analysis_mode: str = "basic",
+) -> None:
+    """Write normal reports for one model or separated reports for multi-model designs."""
+    descriptors = _model_descriptors(results, meta)
+    if len(descriptors) <= 1:
+        write_reports(
+            output,
+            results,
+            arms,
+            tasks,
+            meta,
+            analysis_mode=analysis_mode,
+        )
+        return
+
+    raw = [
+        asdict(result)
+        for result in sorted(results, key=lambda item: item.run_index)
+    ]
+    write_csv(output / "runs.csv", raw)
+    (output / "runs.json").write_text(
+        json.dumps(raw, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    meta["analysis_mode"] = analysis_mode
+    (output / "metadata.json").write_text(
+        json.dumps(meta, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    combined_task_rows: list[dict[str, Any]] = []
+    combined_summary: list[dict[str, Any]] = []
+    for descriptor in descriptors:
+        model_results = [
+            result for result in results if result.model == descriptor["model"]
+        ]
+        if not model_results:
+            continue
+        model_output = output / "models" / descriptor["key"]
+        model_output.mkdir(parents=True, exist_ok=True)
+        model_meta = dict(meta)
+        model_meta["model"] = descriptor["model"]
+        model_meta["model_key"] = descriptor["key"]
+        model_meta["model_label"] = descriptor["label"]
+        model_meta["upstream_provider"] = descriptor["upstream_provider"]
+        write_reports(
+            model_output,
+            model_results,
+            arms,
+            tasks,
+            model_meta,
+            analysis_mode=analysis_mode,
+        )
+        per_task = task_summary(model_results, arms, tasks)
+        summary = aggregate_summary(per_task, model_results, arms, tasks)
+        for row in per_task:
+            combined_task_rows.append(
+                {
+                    "model_key": descriptor["key"],
+                    "model_label": descriptor["label"],
+                    "model": descriptor["model"],
+                    **row,
+                }
+            )
+        for row in summary:
+            combined_summary.append(
+                {
+                    "model_key": descriptor["key"],
+                    "model_label": descriptor["label"],
+                    "model": descriptor["model"],
+                    **row,
+                }
+            )
+
+    write_csv(output / "model_task_summary.csv", combined_task_rows)
+    write_csv(output / "model_treatment_summary.csv", combined_summary)
+    pairwise = model_pairwise_effects(combined_task_rows, descriptors)
+    write_csv(output / "model_pairwise_effects.csv", pairwise)
+    _write_multi_model_index(output, descriptors, combined_summary, meta)
+
+
 def create_reanalysis_output_dir(
     source: Path,
     *,
@@ -800,7 +1064,7 @@ def reanalyze_output(
         source,
         analysis_mode=analysis_mode,
     )
-    write_reports(
+    write_experiment_reports(
         output,
         results,
         arms,
