@@ -7,6 +7,7 @@ import math
 import statistics
 import shutil
 from dataclasses import asdict, fields
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -509,10 +510,16 @@ Current task count: {n_tasks}.</p>
 </tr></thead>
 <tbody>{''.join(table_rows)}</tbody>
 </table>
-<p>Raw evidence: <code>runs.csv</code>, <code>runs.json</code>,
-<code>task_summary.csv</code>, <code>summary.csv</code>,
-<code>run_plan.csv</code>, and per-run directories under <code>runs/</code>.
-Advanced mode also writes analysis tables prefixed with <code>advanced_</code>.</p>
+{(
+    '<p>This is a regenerated analysis. Original per-run evidence remains in '
+    f'<code>{html.escape(str(meta["reanalyzed_from"]))}</code>. This folder contains '
+    'a snapshot of the run records plus regenerated summaries, figures, and report.</p>'
+    if meta.get("reanalyzed_from")
+    else '<p>Raw evidence: <code>runs.csv</code>, <code>runs.json</code>, '
+    '<code>task_summary.csv</code>, <code>summary.csv</code>, '
+    '<code>run_plan.csv</code>, and per-run directories under <code>runs/</code>.</p>'
+)}
+<p>Advanced mode also writes analysis tables prefixed with <code>advanced_</code>.</p>
 '''
     (output / "report.html").write_text(body, encoding="utf-8")
 
@@ -565,9 +572,32 @@ def write_reports(
     )
 
 
-def reanalyze_output(output: Path, *, analysis_mode: str = "advanced") -> None:
-    output = output.expanduser().resolve()
-    runs_file = output / "runs.json"
+def create_reanalysis_output_dir(
+    source: Path,
+    *,
+    analysis_mode: str,
+) -> Path:
+    """Create a fresh timestamped reanalysis directory inside a benchmark run."""
+    root = source / "reanalysis"
+    root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    base = root / f"{stamp}-{analysis_mode}"
+    candidate = base
+    suffix = 2
+    while candidate.exists():
+        candidate = root / f"{base.name}-{suffix}"
+        suffix += 1
+    candidate.mkdir(parents=False, exist_ok=False)
+    return candidate
+
+
+def reanalyze_output(
+    source: Path,
+    *,
+    analysis_mode: str = "advanced",
+) -> Path:
+    source = source.expanduser().resolve()
+    runs_file = source / "runs.json"
     if not runs_file.is_file():
         raise FileNotFoundError(f"Missing Forge Bench runs.json: {runs_file}")
 
@@ -600,7 +630,7 @@ def reanalyze_output(output: Path, *, analysis_mode: str = "advanced") -> None:
     if not results:
         raise ValueError("runs.json contains no usable run records")
 
-    metadata_file = output / "metadata.json"
+    metadata_file = source / "metadata.json"
     meta = (
         json.loads(metadata_file.read_text(encoding="utf-8"))
         if metadata_file.is_file()
@@ -608,10 +638,18 @@ def reanalyze_output(output: Path, *, analysis_mode: str = "advanced") -> None:
     )
     arms = _ordered_arms(result.arm for result in results)
     tasks = list(dict.fromkeys(result.task for result in results))
+    meta = dict(meta)
     meta.setdefault("model", results[0].model)
     meta.setdefault("upstream_provider", results[0].upstream_provider)
     meta.setdefault("seed", "unknown")
     meta["reanalyzed"] = True
+    meta["reanalyzed_from"] = str(source)
+    meta["reanalyzed_at"] = datetime.now(timezone.utc).isoformat()
+
+    output = create_reanalysis_output_dir(
+        source,
+        analysis_mode=analysis_mode,
+    )
     write_reports(
         output,
         results,
@@ -620,3 +658,4 @@ def reanalyze_output(output: Path, *, analysis_mode: str = "advanced") -> None:
         meta,
         analysis_mode=analysis_mode,
     )
+    return output
