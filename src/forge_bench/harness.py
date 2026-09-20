@@ -285,7 +285,7 @@ def ensure_repo_cache(cache_root: Path, repo: str, base_commit: str) -> Path:
             "--git-dir",
             str(bare),
             "fetch",
-            "--filter=blob:none",
+            "--no-tags",
             "--depth=1",
             "origin",
             base_commit,
@@ -296,6 +296,20 @@ def ensure_repo_cache(cache_root: Path, repo: str, base_commit: str) -> Path:
         raise RuntimeError(
             f"Could not fetch {repo}@{base_commit}: " + fetch.stderr
         )
+
+    # Older Forge Bench revisions created this cache as a partial/promisor
+    # repository with --filter=blob:none. Such a cache can be missing objects
+    # and may attempt lazy network fetches when another local repository reads
+    # from it. Clear those settings once a full commit has been fetched.
+    sh(
+        ["git", "--git-dir", str(bare), "config", "--unset-all", "remote.origin.promisor"],
+    )
+    sh(
+        ["git", "--git-dir", str(bare), "config", "--unset-all", "remote.origin.partialclonefilter"],
+    )
+    sh(
+        ["git", "--git-dir", str(bare), "config", "--unset-all", "extensions.partialClone"],
+    )
 
     return bare
 
