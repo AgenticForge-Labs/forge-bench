@@ -1496,6 +1496,8 @@ def trajectory_rows(
             "tool_calls": 0.0,
             "cumulative_tokens": 0.0,
             "context_tokens": 0.0,
+            "tokens_per_api_call": math.nan,
+            "tool_calls_per_api_call": math.nan,
         }]
         for event in events:
             progress = max(0.0, min(100.0, 100.0 * (_event_time(event) - start) / span))
@@ -1527,6 +1529,12 @@ def trajectory_rows(
                 "tool_calls": float(tool_calls),
                 "cumulative_tokens": cumulative_tokens,
                 "context_tokens": context_tokens,
+                "tokens_per_api_call": (
+                    cumulative_tokens / api_calls if api_calls > 0 else math.nan
+                ),
+                "tool_calls_per_api_call": (
+                    tool_calls / api_calls if api_calls > 0 else math.nan
+                ),
             })
 
         descriptor = model_lookup.get(
@@ -1550,8 +1558,12 @@ def trajectory_rows(
             })
 
         state_names = [state for _, state in states]
+        first_inspect = next((progress for progress, state in states if state == "inspect"), math.nan)
+        first_search = next((progress for progress, state in states if state == "search"), math.nan)
         first_edit = next((progress for progress, state in states if state == "edit"), math.nan)
         first_execute = next((progress for progress, state in states if state == "execute"), math.nan)
+        last_edit = next((progress for progress, state in reversed(states) if state == "edit"), math.nan)
+        last_execute = next((progress for progress, state in reversed(states) if state == "execute"), math.nan)
         repeated = sum(a == b for a, b in zip(state_names, state_names[1:]))
         inspect_search_before_edit = sum(
             state in {"inspect", "search"}
@@ -1573,8 +1585,12 @@ def trajectory_rows(
             "repeat": result.repeat,
             "run_index": result.run_index,
             "state_events": len(states),
+            "first_inspect_progress": first_inspect,
+            "first_search_progress": first_search,
             "first_edit_progress": first_edit,
             "first_execute_progress": first_execute,
+            "last_edit_progress": last_edit,
+            "last_execute_progress": last_execute,
             "inspect_search_before_first_edit": inspect_search_before_edit,
             "consecutive_same_state_fraction": repeated / max(1, len(state_names) - 1),
             "edit_to_execute_transitions": edit_execute,
@@ -1621,6 +1637,7 @@ def trajectory_rows(
                 for metric in (
                     "api_wait_seconds", "tool_execution_seconds", "api_calls",
                     "tool_calls", "cumulative_tokens", "context_tokens",
+                    "tokens_per_api_call", "tool_calls_per_api_call",
                 )
             },
         })
@@ -1643,6 +1660,7 @@ def trajectory_rows(
         for metric in (
             "api_wait_seconds", "tool_execution_seconds", "api_calls",
             "tool_calls", "cumulative_tokens", "context_tokens",
+            "tokens_per_api_call", "tool_calls_per_api_call",
         ):
             center, low, high, n = _ci95((row[metric] for row in rows), signed=False)
             entry[f"mean_{metric}"] = center
@@ -1672,6 +1690,8 @@ def plot_trajectory_panels(
         "tool_calls": "Cumulative tool calls",
         "cumulative_tokens": "Cumulative token consumption",
         "context_tokens": "Approximate context size",
+        "tokens_per_api_call": "Cumulative tokens per API call",
+        "tool_calls_per_api_call": "Cumulative tool calls per API call",
     }
     ylabel = title_map.get(metric, metric.replace("_", " ").title())
     model_index = _descriptor_order(descriptors)
@@ -1826,8 +1846,12 @@ def workflow_summaries(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     metrics = (
         "state_events",
+        "first_inspect_progress",
+        "first_search_progress",
         "first_edit_progress",
         "first_execute_progress",
+        "last_edit_progress",
+        "last_execute_progress",
         "inspect_search_before_first_edit",
         "consecutive_same_state_fraction",
         "edit_to_execute_transitions",
@@ -1891,8 +1915,12 @@ def plot_workflow_metric_facets(
         return
     arms = _ordered_arms(summary_rows)
     titles = {
+        "first_inspect_progress": "First inspect progress",
+        "first_search_progress": "First search progress",
         "first_edit_progress": "First edit progress",
         "first_execute_progress": "First execution progress",
+        "last_edit_progress": "Last edit progress",
+        "last_execute_progress": "Last execution progress",
         "consecutive_same_state_fraction": "Repeated-state fraction",
         "edit_to_execute_transitions": "Edit → execute transitions",
         "late_state_fraction": "Late workflow fraction",
@@ -2150,8 +2178,12 @@ def write_multi_model_analysis(
     _write_csv(output / "workflow_task_metrics.csv", workflow_task)
     _write_csv(output / "workflow_summary.csv", workflow_summary)
     for metric in (
+        "first_inspect_progress",
+        "first_search_progress",
         "first_edit_progress",
         "first_execute_progress",
+        "last_edit_progress",
+        "last_execute_progress",
         "inspect_search_before_first_edit",
         "consecutive_same_state_fraction",
         "edit_to_execute_transitions",
@@ -2168,6 +2200,7 @@ def write_multi_model_analysis(
     for metric in (
         "cumulative_tokens", "context_tokens", "api_wait_seconds",
         "tool_execution_seconds", "api_calls", "tool_calls",
+        "tokens_per_api_call", "tool_calls_per_api_call",
     ):
         plot_trajectory_panels(output, trajectory_summary, descriptors, metric)
     return generated
