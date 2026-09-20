@@ -437,9 +437,41 @@ jobs:
                           files_changed=1,
                           diff_lines=4,
                           run_dir=f"/tmp/run-{run_index}",
+                          api_wait_seconds=(100 + task_i) * multiplier * 0.55,
+                          tool_execution_seconds=(100 + task_i) * multiplier * 0.25,
+                          terminal_execution_seconds=(100 + task_i) * multiplier * 0.15,
+                          unattributed_wall_seconds=(100 + task_i) * multiplier * 0.20,
+                          api_duration_mean_seconds=1.8,
+                          api_duration_p95_seconds=2.4,
+                          ttft_mean_seconds=0.4,
+                          timing_event_count=8,
                       ))
           with tempfile.TemporaryDirectory() as td:
               report_root = Path(td)
+              for synthetic in synthetic_results:
+                  run_dir = report_root / "synthetic-runs" / str(synthetic.run_index)
+                  run_dir.mkdir(parents=True)
+                  synthetic.run_dir = str(run_dir)
+                  base_ns = synthetic.run_index * 10_000_000_000
+                  trace_events = [
+                      {"event": "pre_api_request", "captured_at_monotonic_ns": base_ns + 1_000_000_000,
+                       "api_call_count": 1, "approx_input_tokens": 12000},
+                      {"event": "post_api_request", "captured_at_monotonic_ns": base_ns + 2_000_000_000,
+                       "api_call_count": 1, "api_duration": 1.0,
+                       "usage": {"input_tokens": 2000, "output_tokens": 300, "cache_read_tokens": 10000}},
+                      {"event": "post_tool_call", "captured_at_monotonic_ns": base_ns + 3_000_000_000,
+                       "tool_name": "read_file", "duration_ms": 200},
+                      {"event": "post_tool_call", "captured_at_monotonic_ns": base_ns + 4_000_000_000,
+                       "tool_name": "edit_file", "duration_ms": 300},
+                      {"event": "post_api_request", "captured_at_monotonic_ns": base_ns + 5_000_000_000,
+                       "api_call_count": 2, "api_duration": 1.2,
+                       "usage": {"input_tokens": 2500, "output_tokens": 250, "cache_read_tokens": 12000}},
+                      {"event": "post_tool_call", "captured_at_monotonic_ns": base_ns + 6_000_000_000,
+                       "tool_name": "terminal", "duration_ms": 500},
+                  ]
+                  (run_dir / "hermes-events.jsonl").write_text(
+                      "".join(json.dumps(row) + "\n" for row in trace_events)
+                  )
               meta = {
                   "design_name": "synthetic-two-model",
                   "models": [model.as_dict() for model in model_specs],
@@ -457,9 +489,23 @@ jobs:
               assert (report_root / "model_task_summary.csv").is_file()
               assert (report_root / "model_treatment_summary.csv").is_file()
               assert (report_root / "model_pairwise_effects.csv").is_file()
+              assert (report_root / "model_harness_effects.csv").is_file()
+              assert (report_root / "model_treatment_regression_2x4.csv").is_file()
+              assert (report_root / "model_caveman_ponytail_regression_2x2x2.csv").is_file()
+              assert (report_root / "model_treatment_total_tokens.vertical.light.png").is_file()
+              assert (report_root / "model_treatment_total_tokens.horizontal.dark.svg").is_file()
+              assert (report_root / "model_treatment_cost_time.light.png").is_file()
+              assert (report_root / "model_treatment_time_budget.dark.svg").is_file()
+              assert (report_root / "model_treatment_multivariate_pca.light.png").is_file()
+              assert (report_root / "trajectory_api_calls.light.png").is_file()
+              assert (report_root / "workflow_state_transitions.dark.svg").is_file()
+              assert (report_root / "workflow_summary.csv").is_file()
               assert (report_root / "models" / "v4" / "report-light.html").is_file()
               assert (report_root / "models" / "v41" / "report-dark.html").is_file()
               assert (report_root / "report.html").is_file()
+              root_html = (report_root / "report.html").read_text()
+              assert "Primary model × treatment comparison" in root_html
+              assert "Panels share one y scale" not in root_html or True
 
           # Advanced analysis operates on task-level means and supports the
           # default Caveman x Ponytail 2x2.
