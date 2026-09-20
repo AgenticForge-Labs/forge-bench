@@ -15,6 +15,37 @@ ADVANCED_METRICS = ("total_tokens", "wall_seconds", "api_calls", "cost_usd")
 PCA_FEATURES = ("total_tokens", "wall_seconds", "api_calls", "cost_usd", "diff_lines")
 TREATMENT_ORDER = ("baseline", "caveman", "ponytail", "caveman_ponytail", "lean_tools", "all_three")
 
+# Explicit treatment identity palette. Dark-mode colors are deliberately
+# luminous enough to separate cleanly on the navy background without looking
+# neon; light-mode companions preserve the same visual identities.
+LIGHT_TREATMENT_COLORS = {
+    "baseline": "#64748B",          # slate
+    "caveman": "#D97706",          # amber
+    "ponytail": "#0891B2",         # cyan
+    "caveman_ponytail": "#7C3AED", # violet
+    "lean_tools": "#059669",        # emerald
+    "all_three": "#E11D48",         # rose
+}
+DARK_TREATMENT_COLORS = {
+    "baseline": "#94A3B8",          # slate 400
+    "caveman": "#FBBF24",           # amber 400
+    "ponytail": "#22D3EE",          # cyan 400
+    "caveman_ponytail": "#A78BFA",  # violet 400
+    "lean_tools": "#34D399",        # emerald 400
+    "all_three": "#FB7185",         # rose 400
+}
+
+DARK_ACCENTS = {
+    "primary": "#38BDF8",
+    "secondary": "#C084FC",
+    "tertiary": "#FBBF24",
+}
+LIGHT_ACCENTS = {
+    "primary": "#0284C7",
+    "secondary": "#9333EA",
+    "tertiary": "#D97706",
+}
+
 
 def _ordered_arms(arms: set[str] | list[str]) -> list[str]:
     values = list(dict.fromkeys(str(arm) for arm in arms))
@@ -23,9 +54,26 @@ def _ordered_arms(arms: set[str] | list[str]) -> list[str]:
     )
 
 
-def _treatment_colors(arms: list[str]) -> dict[str, str]:
-    palette = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-    return {arm: palette[index % len(palette)] for index, arm in enumerate(_ordered_arms(arms))}
+def treatment_colors(arms: set[str] | list[str], theme: str) -> dict[str, str]:
+    base = DARK_TREATMENT_COLORS if theme == "dark" else LIGHT_TREATMENT_COLORS
+    fallback = (
+        ["#60A5FA", "#F472B6", "#2DD4BF", "#FCD34D"]
+        if theme == "dark"
+        else ["#2563EB", "#DB2777", "#0F766E", "#B45309"]
+    )
+    colors: dict[str, str] = {}
+    unknown = 0
+    for arm in _ordered_arms(arms):
+        if arm in base:
+            colors[arm] = base[arm]
+        else:
+            colors[arm] = fallback[unknown % len(fallback)]
+            unknown += 1
+    return colors
+
+
+def theme_accents(theme: str) -> dict[str, str]:
+    return DARK_ACCENTS if theme == "dark" else LIGHT_ACCENTS
 
 
 
@@ -399,7 +447,7 @@ def _plot_pca(
     fig, ax = plt.subplots(figsize=(10.8, 7.6))
     _style_axes(fig, ax, theme)
     arms = _ordered_arms({str(row["arm"]) for row in scores})
-    colors = _treatment_colors(arms)
+    colors = treatment_colors(arms, theme)
 
     for arm in arms:
         subset = [row for row in scores if row["arm"] == arm]
@@ -464,8 +512,9 @@ def _plot_scree(output: Path, explained: list[float], theme: str) -> None:
     _style_axes(fig, ax, theme)
     components = np.arange(1, len(explained) + 1)
     percent = np.asarray(explained) * 100.0
-    ax.plot(components, percent, marker="o", linewidth=2.4, markersize=8)
-    ax.bar(components, percent, alpha=0.32)
+    accents = theme_accents(theme)
+    ax.plot(components, percent, marker="o", linewidth=2.4, markersize=8, color=accents["primary"])
+    ax.bar(components, percent, alpha=0.34, color=accents["primary"])
     ax.set_xticks(components)
     ax.set_xlabel("Principal component", fontsize=14)
     ax.set_ylabel("Explained variance (%)", fontsize=14)
@@ -483,8 +532,9 @@ def _plot_loadings(output: Path, loadings: list[dict[str, Any]], theme: str) -> 
     labels = [str(row["feature"]) for row in loadings]
     y = np.arange(len(labels))
     height = 0.36
-    ax.barh(y - height / 2, [float(row["pc1_loading"]) for row in loadings], height=height, label="PC1")
-    ax.barh(y + height / 2, [float(row["pc2_loading"]) for row in loadings], height=height, label="PC2")
+    accents = theme_accents(theme)
+    ax.barh(y - height / 2, [float(row["pc1_loading"]) for row in loadings], height=height, label="PC1", color=accents["primary"])
+    ax.barh(y + height / 2, [float(row["pc2_loading"]) for row in loadings], height=height, label="PC2", color=accents["secondary"])
     ax.axvline(0, color=_theme(theme)["muted"], linewidth=1.2)
     ax.set_yticks(y, labels, fontsize=12)
     ax.set_xlabel("Loading", fontsize=14)
@@ -499,7 +549,7 @@ def _plot_clusters(output: Path, rows: list[dict[str, Any]], theme: str) -> None
     fig, ax = plt.subplots(figsize=(10.8, 7.6))
     _style_axes(fig, ax, theme)
     arms = _ordered_arms({str(row["arm"]) for row in rows})
-    colors = _treatment_colors(arms)
+    colors = treatment_colors(arms, theme)
 
     for arm in arms:
         subset = [row for row in rows if str(row["arm"]) == arm]
@@ -646,7 +696,7 @@ def _plot_cost_time(output: Path, rows: list[dict[str, Any]], corr: float, theme
     fig, ax = plt.subplots(figsize=(10.0, 7.0))
     _style_axes(fig, ax, theme)
     arms = _ordered_arms([str(row["arm"]) for row in rows])
-    colors = _treatment_colors(arms)
+    colors = treatment_colors(arms, theme)
     by_arm = {str(row["arm"]): row for row in rows}
     for arm in arms:
         row = by_arm[arm]

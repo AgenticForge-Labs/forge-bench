@@ -12,7 +12,7 @@ from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 
-from .advanced_analysis import TREATMENT_ORDER, write_advanced_analysis
+from .advanced_analysis import TREATMENT_ORDER, treatment_colors, write_advanced_analysis
 from .config import LABEL, METRICS, T975, Result
 
 
@@ -291,9 +291,14 @@ def plot_metric(
         fig, ax = plt.subplots(figsize=(max(10.2, 1.75 * len(labels)), 6.8))
         _style_axes(fig, ax, theme)
         x = list(range(len(labels)))
+        arm_colors = treatment_colors(
+            [str(row["arm"]) for row in summary],
+            theme,
+        )
         bars = ax.bar(
             x,
             values,
+            color=[arm_colors[str(row["arm"])] for row in summary],
             yerr=[lower, upper],
             capsize=8,
             error_kw={"elinewidth": 2.2, "capthick": 2.0, "ecolor": _plot_theme(theme)["text"]},
@@ -346,9 +351,14 @@ def plot_validity(
         fig, ax = plt.subplots(figsize=(max(10.2, 1.75 * len(labels)), 6.8))
         _style_axes(fig, ax, theme)
         x = list(range(len(labels)))
+        arm_colors = treatment_colors(
+            [str(row["arm"]) for row in summary],
+            theme,
+        )
         bars = ax.bar(
             x,
             values,
+            color=[arm_colors[str(row["arm"])] for row in summary],
             linewidth=1.15,
             edgecolor=_plot_theme(theme)["edge"],
         )
