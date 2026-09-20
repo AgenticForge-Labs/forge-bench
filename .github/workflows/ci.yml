@@ -106,6 +106,7 @@ jobs:
           assert design.name == "deepseek-v4-v41-relace"
           assert design.blocks == 1
           assert design.analysis_mode == "advanced"
+          assert design.max_turns == 100
           assert len(design.models) == 2
           assert [model.model for model in design.models] == [
               "deepseek/deepseek-v4-flash-0731",

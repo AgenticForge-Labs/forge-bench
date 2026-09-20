@@ -80,7 +80,9 @@ It compares:
 - `deepseek/deepseek-v4.1-flash-20260910`
 
 Both are pinned to the **Relace** OpenRouter upstream with reasoning disabled.
-The design uses the same five frozen SWE-bench tasks and the four
+The design uses a **100-turn Hermes maximum** so the turn ceiling is less likely
+to truncate difficult trajectories, while the per-run wall-clock timeout remains
+the outer safety bound. It uses the same five frozen SWE-bench tasks and the four
 Caveman × Ponytail treatments.
 
 One block is therefore:

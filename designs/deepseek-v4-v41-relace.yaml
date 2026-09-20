@@ -23,7 +23,7 @@ provider:
   require_same_upstream: true
 
 reasoning: none
-max_turns: 50
+max_turns: 100
 analysis_mode: advanced
 
 models:
