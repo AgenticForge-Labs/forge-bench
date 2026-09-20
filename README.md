@@ -2,33 +2,65 @@
 
 Forge Bench is a reproducible benchmark harness for comparing AI coding-agent strategies on correctness, token use, cost, latency, and tool behavior.
 
-The initial experiment compares each token-saving approach by itself, plus all three together:
+The default experiment is now a clean 2x2 comparison of two behavioral
+interventions while keeping the normal Hermes coding toolset constant:
 
 - Baseline Hermes
 - Caveman only
 - Ponytail only
-- Lean tools only
-- Caveman + Ponytail + Lean
+- Caveman + Ponytail
 
-For the lean-tools treatment, Hermes is invoked with exactly `file,terminal,skills,code_execution`. Baseline and the non-lean treatments use the explicit `hermes-cli` preset. This lets Forge Bench measure the context cost of advertising broad tool schemas such as browser, web, memory, delegation, vision, computer use, cron jobs, and other capabilities that are unnecessary for these coding tasks. The task prompt forbids actually using those irrelevant/network tools, so the intended comparison is schema/context overhead rather than different solution strategies.
+Lean tools remain available as an explicit optional treatment, along with the
+legacy Caveman + Ponytail + Lean combination, but neither is part of the
+default experiment. The first 15-run study showed that lean-tool pruning
+reduced token use on average but increased wall-clock time and behaved
+inconsistently across tasks, so it is being treated as a separate question
+rather than a factor in the Caveman/Ponytail interaction test.
 
 ## Default SWE-bench experiment
 
-Forge Bench now uses real SWE-bench repository tasks rather than one-line algorithm repairs.
+The second-stage default uses **five deliberately homogeneous SWE-bench
+Verified medium tasks**. The goal is low between-task variance in token use
+and wall-clock time, not broad coverage of SWE-bench difficulty.
 
-The initial default suite is frozen to three SWE-bench Verified tasks, all from the official `15 min - 1 hour` (`medium`) difficulty bucket:
+Two tasks are retained as anchors because the first experiment showed they are
+small, historically high-solve tasks with useful baseline behavior. The pinned
+selector then chose the three closest matches shown below:
 
-| Tier | Instance | Repository | Gold patch | Historical solve rate |
-| --- | --- | --- | ---: | ---: |
-| Low-1 | `django__django-13516` | django/django | 4 lines, 1 file | 84.4% |
-| Low-2 | `pytest-dev__pytest-7571` | pytest-dev/pytest | 4 lines, 1 file, 3 hunks | 79.3% |
-| Low-3 | `sympy__sympy-20154` | sympy/sympy | 23 lines, 1 file, 3 hunks | 78.5% |
+| Role | Instance | Repository | Gold patch | Historical solve rate | Anchor distance |
+| --- | --- | --- | ---: | ---: | ---: |
+| Anchor 1 | `django__django-13516` | django/django | 4 lines, 1 file | 84.4% | 0.000 |
+| Anchor 2 | `pytest-dev__pytest-7571` | pytest-dev/pytest | 4 lines, 1 file | 79.3% | 0.000 |
+| Match 1 | `django__django-15731` | django/django | 4 lines, 1 file | 87.4% | 0.251 |
+| Match 2 | `django__django-16662` | django/django | 5 lines, 1 file | 83.0% | 0.276 |
+| Match 3 | `django__django-7530` | django/django | 2 lines, 1 file | 81.5% | 0.298 |
 
-These are intentionally all from the historically high-solve end of the official 15–60 minute bucket. The initial experiment is meant to compare token/cost efficiency on tasks that most capable agents can actually finish, while retaining some variation in patch scope. Freezing them makes repeated treatment comparisons directly comparable over time.
+Forge Bench deterministically derives this panel from the pinned Verified
+medium pool by similarity to the two anchors. CI also asserts the exact five
+IDs so the experiment cannot silently drift. Eligible matches are
+restricted to one-file fixes with 2–10 changed lines and a small number of
+hunks. Among those, distance is computed from:
 
-The default experiment is therefore 3 fixed tasks × 5 Hermes treatments = 15 randomized agent runs.
+- gold-patch changed lines and hunks;
+- gold-patch character size;
+- FAIL_TO_PASS and PASS_TO_PASS counts;
+- issue-statement length; and
+- historical Verified solve rate when available.
 
-### Smart within-bucket sampling
+Historical solve rate is kept within roughly 10 percentage points below the
+anchor mean. Unlike the original smart sampler, repository diversity is **not**
+forced for this default because similarity and variance reduction are the
+primary design goals.
+
+The exact selected five tasks and their anchor-distance values are written to
+`selection.json`, `selection.csv`, and `candidate_pool.csv` before any
+model calls. Because the dataset revision and historical-results source are
+pinned, the selection is deterministic.
+
+The default experiment is therefore **5 tasks × 4 treatments = 20 randomized
+Hermes runs** per repeat.
+
+### Optional broad within-bucket sampling
 
 Forge Bench deliberately does not pick the first three tasks or randomly sample three tasks and call them representative.
 
@@ -58,7 +90,7 @@ When historical Verified results are available, composite complexity is:
 
 where historical hardness increases as historical solve rate falls.
 
-When `--smart-sample` is requested, Forge Bench targets composite scores near 0.20, 0.50, and 0.80 for a three-task sample. This gives a low/middle/high spread while staying inside one official human difficulty category. Repository diversity is preferred so one codebase does not dominate the comparison.
+When `--smart-sample` is requested, Forge Bench uses the older broad-spread design, targeting composite scores from approximately 0.20 to 0.80 across the requested sample size. This is useful for generalization studies, but it is intentionally not the default for the low-variance Caveman/Ponytail experiment.
 
 The historical signal is derived from public `results/results.json` files in the official `SWE-bench/experiments` repository at a recorded source revision. The exact candidate pool, selected instances, formula, source commit, and selected task features are saved with every benchmark.
 
@@ -119,16 +151,16 @@ This is the recommended first command. It makes no model calls and does not grad
 uv run forge-bench --selection-only
 ```
 
-By default it prints the frozen three-task initial suite with:
+By default it prints the five-task homogeneous anchor neighborhood with:
 
-- frozen low-range tier
-- patch-scope percentile
+- anchor/match role
+- distance from the Django/pytest anchor profile
 - historical solve rate
 - gold-patch changed-line count
 - files touched
 - repository and instance ID
 
-It saves `selection.json`, `selection.csv`, and `metadata.json`. Smart-sampled runs also save `candidate_pool.csv`.
+It saves `selection.json`, `selection.csv`, `candidate_pool.csv`, and `metadata.json` for the default anchored selection.
 
 ## Run the default benchmark
 
@@ -136,7 +168,20 @@ It saves `selection.json`, `selection.csv`, and `metadata.json`. Smart-sampled r
 uv run forge-bench
 ```
 
-The default is 3 selected tasks × 5 treatments = 15 randomized Hermes runs.
+The default is 5 selected tasks × 4 treatments = 20 randomized Hermes runs.
+
+The four treatments all use the normal `hermes-cli` toolset. To explicitly
+revisit lean-tool pruning, use for example:
+
+```bash
+uv run forge-bench --arms baseline lean_tools
+```
+
+Or include the legacy combined lean treatment:
+
+```bash
+uv run forge-bench --arms baseline caveman ponytail caveman_ponytail lean_tools all_three
+```
 
 For repeated stochastic attempts:
 
@@ -206,7 +251,7 @@ For each selected SWE-bench instance Forge Bench:
 3. creates a fresh self-contained workspace and removes its Git network remote;
 4. copies the treatment template into a brand-new minimal Hermes home;
 5. starts a new official Hermes Docker container with that profile and workspace mounted in;
-6. gives Hermes only the issue statement, repository state, and treatment instructions, with reasoning disabled;
+6. gives Hermes only the issue statement, repository state, and treatment instructions, with reasoning disabled; the prompt blocks external solution sources and cross-run leakage but otherwise allows normal local Hermes workflow;
 7. removes the Hermes container after the one-shot run;
 8. captures the complete working tree relative to the base commit, including committed and untracked changes;
 9. grades that patch with SWE-bench 4.1 against the exact frozen task row.
@@ -236,4 +281,8 @@ The selected SWE-bench tasks are treated as the independent experimental units.
 
 If repeats are requested, Forge Bench first averages repeated runs within each treatment × task, then computes a two-sided 95% Student-t confidence interval across task means.
 
-With only three selected tasks, the intervals are intentionally conservative and can be wide. The first experiment is meant to detect large, practically useful token/cost effects; a larger task sample should be used for precise effect-size estimates.
+With five selected tasks, the default second-stage experiment reduces the extreme
+small-n uncertainty of the first three-task study, but the intervals remain
+conservative. Repeats are still valuable because coding-agent trajectories are
+stochastic; task homogeneity reduces between-task variance but does not remove
+within-task run-to-run variation.
