@@ -850,7 +850,7 @@ def _write_multi_model_index(
             f"<td>{format_value(float(row['mean_total_tokens']), 'tokens')}</td>"
             f"<td>{format_value(float(row['mean_cost_usd']), 'usd')}</td>"
             f"<td>{format_value(float(row['mean_wall_seconds']), 'seconds')}</td>"
-            f"<td>{float(row['run_resolve_rate']):.0f}%</td>"
+            f"<td>{float(row.get('mean_task_resolve_rate', row['run_resolve_rate'])):.0f}%</td>"
             "</tr>"
         )
     model_links = " ".join(
@@ -885,6 +885,8 @@ def _write_multi_model_index(
     ]
     multivariate_stems = [
         ("model_treatment_multivariate_pca", "Multivariate agent-behavior PCA"),
+        ("multivariate_factorial_effects", "Multivariate model × treatment coefficients"),
+        ("multivariate_harness_distance", "Multivariate harness distance"),
         ("workflow_state_transitions", "Workflow transition matrices"),
     ]
     trajectory_stems = [
@@ -894,8 +896,14 @@ def _write_multi_model_index(
         ("trajectory_tool_execution_seconds", "Cumulative tool execution"),
         ("trajectory_api_calls", "API-call trajectory"),
         ("trajectory_tool_calls", "Tool-call trajectory"),
+        ("trajectory_tokens_per_api_call", "Tokens per API call over run progress"),
+        ("trajectory_tool_calls_per_api_call", "Tool intensity over run progress"),
+        ("workflow_first_inspect_progress", "First inspection"),
+        ("workflow_first_search_progress", "First search"),
         ("workflow_first_edit_progress", "First edit"),
         ("workflow_first_execute_progress", "First execution"),
+        ("workflow_last_edit_progress", "Last edit"),
+        ("workflow_last_execute_progress", "Last execution"),
         ("workflow_consecutive_same_state_fraction", "Repeated-state fraction"),
         ("workflow_edit_to_execute_transitions", "Edit-to-execute transitions"),
     ]
@@ -1058,11 +1066,23 @@ def write_experiment_reports(
                 }
             )
         for row in summary:
+            task_resolve = [
+                float(task_row["resolve_rate"])
+                for task_row in per_task
+                if task_row["arm"] == row["arm"]
+                and task_row["valid_runs"] > 0
+                and math.isfinite(float(task_row["resolve_rate"]))
+            ]
+            resolve_center, resolve_low, resolve_high, resolve_n = ci95(task_resolve)
             combined_summary.append(
                 {
                     "model_key": descriptor["key"],
                     "model_label": descriptor["label"],
                     "model": descriptor["model"],
+                    "mean_task_resolve_rate": resolve_center,
+                    "ci95_low_task_resolve_rate": resolve_low,
+                    "ci95_high_task_resolve_rate": resolve_high,
+                    "n_tasks_resolve_rate": resolve_n,
                     **row,
                 }
             )
