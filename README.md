@@ -82,8 +82,9 @@ It compares:
 Both are pinned to the **Relace** OpenRouter upstream with reasoning disabled.
 The design uses a **100-turn Hermes maximum** so the turn ceiling is less likely
 to truncate difficult trajectories, while the per-run wall-clock timeout remains
-the outer safety bound. It uses the same five frozen SWE-bench tasks and the four
-Caveman × Ponytail treatments.
+the outer safety bound. `budget_warning_ratio: null` is pinned explicitly so
+the finite ceiling does not introduce early budget-pressure prompts. It uses the
+same five frozen SWE-bench tasks and the four Caveman × Ponytail treatments.
 
 One block is therefore:
 
@@ -116,11 +117,37 @@ The source YAML is copied into the result directory as `design.yaml`.
 within-block position, and global run index.
 
 For multi-model designs, raw runs remain in one root experiment directory so
-the execution order is preserved. Treatment statistics are then generated
-separately under `models/<model-key>/` so model identity is never mistaken for
-a repeat of the same treatment. Root-level
-`model_treatment_summary.csv` and `model_pairwise_effects.csv` provide the
-cross-model comparison.
+the execution order is preserved. The root report is the primary **model ×
+treatment** analysis; the original single-model treatment reports remain under
+`models/<model-key>/` as drill-down pages.
+
+The primary simple plots are true model subpanels with **one shared scale**.
+Treatment colors remain identical across model panels, individual task means are
+overlaid as open points, and both vertical-bar and horizontal-bar versions are
+written for each core metric. With repeated randomized blocks, repeats are first
+averaged within task × model × treatment, so tasks remain the independent units
+for confidence intervals and treatment/model effects.
+
+Root-level analysis additionally includes:
+
+- paired V4.1-versus-V4 effects within the same task and treatment;
+- a task-fixed-effect `model * treatment` log-linear factorial analysis;
+- a secondary `model * caveman * ponytail` 2×2×2 decomposition;
+- within-model harness effects normalized to each model's own baseline;
+- an eight-condition cost-time Pareto analysis;
+- shared-panel direct API/tool/unattributed wall-time decomposition;
+- multivariate PCA of task-level agent behavior and condition centroids;
+- standardized vector-angle/cosine comparisons asking whether model upgrades
+  move behavior in the same multivariate direction as harness interventions;
+- normalized 0–100% within-run trajectories for context growth, cumulative
+  tokens, API wait, tool execution, API calls, and tool calls;
+- workflow timing/rework summaries such as first edit, first execution,
+  repeated-state fraction, edit→execute transitions, and late-run activity;
+- task-normalized workflow state-transition matrices.
+
+Trace events are observations along a trajectory, not statistical replicates.
+For trajectory summaries, stochastic repeats are averaged within task first and
+uncertainty is then calculated across tasks.
 
 See `designs/README.md` for the version-1 schema and how to add additional
 models or blocks.
@@ -170,7 +197,7 @@ The default experiment currently pins:
 - API aggregator: OpenRouter
 - upstream provider: `relace`
 - Hermes runtime: official `nousresearch/hermes-agent:latest` image, pulled once at benchmark start and resolved to its immutable image ID for all runs in that experiment
-- Hermes maximum tool-loop iterations: 50
+- Hermes maximum tool-loop iterations: 50 for the historical default single-model design; the V4/V4.1 YAML design pins 100
 - SWE-bench evaluator: `swebench==4.1.0`
 - SWE-bench Verified dataset revision: `78f471bf655a3137b2e8a75af1501690ec009ec3`
 - SWE-bench experiments source: `40f164d5b8f1d249bf95a6df8b74b577fd8e519d`
