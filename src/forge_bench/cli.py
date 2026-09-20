@@ -618,6 +618,22 @@ def main() -> int:
             "two-sided 95% Student-t across selected task means; "
             "repeats are averaged within task first"
         ),
+        "trace_capture": {
+            "enabled": True,
+            "mechanism": "observer-only native Hermes plugin hooks",
+            "artifacts": [
+                "hermes-events.jsonl",
+                "api-events.jsonl",
+                "tool-events.jsonl",
+                "lifecycle-events.jsonl",
+                "timing-summary.json",
+                "hermes-session.json",
+                "hermes-session.jsonl",
+                "hermes-session.trace.jsonl",
+                "hermes-state.db",
+                "treatment-evidence.json",
+            ],
+        },
         "official_evaluation": not args.skip_evaluation,
         "analysis_mode": args.analysis_mode,
     }
@@ -709,6 +725,16 @@ def main() -> int:
                 state = template / state_name
                 if state.exists():
                     state.unlink()
+            # Admin-time plugin/skill installation must never leak observer
+            # events or export artifacts into an experimental run profile.
+            for artifact_name in (
+                "forge-bench-events.jsonl",
+                "benchmark-session.jsonl",
+                "benchmark-session.trace.jsonl",
+            ):
+                artifact = template / artifact_name
+                if artifact.exists():
+                    artifact.unlink()
             templates[arm] = template
 
         for item in plan:
