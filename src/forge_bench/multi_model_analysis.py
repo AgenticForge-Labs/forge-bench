@@ -999,6 +999,342 @@ def multivariate_analysis(
     return score_rows, loading_rows, [float(x) for x in explained], centroid_rows, similarity_rows
 
 
+
+def multivariate_factorial_coefficients(
+    task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Fit one task-blocked 2×4 design to the standardized multivariate outcomes.
+
+    Coefficients are descriptive standardized effect vectors. With only five
+    independent tasks, this intentionally avoids presenting multivariate
+    significance tests as if the 40 condition rows were independent replicates.
+    """
+    rows, features, z = _feature_matrix(task_rows)
+    if z.size == 0 or len(descriptors) != 2:
+        return []
+    tasks = sorted({str(row["task"]) for row in rows})
+    arms = _ordered_arms(rows)
+    if "baseline" not in arms or len(tasks) < 2:
+        return []
+    comparison_arms = [arm for arm in arms if arm != "baseline"]
+    model_b = descriptors[1]["model"]
+    names = (
+        ["intercept"]
+        + [f"task:{task}" for task in tasks[1:]]
+        + ["model"]
+        + [f"treatment:{arm}" for arm in comparison_arms]
+        + [f"model:treatment:{arm}" for arm in comparison_arms]
+    )
+    X: list[list[float]] = []
+    for row in rows:
+        model_flag = 1.0 if row.get("model") == model_b else 0.0
+        arm = str(row["arm"])
+        treatment_flags = [
+            1.0 if arm == candidate else 0.0
+            for candidate in comparison_arms
+        ]
+        X.append(
+            [1.0]
+            + [1.0 if str(row["task"]) == task else 0.0 for task in tasks[1:]]
+            + [model_flag]
+            + treatment_flags
+            + [model_flag * value for value in treatment_flags]
+        )
+    matrix = np.asarray(X, dtype=float)
+    coefficients = np.linalg.pinv(matrix) @ z
+    report_terms = (
+        ["model"]
+        + [f"treatment:{arm}" for arm in comparison_arms]
+        + [f"model:treatment:{arm}" for arm in comparison_arms]
+    )
+    out: list[dict[str, Any]] = []
+    for term in report_terms:
+        term_index = names.index(term)
+        vector = coefficients[term_index]
+        norm = float(np.linalg.norm(vector))
+        for feature, beta in zip(features, vector):
+            out.append(
+                {
+                    "formula": "standardized multivariate outcome ~ task fixed effects + model * treatment",
+                    "term": term,
+                    "feature": feature,
+                    "standardized_beta": float(beta),
+                    "term_vector_norm": norm,
+                    "n_tasks": len(tasks),
+                    "n_observations": len(rows),
+                }
+            )
+    return out
+
+
+def plot_multivariate_factorial_heatmap(
+    output: Path,
+    rows: list[dict[str, Any]],
+) -> None:
+    if not rows:
+        return
+    terms = list(dict.fromkeys(str(row["term"]) for row in rows))
+    features = list(dict.fromkeys(str(row["feature"]) for row in rows))
+    lookup = {
+        (str(row["term"]), str(row["feature"])): float(row["standardized_beta"])
+        for row in rows if _finite(row.get("standardized_beta"))
+    }
+    matrix = np.asarray(
+        [[lookup.get((term, feature), math.nan) for feature in features] for term in terms],
+        dtype=float,
+    )
+    finite = matrix[np.isfinite(matrix)]
+    if finite.size == 0:
+        return
+    limit = max(float(np.max(np.abs(finite))), 1e-6)
+    for theme in ("light", "dark"):
+        palette = _theme(theme)
+        fig, ax = plt.subplots(
+            figsize=(max(9.0, 1.25 * len(features)), max(5.5, 0.7 * len(terms)))
+        )
+        image = ax.imshow(
+            np.ma.masked_invalid(matrix),
+            aspect="auto",
+            vmin=-limit,
+            vmax=limit,
+            cmap="coolwarm",
+        )
+        fig.patch.set_facecolor(palette["figure"])
+        ax.set_facecolor(palette["axes"])
+        ax.tick_params(colors=palette["text"], labelsize=9.5)
+        ax.set_xticks(range(len(features)), features, rotation=35, ha="right")
+        ax.set_yticks(range(len(terms)), terms)
+        ax.set_title(
+            "Task-blocked multivariate model × treatment effect vectors",
+            fontsize=18, fontweight="bold", color=palette["text"],
+        )
+        for spine in ax.spines.values():
+            spine.set_color(palette["edge"])
+        colorbar = fig.colorbar(image, ax=ax, shrink=0.82)
+        colorbar.set_label("Standardized coefficient", color=palette["text"])
+        colorbar.ax.tick_params(colors=palette["text"])
+        fig.text(
+            0.5,
+            0.01,
+            "Each column is a standardized behavior feature; rows are effects from one common task-blocked 2×4 design.",
+            ha="center",
+            fontsize=9.5,
+            color=palette["muted"],
+        )
+        fig.tight_layout(rect=(0, 0.04, 1, 1))
+        _save(fig, output, "multivariate_factorial_effects", theme)
+
+
+def multivariate_distances(
+    task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Task-paired distances in the same standardized feature space used for PCA."""
+    rows, features, z = _feature_matrix(task_rows)
+    if z.size == 0:
+        return [], [], [], []
+    vector_by_key = {
+        (str(row["model"]), str(row["arm"]), str(row["task"])): z[index]
+        for index, row in enumerate(rows)
+    }
+    arms = _ordered_arms(rows)
+
+    harness_task: list[dict[str, Any]] = []
+    for descriptor in descriptors:
+        model = descriptor["model"]
+        tasks = sorted({
+            str(row["task"]) for row in rows if row.get("model") == model
+        })
+        for task in tasks:
+            baseline = vector_by_key.get((model, "baseline", task))
+            if baseline is None:
+                continue
+            for arm in [value for value in arms if value != "baseline"]:
+                target = vector_by_key.get((model, arm, task))
+                if target is None:
+                    continue
+                delta = target - baseline
+                harness_task.append(
+                    {
+                        "model": model,
+                        "model_key": descriptor["key"],
+                        "model_label": descriptor["label"],
+                        "arm": arm,
+                        "label": LABEL.get(arm, arm),
+                        "task": task,
+                        "standardized_distance_from_own_baseline": float(np.linalg.norm(delta)),
+                        **{
+                            f"delta_{feature}": float(value)
+                            for feature, value in zip(features, delta)
+                        },
+                    }
+                )
+
+    harness_summary: list[dict[str, Any]] = []
+    for descriptor in descriptors:
+        for arm in [value for value in arms if value != "baseline"]:
+            subset = [
+                row for row in harness_task
+                if row["model"] == descriptor["model"] and row["arm"] == arm
+            ]
+            center, low, high, n = _ci95(
+                (row["standardized_distance_from_own_baseline"] for row in subset),
+                signed=False,
+            )
+            harness_summary.append(
+                {
+                    "model": descriptor["model"],
+                    "model_key": descriptor["key"],
+                    "model_label": descriptor["label"],
+                    "arm": arm,
+                    "label": LABEL.get(arm, arm),
+                    "mean_standardized_distance": center,
+                    "ci95_low_distance": low,
+                    "ci95_high_distance": high,
+                    "n_tasks": n,
+                }
+            )
+
+    model_task: list[dict[str, Any]] = []
+    if len(descriptors) == 2:
+        a, b = descriptors
+        tasks = sorted({
+            str(row["task"]) for row in rows
+            if row.get("model") in {a["model"], b["model"]}
+        })
+        for arm in arms:
+            for task in tasks:
+                av = vector_by_key.get((a["model"], arm, task))
+                bv = vector_by_key.get((b["model"], arm, task))
+                if av is None or bv is None:
+                    continue
+                delta = bv - av
+                model_task.append(
+                    {
+                        "model_a": a["model"],
+                        "model_a_label": a["label"],
+                        "model_b": b["model"],
+                        "model_b_label": b["label"],
+                        "arm": arm,
+                        "label": LABEL.get(arm, arm),
+                        "task": task,
+                        "standardized_model_distance": float(np.linalg.norm(delta)),
+                        **{
+                            f"delta_{feature}": float(value)
+                            for feature, value in zip(features, delta)
+                        },
+                    }
+                )
+
+    model_summary: list[dict[str, Any]] = []
+    for arm in arms:
+        subset = [row for row in model_task if row["arm"] == arm]
+        center, low, high, n = _ci95(
+            (row["standardized_model_distance"] for row in subset),
+            signed=False,
+        )
+        model_summary.append(
+            {
+                "arm": arm,
+                "label": LABEL.get(arm, arm),
+                "mean_standardized_model_distance": center,
+                "ci95_low_distance": low,
+                "ci95_high_distance": high,
+                "n_tasks": n,
+            }
+        )
+    return harness_task, harness_summary, model_task, model_summary
+
+
+def plot_multivariate_harness_distance(
+    output: Path,
+    task_rows: list[dict[str, Any]],
+    summary_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> None:
+    if not summary_rows:
+        return
+    arms = [arm for arm in _ordered_arms(summary_rows) if arm != "baseline"]
+    values = [
+        float(row["mean_standardized_distance"])
+        for row in summary_rows if _finite(row.get("mean_standardized_distance"))
+    ]
+    highs = [
+        float(row["ci95_high_distance"])
+        for row in summary_rows if _finite(row.get("ci95_high_distance"))
+    ]
+    if not values:
+        return
+    ymax = max(values + highs) * 1.12
+    for theme in ("light", "dark"):
+        colors = treatment_colors(arms, theme)
+        palette = _theme(theme)
+        fig, axes = plt.subplots(
+            1, len(descriptors), figsize=(7 * len(descriptors), 6.2),
+            sharey=True, squeeze=False,
+        )
+        for index, (ax, descriptor) in enumerate(zip(axes[0], descriptors)):
+            _style_axes(fig, ax, theme)
+            by_arm = {
+                str(row["arm"]): row
+                for row in summary_rows if row.get("model") == descriptor["model"]
+            }
+            x = np.arange(len(arms))
+            means = [
+                float(by_arm.get(arm, {}).get("mean_standardized_distance", math.nan))
+                for arm in arms
+            ]
+            lows = [
+                float(by_arm.get(arm, {}).get("ci95_low_distance", math.nan))
+                for arm in arms
+            ]
+            high = [
+                float(by_arm.get(arm, {}).get("ci95_high_distance", math.nan))
+                for arm in arms
+            ]
+            ax.bar(
+                x, means, color=[colors[arm] for arm in arms],
+                yerr=[
+                    [max(0.0, m - l) if _finite(m) and _finite(l) else 0.0 for m, l in zip(means, lows)],
+                    [max(0.0, h - m) if _finite(m) and _finite(h) else 0.0 for m, h in zip(means, high)],
+                ],
+                capsize=5, edgecolor=palette["edge"],
+                error_kw={"ecolor": palette["text"], "elinewidth": 1.5},
+            )
+            task_order = sorted({
+                str(row["task"]) for row in task_rows if row.get("model") == descriptor["model"]
+            })
+            offsets = np.linspace(-0.10, 0.10, max(1, len(task_order)))
+            offset_by_task = {task: float(offsets[i]) for i, task in enumerate(task_order)}
+            for arm_i, arm in enumerate(arms):
+                points = [
+                    row for row in task_rows
+                    if row.get("model") == descriptor["model"] and row.get("arm") == arm
+                ]
+                ax.scatter(
+                    [arm_i + offset_by_task.get(str(row["task"]), 0.0) for row in points],
+                    [float(row["standardized_distance_from_own_baseline"]) for row in points],
+                    s=30, facecolors="none", edgecolors=palette["text"], linewidths=0.9,
+                )
+            ax.set_xticks(x, [LABEL.get(arm, arm) for arm in arms], rotation=18, ha="right")
+            ax.set_ylim(0, ymax)
+            ax.set_title(str(descriptor["label"]), fontsize=15, fontweight="bold")
+            if index == 0:
+                ax.set_ylabel("Standardized multivariate distance")
+        fig.suptitle(
+            "Multivariate harness distance from each model's baseline",
+            fontsize=18, fontweight="bold", color=palette["text"],
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        _save(fig, output, "multivariate_harness_distance", theme)
+
+
 def plot_multivariate_pca(
     output: Path,
     scores: list[dict[str, Any]],
