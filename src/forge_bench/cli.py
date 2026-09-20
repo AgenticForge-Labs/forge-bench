@@ -656,6 +656,7 @@ def main() -> int:
             else "mixed"
         ),
         "max_turns": design.max_turns,
+        "budget_warning_ratio": design.budget_warning_ratio,
         "swebench_version": "4.1.0",
         "hermes_runtime": args.hermes_runtime,
         "hermes_image_ref": args.hermes_image if args.hermes_runtime == "docker" else None,
@@ -821,6 +822,7 @@ def main() -> int:
                     model=model_spec.model,
                     upstream_provider=model_spec.upstream_provider,
                     max_turns=design.max_turns,
+                    budget_warning_ratio=design.budget_warning_ratio,
                 )
                 install_arm(
                     args.hermes,
@@ -834,6 +836,7 @@ def main() -> int:
                     model=model_spec.model,
                     upstream_provider=model_spec.upstream_provider,
                     max_turns=design.max_turns,
+                    budget_warning_ratio=design.budget_warning_ratio,
                 )
                 # Treatment installers may edit plugins.enabled. Reassert the
                 # observer after installation so every arm is instrumented equally.
