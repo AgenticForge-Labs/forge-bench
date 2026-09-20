@@ -35,6 +35,8 @@ jobs:
               PINNED_REASONING,
           )
           from forge_bench.advanced_analysis import (
+              DARK_TREATMENT_COLORS,
+              LIGHT_TREATMENT_COLORS,
               cost_time_analysis,
               factorial_regression,
               paired_effects,
@@ -76,6 +78,11 @@ jobs:
           assert PINNED_MAX_TURNS == 50
           assert version("swebench") == "4.1.0"
           assert dataset_revision("verified") == "78f471bf655a3137b2e8a75af1501690ec009ec3"
+          assert DARK_TREATMENT_COLORS["baseline"] == "#94A3B8"
+          assert DARK_TREATMENT_COLORS["caveman"] == "#FBBF24"
+          assert DARK_TREATMENT_COLORS["ponytail"] == "#22D3EE"
+          assert DARK_TREATMENT_COLORS["caveman_ponytail"] == "#A78BFA"
+          assert LIGHT_TREATMENT_COLORS["baseline"] == "#64748B"
 
           m, lo, hi, n = ci95([1, 2, 3])
           assert n == 3 and lo <= m <= hi
