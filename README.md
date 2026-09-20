@@ -19,8 +19,6 @@ rather than a factor in the Caveman/Ponytail interaction test.
 
 ## Default SWE-bench experiment
 
-Forge Bench now uses real SWE-bench repository tasks rather than one-line algor## Default SWE-bench experiment
-
 The second-stage default uses **five deliberately homogeneous SWE-bench
 Verified medium tasks**. The goal is low between-task variance in token use
 and wall-clock time, not broad coverage of SWE-bench difficulty.
@@ -157,7 +155,7 @@ By default it prints the five-task homogeneous anchor neighborhood with:
 - files touched
 - repository and instance ID
 
-It saves `selection.json`, `selection.csv`, and `metadata.json`. Smart-sampled runs also save `candidate_pool.csv`.
+It saves `selection.json`, `selection.csv`, `candidate_pool.csv`, and `metadata.json` for the default anchored selection.
 
 ## Run the default benchmark
 
