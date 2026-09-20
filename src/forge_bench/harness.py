@@ -260,6 +260,19 @@ def ensure_repo_cache(cache_root: Path, repo: str, base_commit: str) -> Path:
     inspecting later commits or the solution PR through local git history.
     """
     bare = cache_root / "repos" / (repo.replace("/", "__") + ".git")
+
+    # Self-heal caches created by older Forge Bench versions that used
+    # --filter=blob:none. Those promisor repositories can fail when a local
+    # workspace asks them for an object they never downloaded.
+    if bare.exists():
+        partial_checks = [
+            ["git", "--git-dir", str(bare), "config", "--get", "remote.origin.promisor"],
+            ["git", "--git-dir", str(bare), "config", "--get", "remote.origin.partialclonefilter"],
+            ["git", "--git-dir", str(bare), "config", "--get", "extensions.partialClone"],
+        ]
+        if any(sh(argv).returncode == 0 for argv in partial_checks):
+            shutil.rmtree(bare)
+
     if not bare.exists():
         bare.parent.mkdir(parents=True, exist_ok=True)
         init = sh(["git", "init", "--bare", str(bare)])
