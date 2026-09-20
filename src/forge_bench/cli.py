@@ -388,11 +388,13 @@ def main() -> int:
         output = reanalyze_output(source, analysis_mode=args.analysis_mode)
         print("Reanalysis source:", source)
         print("Analysis mode:", args.analysis_mode)
-        report = output / "report.html"
+        light_report = output / "report-light.html"
+        dark_report = output / "report-dark.html"
         print("Reanalysis output:", output)
-        print("Report:", report)
-        if args.open_report and not open_report(report):
-            print("Open manually with: xdg-open", report)
+        print("Light report:", light_report)
+        print("Dark report:", dark_report)
+        if args.open_report and not open_report(light_report):
+            print("Open manually with: xdg-open", light_report)
         return 0
 
     if args.repeats < 1:
@@ -739,11 +741,13 @@ def main() -> int:
     usable = sum(result.valid for result in results)
     solved = sum(result.resolved for result in results if result.valid)
     print(f"\nCompleted: {usable}/{len(results)} usable runs; {solved} resolved")
-    report = output / "report.html"
-    print("Report:", report)
+    light_report = output / "report-light.html"
+    dark_report = output / "report-dark.html"
+    print("Light report:", light_report)
+    print("Dark report:", dark_report)
     print("PNG figures:", output / "*.png")
-    if args.open_report and not open_report(report):
-        print("Open manually with: xdg-open", report)
+    if args.open_report and not open_report(light_report):
+        print("Open manually with: xdg-open", light_report)
     return 0 if usable == len(results) else 1
 
 

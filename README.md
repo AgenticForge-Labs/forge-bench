@@ -168,7 +168,10 @@ Every benchmark now produces web-ready figures in both light and dark themes.
 The legacy filenames such as `total_tokens.png` and `total_tokens.svg`
 remain as light-mode aliases for compatibility. Each figure also has explicit
 `.light.png`, `.dark.png`, `.light.svg`, and `.dark.svg` variants.
-The HTML report automatically follows the browser's light/dark preference.
+Forge Bench writes two explicit HTML reports: `report-light.html` and
+`report-dark.html`. Each report is fixed to its matching figure set and does
+not depend on the browser or operating-system theme. `report.html` remains a
+compatibility alias for the light report.
 
 Plot typography, axis strokes, error bars, and grid lines are intentionally
 heavier than the original exploratory figures so the exports remain readable
@@ -212,7 +215,8 @@ benchmark-results/forge-bench-YYYYMMDD-HHMMSS/reanalysis/YYYYMMDD-HHMMSS-advance
 ```
 
 The new subfolder contains the regenerated summary tables, themed figures,
-advanced-analysis CSVs, a snapshot of the run records, and `report.html`.
+advanced-analysis CSVs, a snapshot of the run records, `report-light.html`,
+and `report-dark.html`.
 Repeated reanalysis runs are therefore preserved side by side. Add `--open`
 to either a normal benchmark or reanalysis command to open the finished
 `report.html` in the default browser.
