@@ -134,6 +134,13 @@ Each model also receives an independent treatment analysis under:
 models/<model-key>/
 ```
 
+The root report also writes both vertical-bar and horizontal-bar shared-scale
+model subpanels for the core metrics. The corresponding machine-readable files
+include `model_treatment_regression_2x4.csv`,
+`model_caveman_ponytail_regression_2x2x2.csv`,
+`multivariate_*.csv`, `trajectory_*.csv`, and `workflow_*.csv`.
+
+
 This prevents model identity from being accidentally treated as a repeated
 observation of the same treatment. Advanced Caveman/Ponytail analyses therefore
 remain within-model, while the root paired-effects table compares models on the
