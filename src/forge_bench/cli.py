@@ -220,16 +220,21 @@ def _selection_manifest_row(candidate: Any) -> dict[str, Any]:
 
 def _print_selection(selected: list[Any]) -> None:
     print("\nSelected SWE-bench instances")
-    print("  tier   complexity  hist-solve  patch-lines  files  repository / instance")
+    print("  tier      anchor-dist  hist-solve  patch-lines  files  repository / instance")
     for candidate in selected:
         history = (
             "n/a"
             if candidate.historical_solve_rate is None
             else f"{100 * candidate.historical_solve_rate:5.1f}%"
         )
+        distance = (
+            "n/a"
+            if candidate.anchor_distance is None
+            else f"{candidate.anchor_distance:.3f}"
+        )
         print(
-            f"  {candidate.selection_rank:5s}  "
-            f"{candidate.complexity_score:10.3f}  "
+            f"  {candidate.selection_rank:8s}  "
+            f"{distance:>11s}  "
             f"{history:>10s}  "
             f"{candidate.patch_changed_lines:11d}  "
             f"{candidate.patch_files:5d}  "
