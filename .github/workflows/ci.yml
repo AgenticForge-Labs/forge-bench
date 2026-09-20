@@ -109,7 +109,7 @@ jobs:
           assert len(design.models) == 2
           assert [model.model for model in design.models] == [
               "deepseek/deepseek-v4-flash-0731",
-              "deepseek/deepseek-v4.1-flash",
+              "deepseek/deepseek-v4.1-flash-20260910",
           ]
           assert {model.upstream_provider for model in design.models} == {"relace"}
           assert all(model.reasoning == "none" for model in design.models)
@@ -187,16 +187,16 @@ jobs:
 
               pin_profile_route(
                   dst,
-                  model="deepseek/deepseek-v4.1-flash",
+                  model="deepseek/deepseek-v4.1-flash-20260910",
                   upstream_provider="relace",
                   max_turns=50,
               )
               cfg = yaml.safe_load((dst / "config.yaml").read_text())
               assert cfg["provider_routing"]["only"] == ["relace"]
               assert list(cfg["provider_routing"]["models"]) == [
-                  "deepseek/deepseek-v4.1-flash"
+                  "deepseek/deepseek-v4.1-flash-20260910"
               ]
-              assert cfg["provider_routing"]["models"]["deepseek/deepseek-v4.1-flash"]["only"] == ["relace"]
+              assert cfg["provider_routing"]["models"]["deepseek/deepseek-v4.1-flash-20260910"]["only"] == ["relace"]
 
               argv = docker_hermes_argv(
                   "sha256:test",
@@ -247,7 +247,7 @@ jobs:
               ModelSpec(
                   key="v41",
                   label="V4.1",
-                  model="deepseek/deepseek-v4.1-flash",
+                  model="deepseek/deepseek-v4.1-flash-20260910",
                   upstream_provider="relace",
               ),
           ]
