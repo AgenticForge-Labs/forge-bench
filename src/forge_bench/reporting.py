@@ -391,12 +391,9 @@ def plot_validity(
         _save_plot(fig, output, "resolve_rate", theme)
 
 
-def _picture(stem: str, alt: str) -> str:
+def _theme_image(stem: str, alt: str, theme: str) -> str:
     return (
-        '<picture>'
-        f'<source media="(prefers-color-scheme: dark)" srcset="{stem}.dark.svg">'
-        f'<img src="{stem}.light.svg" alt="{html.escape(alt)}">'
-        '</picture>'
+        f'<img src="{stem}.{theme}.svg" alt="{html.escape(alt)}">'
     )
 
 
@@ -413,32 +410,6 @@ def write_html_report(
         if metric != "reasoning_tokens"
         or any(abs(float(row.get(f"mean_{metric}", 0.0))) > 1e-12 for row in summary)
     ]
-    metric_cards = "".join(
-        f'<div class="card">{_picture(metric, METRICS[metric][0])}</div>'
-        for metric in visible_metrics
-    )
-    metric_cards += (
-        '<div class="card">'
-        + _picture("resolve_rate", "SWE-bench resolve rate")
-        + '</div>'
-    )
-
-    advanced_cards = ""
-    if analysis_mode == "advanced":
-        advanced_specs = [
-            ("advanced_cost_time", "Cost-time efficiency frontier"),
-            ("advanced_token_effects", "Task-normalized token effects"),
-            ("advanced_pca_biplot", "PCA biplot of efficiency profiles"),
-            ("advanced_pca_scree", "PCA scree plot"),
-            ("advanced_pca_loadings", "PC1 and PC2 feature loadings"),
-            ("advanced_clusters", "Exploratory PCA-space clusters"),
-            ("advanced_correlations", "Efficiency correlation matrix"),
-        ]
-        advanced_cards = "".join(
-            f'<div class="card">{_picture(stem, alt)}</div>'
-            for stem, alt in advanced_specs
-            if (output / f"{stem}.light.svg").exists()
-        )
 
     table_rows: list[str] = []
     for row in summary:
@@ -460,30 +431,85 @@ def write_html_report(
             "</tr>"
         )
 
-    advanced_section = ""
-    if advanced_cards:
-        advanced_section = (
-            "<h2>Advanced analysis</h2>"
-            "<p>Exploratory task-level analyses include paired baseline-normalized effects, "
-            "task-fixed-effect regressions, Caveman×Ponytail factorial regression when available, "
-            "PCA, deterministic clustering, and correlations. These are descriptive/exploratory "
-            "with small benchmark samples and should not be over-interpreted.</p>"
-            f'<div class="grid">{advanced_cards}</div>'
-        )
+    advanced_specs = [
+        ("advanced_cost_time", "Cost-time efficiency frontier"),
+        ("advanced_token_effects", "Task-normalized token effects"),
+        ("advanced_pca_biplot", "PCA biplot of efficiency profiles"),
+        ("advanced_pca_scree", "PCA scree plot"),
+        ("advanced_pca_loadings", "PC1 and PC2 feature loadings"),
+        ("advanced_clusters", "Exploratory PCA-space clusters"),
+        ("advanced_correlations", "Efficiency correlation matrix"),
+    ]
 
     n_tasks = max((int(row["tasks_expected"]) for row in summary), default=0)
-    body = f'''<!doctype html>
+    for theme in ("light", "dark"):
+        metric_cards = "".join(
+            f'<div class="card">{_theme_image(metric, METRICS[metric][0], theme)}</div>'
+            for metric in visible_metrics
+        )
+        metric_cards += (
+            '<div class="card">'
+            + _theme_image("resolve_rate", "SWE-bench resolve rate", theme)
+            + '</div>'
+        )
+
+        advanced_cards = ""
+        if analysis_mode == "advanced":
+            advanced_cards = "".join(
+                f'<div class="card">{_theme_image(stem, alt, theme)}</div>'
+                for stem, alt in advanced_specs
+                if (output / f"{stem}.{theme}.svg").exists()
+            )
+
+        advanced_section = ""
+        if advanced_cards:
+            advanced_section = (
+                "<h2>Advanced analysis</h2>"
+                "<p>Exploratory task-level analyses include paired baseline-normalized effects, "
+                "task-fixed-effect regressions, Caveman×Ponytail factorial regression when available, "
+                "PCA, deterministic clustering, and correlations. These are descriptive/exploratory "
+                "with small benchmark samples and should not be over-interpreted.</p>"
+                f'<div class="grid">{advanced_cards}</div>'
+            )
+
+        if theme == "dark":
+            palette = {
+                "bg": "#090e1a",
+                "fg": "#f8fafc",
+                "muted": "#cbd5e1",
+                "card": "#111827",
+                "border": "#334155",
+                "head": "#1e293b",
+                "note": "#172554",
+                "note_border": "#1d4ed8",
+                "note_fg": "#dbeafe",
+                "shadow": "#0008",
+            }
+        else:
+            palette = {
+                "bg": "#f8fafc",
+                "fg": "#111827",
+                "muted": "#64748b",
+                "card": "#ffffff",
+                "border": "#e5e7eb",
+                "head": "#f1f5f9",
+                "note": "#eef2ff",
+                "note_border": "#c7d2fe",
+                "note_fg": "#3730a3",
+                "shadow": "#0f172a0a",
+            }
+
+        body = f'''<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Forge Bench report</title>
+<title>Forge Bench report ({theme})</title>
 <style>
-:root{{--bg:#f8fafc;--fg:#111827;--muted:#64748b;--card:#fff;--border:#e5e7eb;--head:#f1f5f9;--note:#eef2ff;--note-border:#c7d2fe;--note-fg:#3730a3}}
-@media (prefers-color-scheme:dark){{:root{{--bg:#090e1a;--fg:#f8fafc;--muted:#cbd5e1;--card:#111827;--border:#334155;--head:#1e293b;--note:#172554;--note-border:#1d4ed8;--note-fg:#dbeafe}}}}
+:root{{--bg:{palette["bg"]};--fg:{palette["fg"]};--muted:{palette["muted"]};--card:{palette["card"]};--border:{palette["border"]};--head:{palette["head"]};--note:{palette["note"]};--note-border:{palette["note_border"]};--note-fg:{palette["note_fg"]};--shadow:{palette["shadow"]}}}
 body{{font-family:Inter,system-ui,Arial,sans-serif;background:var(--bg);color:var(--fg);max-width:1280px;margin:auto;padding:36px 24px 72px}}
 h1{{font-size:36px;margin-bottom:6px}} h2{{font-size:25px;margin-top:34px}}
 p{{color:var(--muted);line-height:1.55;font-size:15px}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(500px,1fr));gap:20px}}
-.card{{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:8px;box-shadow:0 3px 12px #0002}}
+.card{{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:8px;box-shadow:0 3px 12px var(--shadow)}}
 .card img{{width:100%;display:block}}
 table{{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--border)}}
 th,td{{padding:12px;border-bottom:1px solid var(--border);text-align:right;font-size:14px}}
@@ -495,7 +521,8 @@ code{{font-size:.92em}}
 <p><code>{html.escape(str(meta.get('model', 'unknown')))}</code> via OpenRouter, pinned to
 <code>{html.escape(str(meta.get('upstream_provider', 'unknown')))}</code>. Randomization seed:
 <code>{html.escape(str(meta.get('seed', 'n/a')))}</code>. Analysis mode:
-<code>{html.escape(analysis_mode)}</code>.</p>
+<code>{html.escape(analysis_mode)}</code>. Report theme:
+<code>{theme}</code>.</p>
 <p class="note">Primary efficiency bars are means across task-level means, not pooled agent calls.
 Unresolved tasks remain in token, cost, and time averages when the agent run itself is usable.
 Error bars are two-sided 95% Student-t confidence intervals across the selected SWE-bench tasks.
@@ -521,7 +548,10 @@ Current task count: {n_tasks}.</p>
 )}
 <p>Advanced mode also writes analysis tables prefixed with <code>advanced_</code>.</p>
 '''
-    (output / "report.html").write_text(body, encoding="utf-8")
+        (output / f"report-{theme}.html").write_text(body, encoding="utf-8")
+
+    # Compatibility alias for existing tooling: report.html is the light report.
+    shutil.copyfile(output / "report-light.html", output / "report.html")
 
 
 def write_reports(
