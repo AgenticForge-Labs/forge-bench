@@ -41,6 +41,8 @@ from .harness import (
     source_home,
 )
 from .reporting import reanalyze_output, write_csv, write_reports
+from .trace_capture import install_trace_plugin
+
 from .swebench_backend import (
     EXPERIMENTS_SHA,
     build_candidates,
@@ -721,6 +723,9 @@ def main() -> int:
                 runtime=args.hermes_runtime,
                 image=hermes_image,
             )
+            # Treatment installers may edit plugins.enabled. Reassert the
+            # observer after installation so every arm is instrumented equally.
+            install_trace_plugin(template)
             for state_name in ("state.db", "state.db-shm", "state.db-wal"):
                 state = template / state_name
                 if state.exists():
