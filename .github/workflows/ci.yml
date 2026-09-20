@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, analysis-task-level-refinements]
   pull_request:
 
 jobs:
