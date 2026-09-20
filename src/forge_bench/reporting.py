@@ -12,8 +12,15 @@ from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 
-from .advanced_analysis import write_advanced_analysis
+from .advanced_analysis import TREATMENT_ORDER, write_advanced_analysis
 from .config import LABEL, METRICS, T975, Result
+
+
+def _ordered_arms(arms: Iterable[str]) -> list[str]:
+    values = list(dict.fromkeys(str(arm) for arm in arms))
+    return [arm for arm in TREATMENT_ORDER if arm in values] + sorted(
+        arm for arm in values if arm not in TREATMENT_ORDER
+    )
 
 
 def mean(values: Iterable[float]) -> float:
@@ -69,7 +76,7 @@ def task_summary(
     """Average repeats within a task so tasks, not repeated calls, define n."""
     rows: list[dict[str, Any]] = []
 
-    for arm in arms:
+    for arm in _ordered_arms(arms):
         for task in tasks:
             raw = [
                 result
@@ -136,7 +143,7 @@ def aggregate_summary(
     """Calculate treatment means and t CIs across task-level means."""
     out: list[dict[str, Any]] = []
 
-    for arm in arms:
+    for arm in _ordered_arms(arms):
         rows = [
             row
             for row in task_rows
@@ -289,7 +296,7 @@ def plot_metric(
             values,
             yerr=[lower, upper],
             capsize=8,
-            error_kw={"elinewidth": 2.0, "capthick": 1.8},
+            error_kw={"elinewidth": 2.2, "capthick": 2.0, "ecolor": _plot_theme(theme)["text"]},
             linewidth=1.15,
             edgecolor=_plot_theme(theme)["edge"],
         )
@@ -299,7 +306,7 @@ def plot_metric(
             fontweight="semibold",
             pad=14,
         )
-        ax.set_xticks(x, labels, rotation=20, ha="right", fontsize=12)
+        ax.set_xticks(x, labels, rotation=0, ha="center", fontsize=12)
         ax.set_ylabel(title, fontsize=14)
         ax.grid(axis="y", alpha=0.30, linewidth=1.15)
 
@@ -351,7 +358,7 @@ def plot_validity(
             fontweight="semibold",
             pad=14,
         )
-        ax.set_xticks(x, labels, rotation=20, ha="right", fontsize=12)
+        ax.set_xticks(x, labels, rotation=0, ha="center", fontsize=12)
         ax.set_ylabel("Resolved valid runs (%)", fontsize=14)
         ax.set_ylim(0, 105)
         ax.grid(axis="y", alpha=0.30, linewidth=1.15)
@@ -389,9 +396,15 @@ def write_html_report(
     *,
     analysis_mode: str = "basic",
 ) -> None:
+    visible_metrics = [
+        metric
+        for metric in METRICS
+        if metric != "reasoning_tokens"
+        or any(abs(float(row.get(f"mean_{metric}", 0.0))) > 1e-12 for row in summary)
+    ]
     metric_cards = "".join(
         f'<div class="card">{_picture(metric, METRICS[metric][0])}</div>'
-        for metric in METRICS
+        for metric in visible_metrics
     )
     metric_cards += (
         '<div class="card">'
@@ -402,9 +415,12 @@ def write_html_report(
     advanced_cards = ""
     if analysis_mode == "advanced":
         advanced_specs = [
+            ("advanced_cost_time", "Cost-time efficiency frontier"),
             ("advanced_token_effects", "Task-normalized token effects"),
-            ("advanced_pca", "PCA of efficiency profiles"),
-            ("advanced_clusters", "Unsupervised efficiency clusters"),
+            ("advanced_pca_biplot", "PCA biplot of efficiency profiles"),
+            ("advanced_pca_scree", "PCA scree plot"),
+            ("advanced_pca_loadings", "PC1 and PC2 feature loadings"),
+            ("advanced_clusters", "Exploratory PCA-space clusters"),
             ("advanced_correlations", "Efficiency correlation matrix"),
         ]
         advanced_cards = "".join(
@@ -520,6 +536,11 @@ def write_reports(
     )
 
     for metric in METRICS:
+        if metric == "reasoning_tokens" and not any(
+            abs(float(row.get("mean_reasoning_tokens", 0.0))) > 1e-12
+            for row in summary
+        ):
+            continue
         plot_metric(output, summary, metric)
     plot_validity(output, summary)
 
@@ -575,7 +596,7 @@ def reanalyze_output(output: Path, *, analysis_mode: str = "advanced") -> None:
         if metadata_file.is_file()
         else {}
     )
-    arms = list(dict.fromkeys(result.arm for result in results))
+    arms = _ordered_arms(result.arm for result in results)
     tasks = list(dict.fromkeys(result.task for result in results))
     meta.setdefault("model", results[0].model)
     meta.setdefault("upstream_provider", results[0].upstream_provider)
