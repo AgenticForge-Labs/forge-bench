@@ -24,6 +24,7 @@ provider:
 
 reasoning: none
 max_turns: 100
+budget_warning_ratio: null
 analysis_mode: advanced
 
 models:

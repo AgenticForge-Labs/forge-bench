@@ -52,7 +52,8 @@ provider:
   require_same_upstream: true
 
 reasoning: none
-max_turns: 50
+max_turns: 100
+budget_warning_ratio: null
 analysis_mode: advanced
 
 models:
@@ -79,6 +80,10 @@ randomization:
   seed: 260920
 ```
 
+`budget_warning_ratio` may be `null` (no early budget-pressure warning) or a
+floating-point ratio strictly between 0 and 1. The V4/V4.1 experiment pins it to
+`null`.
+
 ## Randomization
 
 A block is the complete Cartesian product:
@@ -99,6 +104,19 @@ per-block seeds, global run index, and within-block position are all written to
 Repeated observations are averaged within model × treatment × task before
 across-task confidence intervals are calculated.
 
+## Analysis hierarchy
+
+For multi-model designs the primary inferential unit is the selected task, not
+an API call, tool event, or randomized run. If `blocks > 1`, Forge Bench first
+averages repeats within each task × model × treatment cell and then performs the
+across-task analysis.
+
+The root report uses a task-blocked model × treatment analysis and shared-scale
+model subpanels. Per-model reports preserve the original treatment analysis.
+Multivariate and trajectory outputs preserve the same hierarchy: raw traces are
+kept, repeated trajectories are averaged within task, and across-task summaries
+are computed afterward.
+
 ## Multi-model reports
 
 The root result directory keeps the single randomized experiment record:
@@ -115,6 +133,13 @@ Each model also receives an independent treatment analysis under:
 ```text
 models/<model-key>/
 ```
+
+The root report also writes both vertical-bar and horizontal-bar shared-scale
+model subpanels for the core metrics. The corresponding machine-readable files
+include `model_treatment_regression_2x4.csv`,
+`model_caveman_ponytail_regression_2x2x2.csv`,
+`multivariate_*.csv`, `trajectory_*.csv`, and `workflow_*.csv`.
+
 
 This prevents model identity from being accidentally treated as a repeated
 observation of the same treatment. Advanced Caveman/Ponytail analyses therefore

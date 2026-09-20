@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 
 from .advanced_analysis import TREATMENT_ORDER, treatment_colors, write_advanced_analysis
 from .config import LABEL, METRICS, T975, Result
+from .multi_model_analysis import write_multi_model_analysis
 
 
 def _ordered_arms(arms: Iterable[str]) -> list[str]:
@@ -857,12 +858,67 @@ def _write_multi_model_index(
         f'{html.escape(model["label"])}</a>'
         for model in descriptors
     )
+
+    primary_stems = [
+        ("model_treatment_total_tokens.vertical", "Total tokens"),
+        ("model_treatment_cost_usd.vertical", "Cost"),
+        ("model_treatment_wall_seconds.vertical", "Wall time"),
+        ("model_treatment_api_calls.vertical", "API calls"),
+        ("model_treatment_resolve_rate.vertical", "Resolve rate"),
+    ]
+    horizontal_stems = [
+        ("model_treatment_total_tokens.horizontal", "Total tokens — horizontal"),
+        ("model_treatment_cost_usd.horizontal", "Cost — horizontal"),
+        ("model_treatment_wall_seconds.horizontal", "Wall time — horizontal"),
+        ("model_treatment_api_calls.horizontal", "API calls — horizontal"),
+        ("model_treatment_resolve_rate.horizontal", "Resolve rate — horizontal"),
+    ]
+    effect_stems = [
+        ("model_treatment_interaction_total_tokens", "Token interaction"),
+        ("model_treatment_interaction_cost_usd", "Cost interaction"),
+        ("model_treatment_interaction_wall_seconds", "Wall-time interaction"),
+        ("model_treatment_interaction_api_calls", "API-call interaction"),
+        ("model_harness_effect_total_tokens", "Harness effect on tokens"),
+        ("model_effect_total_tokens", "V4.1 vs V4 token effect"),
+        ("model_treatment_cost_time", "Combined cost-time frontier"),
+        ("model_treatment_time_budget", "Direct time budget"),
+    ]
+    multivariate_stems = [
+        ("model_treatment_multivariate_pca", "Multivariate agent-behavior PCA"),
+        ("workflow_state_transitions", "Workflow transition matrices"),
+    ]
+    trajectory_stems = [
+        ("trajectory_cumulative_tokens", "Cumulative token trajectory"),
+        ("trajectory_context_tokens", "Context growth"),
+        ("trajectory_api_wait_seconds", "Cumulative API wait"),
+        ("trajectory_tool_execution_seconds", "Cumulative tool execution"),
+        ("trajectory_api_calls", "API-call trajectory"),
+        ("trajectory_tool_calls", "Tool-call trajectory"),
+        ("workflow_first_edit_progress", "First edit"),
+        ("workflow_first_execute_progress", "First execution"),
+        ("workflow_consecutive_same_state_fraction", "Repeated-state fraction"),
+        ("workflow_edit_to_execute_transitions", "Edit-to-execute transitions"),
+    ]
     for theme in ("light", "dark"):
         if theme == "dark":
             bg, fg, muted, card, border = "#090e1a", "#f8fafc", "#cbd5e1", "#111827", "#334155"
         else:
             bg, fg, muted, card, border = "#f8fafc", "#111827", "#64748b", "#ffffff", "#e5e7eb"
         links = model_links.replace("{theme}", theme)
+
+        def cards(specs: list[tuple[str, str]]) -> str:
+            return "".join(
+                f'<div class="card"><h3>{html.escape(title)}</h3>'
+                f'<img src="{stem}.{theme}.svg" alt="{html.escape(title)}"></div>'
+                for stem, title in specs
+                if (output / f"{stem}.{theme}.svg").exists()
+            )
+
+        primary_cards = cards(primary_stems)
+        horizontal_cards = cards(horizontal_stems)
+        effect_cards = cards(effect_stems)
+        multivariate_cards = cards(multivariate_stems)
+        trajectory_cards = cards(trajectory_stems)
         body = f"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -870,19 +926,61 @@ def _write_multi_model_index(
 <style>
 body{{font-family:Inter,system-ui,Arial,sans-serif;background:{bg};color:{fg};max-width:1180px;margin:auto;padding:36px 24px 72px}}
 p{{color:{muted};line-height:1.55}} a{{color:inherit;font-weight:650}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(500px,1fr));gap:18px;margin:18px 0 28px}}
+.card{{background:{card};border:1px solid {border};border-radius:14px;padding:10px}}
+.card h3{{font-size:15px;margin:6px 8px 2px}} .card img{{width:100%;display:block}}
 table{{width:100%;border-collapse:collapse;background:{card};border:1px solid {border}}}
 th,td{{padding:12px;border-bottom:1px solid {border};text-align:right}} th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){{text-align:left}}
+code{{font-size:.92em}}
 </style>
 <h1>Forge Bench multi-model experiment</h1>
 <p>Design <code>{html.escape(str(meta.get("design_name", "unnamed")))}</code>.
 One execution plan is randomized across model × treatment × task cells; model-specific
 reports keep treatment inference separated by model.</p>
 <p>Model reports: {links}</p>
+<p>The primary inferential unit is the task. If multiple randomized blocks are
+run, repeated stochastic observations are averaged within task × model ×
+treatment before across-task confidence intervals and factorial analyses.</p>
+
+<h2>Primary model × treatment comparison</h2>
+<p>Each model is a true subpanel of the same figure and shares the same axis
+scale. Treatment colors are identical across models. Open circles are the
+independent task means.</p>
+<div class="grid">{primary_cards}</div>
+
+<h2>Horizontal versions</h2>
+<div class="grid">{horizontal_cards}</div>
+
+<h2>Factorial effects and timing</h2>
+<p>The primary regression is <code>log(outcome) ~ task + model * treatment</code>.
+A secondary decomposition treats Caveman and Ponytail as separate binary
+factors and fits <code>model * caveman * ponytail</code>.</p>
+<div class="grid">{effect_cards}</div>
+
+<h2>Multivariate workflow phenotype</h2>
+<p>PCA uses task-level agent behavior rather than individual API/tool events as
+replicates. Treatment is encoded consistently by color and model by marker.
+State-transition probabilities are normalized within task before across-task
+averaging.</p>
+<div class="grid">{multivariate_cards}</div>
+
+<h2>Within-run trajectories</h2>
+<p>Trace events are aligned to 0–100% normalized elapsed run progress.
+Repeated blocks are averaged within task first; trajectory summaries are then
+averaged across tasks. Individual turns are observations along a run, not
+independent replicates.</p>
+<div class="grid">{trajectory_cards}</div>
+
+<h2>Across-task summary</h2>
 <table><thead><tr><th>Model</th><th>Treatment</th><th>Tokens</th><th>Cost</th><th>Time</th><th>Resolve</th></tr></thead>
 <tbody>{''.join(table_rows)}</tbody></table>
-<p>Cross-model paired task effects are in <code>model_pairwise_effects.csv</code>.
-Raw execution evidence remains in <code>runs/</code>, <code>runs.json</code>, and
-<code>run_plan.csv</code>.</p>
+<p>Analysis tables include <code>model_pairwise_effects.csv</code>,
+<code>model_harness_effects.csv</code>,
+<code>model_treatment_regression_2x4.csv</code>,
+<code>model_caveman_ponytail_regression_2x2x2.csv</code>,
+the <code>multivariate_*</code> tables, and the <code>trajectory_*</code> /
+<code>workflow_*</code> tables. Raw execution evidence remains in
+<code>runs/</code>, <code>runs.json</code>, and <code>run_plan.csv</code>.</p>
 """
         (output / f"report-{theme}.html").write_text(body, encoding="utf-8")
     shutil.copyfile(output / "report-light.html", output / "report.html")
@@ -971,8 +1069,16 @@ def write_experiment_reports(
 
     write_csv(output / "model_task_summary.csv", combined_task_rows)
     write_csv(output / "model_treatment_summary.csv", combined_summary)
-    pairwise = model_pairwise_effects(combined_task_rows, descriptors)
-    write_csv(output / "model_pairwise_effects.csv", pairwise)
+
+    # Root-level multi-model analysis is primary. Per-model reports above are
+    # preserved as drill-down analyses.
+    write_multi_model_analysis(
+        output,
+        results,
+        combined_task_rows,
+        combined_summary,
+        descriptors,
+    )
     _write_multi_model_index(output, descriptors, combined_summary, meta)
 
 
