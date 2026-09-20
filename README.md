@@ -203,8 +203,16 @@ uv run forge-bench \
   --analysis-mode advanced
 ```
 
-This regenerates the summary tables, themed figures, advanced-analysis CSVs,
-and `report.html` in place from the saved `runs.json` and `metadata.json`.
+This reads the saved `runs.json` and `metadata.json` without modifying the
+original analysis. Each invocation creates a fresh timestamped directory under:
+
+```text
+benchmark-results/forge-bench-YYYYMMDD-HHMMSS/reanalysis/YYYYMMDD-HHMMSS-advanced/
+```
+
+The new subfolder contains the regenerated summary tables, themed figures,
+advanced-analysis CSVs, a snapshot of the run records, and `report.html`.
+Repeated reanalysis runs are therefore preserved side by side.
 
 ## Run the default benchmark
 
