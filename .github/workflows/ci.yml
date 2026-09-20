@@ -27,6 +27,7 @@ jobs:
               ARMS,
               DEFAULT_ANCHOR_IDS,
               DEFAULT_ARMS,
+              DEFAULT_EXPECTED_IDS,
               DEFAULT_SAMPLE_SIZE,
               DEFAULT_TOOLSETS,
               LEAN_TOOLSETS,
@@ -52,6 +53,13 @@ jobs:
           assert list(DEFAULT_ARMS) == ["baseline", "caveman", "ponytail", "caveman_ponytail"]
           assert DEFAULT_SAMPLE_SIZE == 5
           assert list(DEFAULT_ANCHOR_IDS) == ["django__django-13516", "pytest-dev__pytest-7571"]
+          assert list(DEFAULT_EXPECTED_IDS) == [
+              "django__django-13516",
+              "pytest-dev__pytest-7571",
+              "django__django-15731",
+              "django__django-16662",
+              "django__django-7530",
+          ]
           assert ARMS["caveman_ponytail"] == (True, True, False)
           assert ARMS["lean_tools"] == (False, False, True)
           assert DEFAULT_TOOLSETS == "hermes-cli"
@@ -186,4 +194,7 @@ jobs:
           uv run forge-bench --selection-only --output /tmp/forge-bench-selection
           grep -q '"instance_id": "django__django-13516"' /tmp/forge-bench-selection/selection.json
           grep -q '"instance_id": "pytest-dev__pytest-7571"' /tmp/forge-bench-selection/selection.json
+          grep -q '"instance_id": "django__django-15731"' /tmp/forge-bench-selection/selection.json
+          grep -q '"instance_id": "django__django-16662"' /tmp/forge-bench-selection/selection.json
+          grep -q '"instance_id": "django__django-7530"' /tmp/forge-bench-selection/selection.json
           test "$(grep -c '"instance_id"' /tmp/forge-bench-selection/selection.json)" -eq 5
