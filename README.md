@@ -111,9 +111,15 @@ The default experiment currently pins:
 - SWE-bench experiments source: `40f164d5b8f1d249bf95a6df8b74b577fd8e519d`
 - Ponytail: `e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156`
 - Caveman: `542442bab314973709f95b85b1ac0b3f6f5b5dc6`
-- randomization seed: `260919`
+- master randomization seed: `260919`
 
-Every individual observation starts from a fresh minimal Hermes home and a brand-new `docker run --rm` container. The profile contains only benchmark configuration, credentials, and the treatment being tested; user personalities, memories, hooks, project plugins, bundled skills, and prior sessions are not inherited. Treatment templates are installed once, then copied into a pristine per-run profile before the container starts.
+Every repeat is a **separately randomized complete block**. Each block contains
+every treatment × task combination exactly once, receives its own recorded
+`repeat_seed`, and is shuffled independently. `run_plan.csv` stores the repeat
+seed and within-block position for every observation. The master seed makes the
+whole plan reproducible; changing it generates a new randomization.
+
+Every individual observation starts from a fresh minimal Hermes home and a brand-new `docker run --rm` container. The profile contains only benchmark configuration, credentials, the treatment being tested, and Forge Bench's observer-only trace plugin; user personalities, memories, user hooks, project plugins, bundled skills, and prior sessions are not inherited. Treatment templates are installed once, then copied into a pristine per-run profile before the container starts.
 
 Each agent run also gets a fresh self-contained repository at the requested SWE-bench base commit. The workspace has no network Git remote and does not contain the solution PR. Model fallbacks and compression are disabled, reasoning is explicitly off, and OpenRouter routing is restricted to the pinned upstream provider.
 
@@ -193,22 +199,29 @@ The PCA section includes a true biplot with treatment-colored observations and
 loading vectors, a scree plot, and a PC1/PC2 loading chart. Clustering is shown
 in PCA space with cluster circles while points retain the same treatment colors.
 
-Latency/workflow diagnostics are also generated: token throughput
-(tokens/second), seconds/API call, tokens/API call, cost/API call, wall time
-versus API-call count, and, when Hermes recorded tool-call counts,
-tool-calls/API-call and seconds/tool-call. These are reconstructed from
-`runs.json`, so they also work when reanalyzing older Forge Bench runs.
-A cost-vs-wall-time plot shows the Pareto frontier because minimizing dollars
-and elapsed time are related but distinct objectives.
+Latency/workflow diagnostics are also generated. Ratio diagnostics include
+token throughput (tokens/second), seconds/API call, tokens/API call, cost/API
+call, wall time versus API-call count, and, when Hermes recorded tool-call
+counts, tool-calls/API-call and seconds/tool-call. These are reconstructed from
+`runs.json`, so they continue to work when reanalyzing older Forge Bench runs.
 
-Legacy Forge Bench artifacts do not contain exact per-request API wait durations
-or aggregate tool-execution durations. Advanced analysis writes
-`advanced_timing_evidence.csv` describing what timing evidence was available
-rather than estimating those missing components. Exact API-vs-tool wall-time
-decomposition therefore requires additional runtime instrumentation in a future
-benchmark, while the ratio diagnostics above can be computed immediately from
-existing output. Correlations and all underlying tables are written to CSV.
-These analyses are exploratory, especially with small task counts.
+New runs additionally install an **observer-only native Hermes plugin** in every
+treatment profile. It subscribes to Hermes lifecycle hooks such as
+`post_api_request`, `post_tool_call`, and `on_skill_lifecycle` without adding
+tools or changing model context. That gives direct per-run measurements of API
+wait time, tool execution time, terminal/process time, API latency, and
+time-to-first-chunk. Advanced analysis writes `advanced_time_budget.csv` and
+light/dark `advanced_time_budget` and `advanced_api_latency` figures. The
+remaining wall time is reported as unattributed/orchestration time rather than
+silently assigned to the model or tools.
+
+Legacy Forge Bench artifacts predate this observer and therefore cannot recover
+exact API/tool durations. `advanced_timing_evidence.csv` records the actual
+coverage available in each analysis instead of fabricating missing timing
+components. A cost-vs-wall-time plot still shows the Pareto frontier because
+minimizing dollars and elapsed time are related but distinct objectives.
+Correlations and all underlying tables are written to CSV. These analyses are
+exploratory, especially with small task counts.
 
 Existing benchmark outputs can be reanalyzed without rerunning Hermes or
 SWE-bench:
@@ -216,7 +229,7 @@ SWE-bench:
 ```bash
 uv run forge-bench \
   --reanalyze benchmark-results/forge-bench-YYYYMMDD-HHMMSS \
-  --analysis-mode advanced
+  --analysis-mode advanced \
   --open
 ```
 
@@ -258,10 +271,13 @@ uv run forge-bench --arms baseline caveman ponytail caveman_ponytail lean_tools 
 For repeated stochastic attempts:
 
 ```bash
-uv run forge-bench --repeats 3
+uv run forge-bench --repeats 3 --seed 260920
 ```
 
-Repeats are averaged within task before across-task statistics are calculated.
+This creates three separately randomized 20-run blocks. Each repeat gets a
+different deterministic `repeat_seed`, recorded in both `metadata.json` and
+`run_plan.csv`; no repeat reuses the same execution order. Repeats are averaged
+within task × treatment before across-task statistics are calculated.
 
 ## Other SWE-bench samples
 
@@ -324,9 +340,12 @@ For each selected SWE-bench instance Forge Bench:
 4. copies the treatment template into a brand-new minimal Hermes home;
 5. starts a new official Hermes Docker container with that profile and workspace mounted in;
 6. gives Hermes only the issue statement, repository state, and treatment instructions, with reasoning disabled; the prompt blocks external solution sources and cross-run leakage but otherwise allows normal local Hermes workflow;
-7. removes the Hermes container after the one-shot run;
-8. captures the complete working tree relative to the base commit, including committed and untracked changes;
-9. grades that patch with SWE-bench 4.1 against the exact frozen task row.
+7. captures observer-hook timing events and the Hermes session before the ephemeral profile is removed;
+8. exports the full Hermes session in native JSON/trace forms and snapshots `state.db` for auditability;
+9. records treatment-installation evidence plus observed skill-lifecycle events (including whether Caveman was actually loaded);
+10. removes the Hermes container after the one-shot run;
+11. captures the complete working tree relative to the base commit, including committed and untracked changes;
+12. grades that patch with SWE-bench 4.1 against the exact frozen task row.
 
 The gold solution patch and test patch are never exposed to Hermes.
 
@@ -338,15 +357,18 @@ Each benchmark writes a timestamped directory under `benchmark-results/` contain
 
 - `selection.json` / `selection.csv` — exact selected tasks and their selection features
 - `candidate_pool.csv` — all candidates considered by smart sampling
-- `run_plan.csv` — exact randomized execution order
-- `metadata.json` — dataset, source revisions, model/provider pins, formula, and settings
-- `runs.csv` / `runs.json` — raw run-level results
+- `run_plan.csv` — exact execution order, repeat block, within-block position, and per-repeat randomization seed
+- `metadata.json` — dataset, source revisions, model/provider pins, master/repeat seeds, trace mechanism, and settings
+- `runs.csv` / `runs.json` — raw run-level results, including direct timing fields on newly instrumented runs
 - `task_summary.csv` — repeats averaged within treatment × task
 - `summary.csv` — across-task treatment means and 95% confidence intervals
-- `report.html`
-- light/dark PNG and SVG figures for tokens, cost, agent wall time, API calls, and SWE-bench resolve rate (legacy unsuffixed filenames remain light-mode aliases)
+- `report-light.html` / `report-dark.html` (`report.html` remains a light compatibility alias)
+- light/dark PNG and SVG figures for tokens, cost, agent wall time, API calls, and SWE-bench resolve rate
 - one evidence directory per run containing the prompt, Hermes stdout/stderr, usage JSON, generated patch, official evaluation output, and final workspace
-- in advanced mode, `advanced_*.csv` tables plus themed cost-time frontier, PCA biplot, scree, loadings, clustering, correlation, and paired-effect figures
+- per-run `hermes-events.jsonl`, `api-events.jsonl`, `tool-events.jsonl`, `lifecycle-events.jsonl`, and `timing-summary.json`
+- per-run `hermes-session.json` / `hermes-session.jsonl`, `hermes-session.trace.jsonl`, and a consistent `hermes-state.db` snapshot
+- per-run `treatment-evidence.json`, which records assigned treatment, installed Caveman/Ponytail components, and observed skill-lifecycle uptake without replacing randomized assignment as the causal variable
+- in advanced mode, `advanced_*.csv` tables plus themed cost-time frontier, direct time-budget/API-latency plots when available, PCA biplot, scree, loadings, clustering, correlation, and paired-effect figures
 
 ## Confidence intervals
 
