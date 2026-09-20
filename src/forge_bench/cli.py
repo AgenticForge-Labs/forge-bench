@@ -41,6 +41,8 @@ from .harness import (
     source_home,
 )
 from .reporting import reanalyze_output, write_csv, write_reports
+from .trace_capture import install_trace_plugin
+
 from .swebench_backend import (
     EXPERIMENTS_SHA,
     build_candidates,
@@ -101,8 +103,24 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Allow multiple smart-sampled tasks from the same repository.",
     )
-    parser.add_argument("--repeats", type=int, default=1)
-    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=1,
+        help=(
+            "Number of independently randomized repeat blocks. Repeats are "
+            "averaged within task/treatment before across-task inference."
+        ),
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_SEED,
+        help=(
+            "Master randomization seed. Each repeat block receives its own "
+            "deterministically derived seed, recorded in metadata/run_plan.csv."
+        ),
+    )
     parser.add_argument(
         "--timeout",
         type=int,
@@ -331,6 +349,11 @@ def _preflight(args: argparse.Namespace) -> str | None:
                 ["--name", "--force", "--yes"],
                 "Hermes Docker skill installer",
             ),
+            (
+                [*probe_prefix, "sessions", "export", "--help"],
+                ["--format", "--session-id"],
+                "Hermes Docker session exporter",
+            ),
         ]
     else:
         if not shutil.which(args.hermes) and not Path(args.hermes).exists():
@@ -350,6 +373,11 @@ def _preflight(args: argparse.Namespace) -> str | None:
                 [args.hermes, "skills", "install", "--help"],
                 ["--name", "--force", "--yes"],
                 "Hermes skill installer",
+            ),
+            (
+                [args.hermes, "sessions", "export", "--help"],
+                ["--format", "--session-id"],
+                "Hermes session exporter",
             ),
         ]
 
@@ -379,6 +407,43 @@ def _use_anchor_default(
         and normalize_difficulty(difficulty or "") == DEFAULT_DIFFICULTY
         and args.sample_size == DEFAULT_SAMPLE_SIZE
     )
+
+def build_run_plan(
+    arms: list[str],
+    task_ids: list[str],
+    repeats: int,
+    master_seed: int,
+) -> tuple[list[dict[str, Any]], list[int]]:
+    """Build separately randomized treatment×task blocks for each repeat."""
+    seed_rng = random.Random(master_seed)
+    repeat_seeds = [master_seed]
+    while len(repeat_seeds) < repeats:
+        candidate = seed_rng.randrange(1, 2**63)
+        if candidate not in repeat_seeds:
+            repeat_seeds.append(candidate)
+
+    plan: list[dict[str, Any]] = []
+    for repeat in range(1, repeats + 1):
+        repeat_seed = repeat_seeds[repeat - 1]
+        block = [
+            {
+                "arm": arm,
+                "instance_id": instance_id,
+                "repeat": repeat,
+                "repeat_seed": repeat_seed,
+            }
+            for instance_id in task_ids
+            for arm in arms
+        ]
+        random.Random(repeat_seed).shuffle(block)
+        for block_position, item in enumerate(block, 1):
+            item["block_position"] = block_position
+            plan.append(item)
+
+    for run_index, item in enumerate(plan, 1):
+        item["run_index"] = run_index
+    return plan, repeat_seeds
+
 
 def main() -> int:
     args = parse_args()
@@ -545,13 +610,32 @@ def main() -> int:
         "lean_toolsets": LEAN_TOOLSETS,
         "repeats": args.repeats,
         "seed": args.seed,
+        "repeat_seeds": [],
         "randomization": (
-            "global shuffle across treatment x selected instance x repeat"
+            "independent randomized blocks: each repeat contains every "
+            "treatment x selected-instance combination exactly once and is "
+            "shuffled with its own recorded repeat_seed"
         ),
         "confidence_interval": (
             "two-sided 95% Student-t across selected task means; "
             "repeats are averaged within task first"
         ),
+        "trace_capture": {
+            "enabled": True,
+            "mechanism": "observer-only native Hermes plugin hooks",
+            "artifacts": [
+                "hermes-events.jsonl",
+                "api-events.jsonl",
+                "tool-events.jsonl",
+                "lifecycle-events.jsonl",
+                "timing-summary.json",
+                "hermes-session.json",
+                "hermes-session.jsonl",
+                "hermes-session.trace.jsonl",
+                "hermes-state.db",
+                "treatment-evidence.json",
+            ],
+        },
         "official_evaluation": not args.skip_evaluation,
         "analysis_mode": args.analysis_mode,
     }
@@ -594,15 +678,17 @@ def main() -> int:
             Path(smoke) / "workspace",
         )
 
-    plan = [
-        {"arm": arm, "instance_id": instance_id, "repeat": repeat}
-        for repeat in range(1, args.repeats + 1)
-        for instance_id in task_ids
-        for arm in arms
-    ]
-    random.Random(args.seed).shuffle(plan)
-    for index, item in enumerate(plan, 1):
-        item["run_index"] = index
+    plan, repeat_seeds = build_run_plan(
+        arms,
+        task_ids,
+        args.repeats,
+        args.seed,
+    )
+    meta["repeat_seeds"] = repeat_seeds
+    (output / "metadata.json").write_text(
+        json.dumps(meta, indent=2) + "\n",
+        encoding="utf-8",
+    )
     write_csv(output / "run_plan.csv", plan)
 
     print("\nForge Bench execution")
@@ -612,7 +698,8 @@ def main() -> int:
     print("  Hermes runtime:", args.hermes_runtime)
     if hermes_image:
         print("  Hermes image:", hermes_image)
-    print("  randomized runs:", len(plan), "seed=", args.seed)
+    print("  randomized runs:", len(plan), "master seed=", args.seed)
+    print("  repeat seeds:", ", ".join(str(seed) for seed in repeat_seeds))
     print("  official grading:", not args.skip_evaluation)
     print("  output:", output)
 
@@ -636,10 +723,23 @@ def main() -> int:
                 runtime=args.hermes_runtime,
                 image=hermes_image,
             )
+            # Treatment installers may edit plugins.enabled. Reassert the
+            # observer after installation so every arm is instrumented equally.
+            install_trace_plugin(template)
             for state_name in ("state.db", "state.db-shm", "state.db-wal"):
                 state = template / state_name
                 if state.exists():
                     state.unlink()
+            # Admin-time plugin/skill installation must never leak observer
+            # events or export artifacts into an experimental run profile.
+            for artifact_name in (
+                "forge-bench-events.jsonl",
+                "benchmark-session.jsonl",
+                "benchmark-session.trace.jsonl",
+            ):
+                artifact = template / artifact_name
+                if artifact.exists():
+                    artifact.unlink()
             templates[arm] = template
 
         for item in plan:

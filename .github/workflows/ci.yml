@@ -23,6 +23,7 @@ jobs:
 
           import yaml
 
+          from forge_bench.cli import build_run_plan
           from forge_bench.config import (
               ARMS,
               DEFAULT_ANCHOR_IDS,
@@ -41,6 +42,7 @@ jobs:
               factorial_regression,
               latency_efficiency_analysis,
               timing_evidence_summary,
+              time_budget_analysis,
               paired_effects,
               pca_analysis,
               treatment_regression,
@@ -51,6 +53,11 @@ jobs:
               docker_hermes_argv,
               load_swebench_report,
               make_profile,
+          )
+          from forge_bench.trace_capture import (
+              TRACE_PLUGIN_NAME,
+              finalize_event_artifacts,
+              summarize_events,
           )
           from forge_bench.reporting import (
               ci95,
@@ -154,6 +161,9 @@ jobs:
               make_profile(src, dst)
               cfg = yaml.safe_load((dst / "config.yaml").read_text())
               assert cfg["agent"]["max_turns"] == 50
+              assert TRACE_PLUGIN_NAME in cfg["plugins"]["enabled"]
+              assert (dst / "plugins" / TRACE_PLUGIN_NAME / "plugin.yaml").is_file()
+              assert (dst / "plugins" / TRACE_PLUGIN_NAME / "__init__.py").is_file()
               assert (dst / ".no-bundled-skills").is_file()
               assert (dst / ".env").is_file()
 
@@ -170,6 +180,52 @@ jobs:
               assert "/workspace" in joined
               assert "HERMES_UID=" in joined
               assert "HERMES_GID=" in joined
+
+          # Repeats are complete, independently randomized blocks with distinct
+          # recorded seeds rather than one global shuffle.
+          plan, repeat_seeds = build_run_plan(
+              ["baseline", "caveman", "ponytail", "caveman_ponytail"],
+              ["task-a", "task-b", "task-c", "task-d", "task-e"],
+              3,
+              260920,
+          )
+          assert len(plan) == 60
+          assert len(set(repeat_seeds)) == 3
+          expected_pairs = {
+              (arm, task)
+              for arm in ("baseline", "caveman", "ponytail", "caveman_ponytail")
+              for task in ("task-a", "task-b", "task-c", "task-d", "task-e")
+          }
+          block_orders = []
+          for repeat in (1, 2, 3):
+              block = [row for row in plan if row["repeat"] == repeat]
+              assert len(block) == 20
+              assert {(row["arm"], row["instance_id"]) for row in block} == expected_pairs
+              assert {row["repeat_seed"] for row in block} == {repeat_seeds[repeat - 1]}
+              assert [row["block_position"] for row in block] == list(range(1, 21))
+              block_orders.append([(row["arm"], row["instance_id"]) for row in block])
+          assert len({tuple(order) for order in block_orders}) == 3
+
+          # Synthetic native-hook events produce an auditable direct timing budget.
+          synthetic_events = [
+              {"event": "post_api_request", "api_duration": 2.0,
+               "started_at": 10.0, "first_chunk_at": 10.4, "session_id": "s1"},
+              {"event": "post_api_request", "api_duration": 3.0,
+               "started_at": 20.0, "first_chunk_at": 20.6, "session_id": "s1"},
+              {"event": "post_tool_call", "tool_name": "terminal", "duration_ms": 1500,
+               "session_id": "s1"},
+              {"event": "post_tool_call", "tool_name": "read_file", "duration_ms": 500,
+               "session_id": "s1"},
+              {"event": "on_skill_lifecycle", "skill_name": "caveman", "action": "viewed",
+               "session_id": "s1"},
+          ]
+          timing = summarize_events(synthetic_events, 10.0)
+          assert timing["api_wait_seconds"] == 5.0
+          assert timing["tool_execution_seconds"] == 2.0
+          assert timing["terminal_execution_seconds"] == 1.5
+          assert timing["unattributed_wall_seconds"] == 3.0
+          assert timing["caveman_skill_observed"] is True
+          assert timing["session_ids"] == ["s1"]
 
           # Patch capture must include both committed changes and untracked files.
           with tempfile.TemporaryDirectory() as td:
@@ -288,6 +344,15 @@ jobs:
                       "cost_per_second": (0.015 * multiplier) / ((180 + task_i * 4) * multiplier),
                       "seconds_per_tool_call": ((180 + task_i * 4) * multiplier) / ((55 + task_i) * multiplier),
                       "tool_calls_per_api_call": ((55 + task_i) * multiplier) / ((40 + task_i) * multiplier),
+                      "api_wait_seconds": (180 + task_i * 4) * multiplier * 0.55,
+                      "tool_execution_seconds": (180 + task_i * 4) * multiplier * 0.25,
+                      "terminal_execution_seconds": (180 + task_i * 4) * multiplier * 0.15,
+                      "unattributed_wall_seconds": (180 + task_i * 4) * multiplier * 0.20,
+                      "api_duration_mean_seconds": ((180 + task_i * 4) * multiplier * 0.55) / ((40 + task_i) * multiplier),
+                      "api_duration_p95_seconds": 3.0 + task_i * 0.1,
+                      "ttft_mean_seconds": 0.35 + task_i * 0.02,
+                      "api_wait_fraction": 0.55,
+                      "tool_execution_fraction": 0.25,
                       "diff_lines": 4 + task_i,
                   })
           effects = paired_effects(analysis_rows)
@@ -309,7 +374,11 @@ jobs:
           assert any(row["metric"] == "seconds_per_api_call" for row in latency)
           timing = timing_evidence_summary(analysis_rows)
           assert timing[0]["rows_with_tool_call_count"] == 20
-          assert timing[0]["exact_api_wait_seconds_available"] is False
+          assert timing[0]["exact_api_wait_seconds_available"] is True
+          assert timing[0]["exact_tool_execution_seconds_available"] is True
+          budgets = time_budget_analysis(analysis_rows)
+          assert len(budgets) == 4
+          assert all(row["n_tasks"] == 5 for row in budgets)
 
           with tempfile.TemporaryDirectory() as td:
               analysis_dir = Path(td)
@@ -323,6 +392,10 @@ jobs:
               assert (analysis_dir / "advanced_correlations.dark.svg").is_file()
               assert (analysis_dir / "advanced_cost_time.light.png").is_file()
               assert (analysis_dir / "advanced_cost_time.dark.svg").is_file()
+              assert (analysis_dir / "advanced_time_budget.light.png").is_file()
+              assert (analysis_dir / "advanced_time_budget.dark.svg").is_file()
+              assert (analysis_dir / "advanced_api_latency.light.png").is_file()
+              assert (analysis_dir / "advanced_time_budget.csv").is_file()
               assert (analysis_dir / "advanced_time_vs_api_calls.light.png").is_file()
               assert (analysis_dir / "advanced_tokens_per_second.dark.svg").is_file()
               assert (analysis_dir / "advanced_seconds_per_api_call.light.png").is_file()
