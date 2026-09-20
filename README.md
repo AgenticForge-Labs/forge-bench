@@ -77,7 +77,7 @@ designs/deepseek-v4-v41-relace.yaml
 It compares:
 
 - `deepseek/deepseek-v4-flash-0731`
-- `deepseek/deepseek-v4.1-flash`
+- `deepseek/deepseek-v4.1-flash-20260910`
 
 Both are pinned to the **Relace** OpenRouter upstream with reasoning disabled.
 The design uses the same five frozen SWE-bench tasks and the four
