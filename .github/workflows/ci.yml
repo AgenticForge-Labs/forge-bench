@@ -50,7 +50,7 @@ jobs:
               load_swebench_report,
               make_profile,
           )
-          from forge_bench.reporting import ci95
+          from forge_bench.reporting import ci95, create_reanalysis_output_dir
           from forge_bench.swebench_backend import (
               Candidate,
               dataset_revision,
@@ -86,6 +86,18 @@ jobs:
 
           m, lo, hi, n = ci95([1, 2, 3])
           assert n == 3 and lo <= m <= hi
+
+          with tempfile.TemporaryDirectory() as td:
+              source = Path(td) / "forge-bench-example"
+              source.mkdir()
+              first = create_reanalysis_output_dir(source, analysis_mode="advanced")
+              second = create_reanalysis_output_dir(source, analysis_mode="advanced")
+              assert first.parent == source / "reanalysis"
+              assert second.parent == source / "reanalysis"
+              assert first != second
+              assert first.is_dir() and second.is_dir()
+              assert first.name.endswith("-advanced")
+              assert second.name.startswith(first.name + "-") or second.name.endswith("-advanced")
 
           # Fresh profile contains only benchmark config/credentials, opts out
           # of bundled skill seeding, and pins the tool-loop budget.
@@ -259,6 +271,7 @@ jobs:
         run: |
           uv run forge-bench --help | grep -q -- '--reanalyze'
           uv run forge-bench --help | grep -q -- '--analysis-mode'
+          uv run forge-bench --help | grep -q -- 'timestamped subfolder'
       - name: Verify homogeneous default SWE-bench suite
         run: |
           uv run forge-bench --selection-only --output /tmp/forge-bench-selection
