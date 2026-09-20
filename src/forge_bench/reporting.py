@@ -723,33 +723,47 @@ def _model_descriptors(
     meta: dict[str, Any],
 ) -> list[dict[str, str]]:
     configured = meta.get("models")
+    configured_order: list[dict[str, str]] = []
     by_id: dict[str, dict[str, str]] = {}
     if isinstance(configured, list):
         for row in configured:
             if not isinstance(row, dict) or not row.get("model"):
                 continue
             model_id = str(row["model"])
-            by_id[model_id] = {
+            descriptor = {
                 "key": str(row.get("key") or _slug(model_id.rsplit("/", 1)[-1])),
                 "label": str(row.get("label") or model_id),
                 "model": model_id,
                 "upstream_provider": str(row.get("upstream_provider") or ""),
             }
+            configured_order.append(descriptor)
+            by_id[model_id] = descriptor
 
-    descriptors: list[dict[str, str]] = []
-    seen: set[str] = set()
+    observed_order: list[str] = []
+    observed_upstream: dict[str, str] = {}
     for result in sorted(results, key=lambda item: item.run_index):
-        if result.model in seen:
+        if result.model not in observed_order:
+            observed_order.append(result.model)
+        observed_upstream.setdefault(result.model, result.upstream_provider)
+
+    observed = set(observed_order)
+    descriptors = [
+        descriptor
+        for descriptor in configured_order
+        if descriptor["model"] in observed
+    ]
+    configured_ids = {descriptor["model"] for descriptor in descriptors}
+    for model_id in observed_order:
+        if model_id in configured_ids:
             continue
-        seen.add(result.model)
         descriptors.append(
             by_id.get(
-                result.model,
+                model_id,
                 {
-                    "key": _slug(result.model.rsplit("/", 1)[-1]),
-                    "label": result.model,
-                    "model": result.model,
-                    "upstream_provider": result.upstream_provider,
+                    "key": _slug(model_id.rsplit("/", 1)[-1]),
+                    "label": model_id,
+                    "model": model_id,
+                    "upstream_provider": observed_upstream.get(model_id, ""),
                 },
             )
         )
