@@ -276,6 +276,11 @@ def summarize_events(events: list[dict[str, Any]], wall_seconds: float) -> dict[
         for row in skill_events
         if row.get("skill_name")
     })
+    session_ids = list(dict.fromkeys(
+        str(row.get("session_id"))
+        for row in events
+        if row.get("session_id")
+    ))
 
     by_tool: dict[str, dict[str, Any]] = {}
     for row in tool_events:
@@ -290,6 +295,7 @@ def summarize_events(events: list[dict[str, Any]], wall_seconds: float) -> dict[
         "observer": "native Hermes plugin hook",
         "wall_seconds": float(wall_seconds),
         "event_count": len(events),
+        "session_ids": session_ids,
         "api_post_event_count": len(api_events),
         "tool_post_event_count": len(tool_events),
         "skill_lifecycle_event_count": len(skill_events),
