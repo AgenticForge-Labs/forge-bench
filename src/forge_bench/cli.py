@@ -36,6 +36,7 @@ from .designs import ModelSpec, default_design, load_design
 from .harness import (
     install_arm,
     make_profile,
+    pin_profile_route,
     prepare_workspace,
     run_one,
     sh,
@@ -827,6 +828,12 @@ def main() -> int:
                     arm,
                     runtime=args.hermes_runtime,
                     image=hermes_image,
+                )
+                pin_profile_route(
+                    template,
+                    model=model_spec.model,
+                    upstream_provider=model_spec.upstream_provider,
+                    max_turns=design.max_turns,
                 )
                 # Treatment installers may edit plugins.enabled. Reassert the
                 # observer after installation so every arm is instrumented equally.
