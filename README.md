@@ -131,8 +131,13 @@ for confidence intervals and treatment/model effects.
 Root-level analysis additionally includes:
 
 - paired V4.1-versus-V4 effects within the same task and treatment;
-- a task-fixed-effect `model * treatment` log-linear factorial analysis;
-- a secondary `model * caveman * ponytail` 2×2×2 decomposition;
+- task-paired model×treatment difference-of-log-ratios interaction contrasts,
+  keeping `n=5` tasks as the inferential units;
+- a task-paired secondary three-way contrast asking whether
+  Caveman×Ponytail synergy changes between models;
+- a task-fixed-effect `model * treatment` log-linear coefficient analysis for
+  descriptive decomposition;
+- a secondary `model * caveman * ponytail` 2×2×2 coefficient decomposition;
 - within-model harness effects normalized to each model's own baseline;
 - an eight-condition cost-time Pareto analysis;
 - shared-panel direct API/tool/unattributed wall-time decomposition;
