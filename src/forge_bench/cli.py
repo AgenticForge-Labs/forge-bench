@@ -17,6 +17,7 @@ from .config import (
     DEFAULT_ARMS,
     DEFAULT_DATASET,
     DEFAULT_DIFFICULTY,
+    DEFAULT_EXPECTED_IDS,
     DEFAULT_SAMPLE_SIZE,
     DEFAULT_SEED,
     DEFAULT_TOOLSETS,
@@ -409,6 +410,12 @@ def main() -> int:
             anchor_ids=DEFAULT_ANCHOR_IDS,
             count=args.sample_size,
         )
+        selected_ids = tuple(candidate.instance_id for candidate in selected)
+        if selected_ids != DEFAULT_EXPECTED_IDS:
+            raise SystemExit(
+                "Pinned homogeneous selector drifted from the validated five-task panel: "
+                + ", ".join(selected_ids)
+            )
         sampler_meta["strategy"] = (
             "homogeneous anchor neighborhood around django__django-13516 and "
             "pytest-dev__pytest-7571; similarity favored over broad coverage"
