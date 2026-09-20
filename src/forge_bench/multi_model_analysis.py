@@ -328,10 +328,29 @@ def plot_faceted_metric(
 
 def plot_faceted_resolve_rate(
     output: Path,
-    summary_rows: list[dict[str, Any]],
+    task_rows: list[dict[str, Any]],
     descriptors: list[dict[str, str]],
 ) -> None:
-    arms = _ordered_arms(summary_rows)
+    """Plot task-level resolve means/CIs so repeated runs never inflate n."""
+    arms = _ordered_arms(task_rows)
+    condition: dict[tuple[str, str], dict[str, Any]] = {}
+    for descriptor in descriptors:
+        for arm in arms:
+            points = [
+                row for row in task_rows
+                if row.get("model") == descriptor["model"]
+                and row.get("arm") == arm
+                and row.get("valid_runs", 0) > 0
+                and _finite(row.get("resolve_rate"))
+            ]
+            center, low, high, n = _ci95(
+                (row["resolve_rate"] for row in points),
+                signed=False,
+            )
+            condition[(descriptor["model"], arm)] = {
+                "mean": center, "low": low, "high": high, "n": n, "points": points,
+            }
+
     for theme in ("light", "dark"):
         colors = treatment_colors(arms, theme)
         palette = _theme(theme)
@@ -348,37 +367,73 @@ def plot_faceted_resolve_rate(
                     sharex=True, squeeze=False,
                 )
                 axes_list = [row[0] for row in axes]
+
             for index, (ax, descriptor) in enumerate(zip(axes_list, descriptors)):
                 _style_axes(fig, ax, theme)
-                model_rows = {
-                    str(row["arm"]): row
-                    for row in summary_rows if row.get("model") == descriptor["model"]
-                }
-                values = [
-                    float(model_rows.get(arm, {}).get("run_resolve_rate", math.nan))
-                    for arm in arms
-                ]
+                values = [float(condition[(descriptor["model"], arm)]["mean"]) for arm in arms]
+                lows = [float(condition[(descriptor["model"], arm)]["low"]) for arm in arms]
+                highs = [float(condition[(descriptor["model"], arm)]["high"]) for arm in arms]
+                lower = [max(0.0, m - l) if _finite(m) and _finite(l) else 0.0 for m, l in zip(values, lows)]
+                upper = [max(0.0, h - m) if _finite(m) and _finite(h) else 0.0 for m, h in zip(values, highs)]
                 pos = np.arange(len(arms))
+                task_order = sorted({
+                    str(row["task"])
+                    for row in task_rows if row.get("model") == descriptor["model"]
+                })
+                offsets = np.linspace(-0.10, 0.10, max(1, len(task_order)))
+                offset_by_task = {task: float(offsets[i]) for i, task in enumerate(task_order)}
+
                 if orientation == "vertical":
-                    ax.bar(pos, values, color=[colors[a] for a in arms], edgecolor=palette["edge"])
+                    ax.bar(
+                        pos, values, color=[colors[a] for a in arms],
+                        yerr=[lower, upper], capsize=6,
+                        edgecolor=palette["edge"],
+                        error_kw={"ecolor": palette["text"], "elinewidth": 1.5},
+                    )
+                    for arm_i, arm in enumerate(arms):
+                        points = condition[(descriptor["model"], arm)]["points"]
+                        ax.scatter(
+                            [arm_i + offset_by_task.get(str(row["task"]), 0.0) for row in points],
+                            [float(row["resolve_rate"]) for row in points],
+                            s=32, facecolors="none", edgecolors=palette["text"],
+                            linewidths=1.0, zorder=4,
+                        )
                     ax.set_xticks(pos, [LABEL.get(a, a) for a in arms], rotation=18, ha="right")
                     ax.set_ylim(0, 105)
                     if index == 0:
-                        ax.set_ylabel("Resolved valid runs (%)")
+                        ax.set_ylabel("Task resolve rate (%)")
                 else:
-                    ax.barh(pos, values, color=[colors[a] for a in arms], edgecolor=palette["edge"])
+                    ax.barh(
+                        pos, values, color=[colors[a] for a in arms],
+                        xerr=[lower, upper], capsize=5,
+                        edgecolor=palette["edge"],
+                        error_kw={"ecolor": palette["text"], "elinewidth": 1.5},
+                    )
+                    for arm_i, arm in enumerate(arms):
+                        points = condition[(descriptor["model"], arm)]["points"]
+                        ax.scatter(
+                            [float(row["resolve_rate"]) for row in points],
+                            [arm_i + offset_by_task.get(str(row["task"]), 0.0) for row in points],
+                            s=32, facecolors="none", edgecolors=palette["text"],
+                            linewidths=1.0, zorder=4,
+                        )
                     ax.set_yticks(pos, [LABEL.get(a, a) for a in arms])
                     ax.set_xlim(0, 105)
                     if index == len(descriptors) - 1:
-                        ax.set_xlabel("Resolved valid runs (%)")
+                        ax.set_xlabel("Task resolve rate (%)")
                 ax.set_title(str(descriptor["label"]), fontsize=15, fontweight="bold")
+
             fig.suptitle(
                 "SWE-bench resolve rate: model × treatment",
                 fontsize=19, fontweight="bold", color=palette["text"],
             )
-            fig.tight_layout(rect=(0, 0, 1, 0.95))
+            fig.text(
+                0.5, 0.01,
+                "Bars and 95% CIs are across independent task-level resolve rates; repeated blocks are averaged within task first.",
+                ha="center", fontsize=9.8, color=palette["muted"],
+            )
+            fig.tight_layout(rect=(0, 0.04, 1, 0.95))
             _save(fig, output, f"model_treatment_resolve_rate.{orientation}", theme)
-
 
 def model_pairwise_effects(
     task_rows: list[dict[str, Any]],
@@ -1709,7 +1764,7 @@ def write_multi_model_analysis(
             f"model_treatment_{metric}.vertical.light.png",
             f"model_treatment_{metric}.horizontal.light.png",
         ])
-    plot_faceted_resolve_rate(output, summary_rows, descriptors)
+    plot_faceted_resolve_rate(output, task_rows, descriptors)
 
     pairwise = model_pairwise_effects(task_rows, descriptors)
     harness = harness_effects_within_model(task_rows, descriptors)
