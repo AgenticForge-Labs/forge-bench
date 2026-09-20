@@ -328,10 +328,29 @@ def plot_faceted_metric(
 
 def plot_faceted_resolve_rate(
     output: Path,
-    summary_rows: list[dict[str, Any]],
+    task_rows: list[dict[str, Any]],
     descriptors: list[dict[str, str]],
 ) -> None:
-    arms = _ordered_arms(summary_rows)
+    """Plot task-level resolve means/CIs so repeated runs never inflate n."""
+    arms = _ordered_arms(task_rows)
+    condition: dict[tuple[str, str], dict[str, Any]] = {}
+    for descriptor in descriptors:
+        for arm in arms:
+            points = [
+                row for row in task_rows
+                if row.get("model") == descriptor["model"]
+                and row.get("arm") == arm
+                and row.get("valid_runs", 0) > 0
+                and _finite(row.get("resolve_rate"))
+            ]
+            center, low, high, n = _ci95(
+                (row["resolve_rate"] for row in points),
+                signed=False,
+            )
+            condition[(descriptor["model"], arm)] = {
+                "mean": center, "low": low, "high": high, "n": n, "points": points,
+            }
+
     for theme in ("light", "dark"):
         colors = treatment_colors(arms, theme)
         palette = _theme(theme)
@@ -348,37 +367,73 @@ def plot_faceted_resolve_rate(
                     sharex=True, squeeze=False,
                 )
                 axes_list = [row[0] for row in axes]
+
             for index, (ax, descriptor) in enumerate(zip(axes_list, descriptors)):
                 _style_axes(fig, ax, theme)
-                model_rows = {
-                    str(row["arm"]): row
-                    for row in summary_rows if row.get("model") == descriptor["model"]
-                }
-                values = [
-                    float(model_rows.get(arm, {}).get("run_resolve_rate", math.nan))
-                    for arm in arms
-                ]
+                values = [float(condition[(descriptor["model"], arm)]["mean"]) for arm in arms]
+                lows = [float(condition[(descriptor["model"], arm)]["low"]) for arm in arms]
+                highs = [float(condition[(descriptor["model"], arm)]["high"]) for arm in arms]
+                lower = [max(0.0, m - l) if _finite(m) and _finite(l) else 0.0 for m, l in zip(values, lows)]
+                upper = [max(0.0, h - m) if _finite(m) and _finite(h) else 0.0 for m, h in zip(values, highs)]
                 pos = np.arange(len(arms))
+                task_order = sorted({
+                    str(row["task"])
+                    for row in task_rows if row.get("model") == descriptor["model"]
+                })
+                offsets = np.linspace(-0.10, 0.10, max(1, len(task_order)))
+                offset_by_task = {task: float(offsets[i]) for i, task in enumerate(task_order)}
+
                 if orientation == "vertical":
-                    ax.bar(pos, values, color=[colors[a] for a in arms], edgecolor=palette["edge"])
+                    ax.bar(
+                        pos, values, color=[colors[a] for a in arms],
+                        yerr=[lower, upper], capsize=6,
+                        edgecolor=palette["edge"],
+                        error_kw={"ecolor": palette["text"], "elinewidth": 1.5},
+                    )
+                    for arm_i, arm in enumerate(arms):
+                        points = condition[(descriptor["model"], arm)]["points"]
+                        ax.scatter(
+                            [arm_i + offset_by_task.get(str(row["task"]), 0.0) for row in points],
+                            [float(row["resolve_rate"]) for row in points],
+                            s=32, facecolors="none", edgecolors=palette["text"],
+                            linewidths=1.0, zorder=4,
+                        )
                     ax.set_xticks(pos, [LABEL.get(a, a) for a in arms], rotation=18, ha="right")
                     ax.set_ylim(0, 105)
                     if index == 0:
-                        ax.set_ylabel("Resolved valid runs (%)")
+                        ax.set_ylabel("Task resolve rate (%)")
                 else:
-                    ax.barh(pos, values, color=[colors[a] for a in arms], edgecolor=palette["edge"])
+                    ax.barh(
+                        pos, values, color=[colors[a] for a in arms],
+                        xerr=[lower, upper], capsize=5,
+                        edgecolor=palette["edge"],
+                        error_kw={"ecolor": palette["text"], "elinewidth": 1.5},
+                    )
+                    for arm_i, arm in enumerate(arms):
+                        points = condition[(descriptor["model"], arm)]["points"]
+                        ax.scatter(
+                            [float(row["resolve_rate"]) for row in points],
+                            [arm_i + offset_by_task.get(str(row["task"]), 0.0) for row in points],
+                            s=32, facecolors="none", edgecolors=palette["text"],
+                            linewidths=1.0, zorder=4,
+                        )
                     ax.set_yticks(pos, [LABEL.get(a, a) for a in arms])
                     ax.set_xlim(0, 105)
                     if index == len(descriptors) - 1:
-                        ax.set_xlabel("Resolved valid runs (%)")
+                        ax.set_xlabel("Task resolve rate (%)")
                 ax.set_title(str(descriptor["label"]), fontsize=15, fontweight="bold")
+
             fig.suptitle(
                 "SWE-bench resolve rate: model × treatment",
                 fontsize=19, fontweight="bold", color=palette["text"],
             )
-            fig.tight_layout(rect=(0, 0, 1, 0.95))
+            fig.text(
+                0.5, 0.01,
+                "Bars and 95% CIs are across independent task-level resolve rates; repeated blocks are averaged within task first.",
+                ha="center", fontsize=9.8, color=palette["muted"],
+            )
+            fig.tight_layout(rect=(0, 0.04, 1, 0.95))
             _save(fig, output, f"model_treatment_resolve_rate.{orientation}", theme)
-
 
 def model_pairwise_effects(
     task_rows: list[dict[str, Any]],
@@ -478,6 +533,145 @@ def harness_effects_within_model(
                     }
                 )
     return rows
+
+
+
+def task_paired_model_treatment_interactions(
+    task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Difference-of-log-ratios interaction contrasts with tasks as replicates."""
+    if len(descriptors) != 2:
+        return []
+    a, b = descriptors
+    arms = [arm for arm in _ordered_arms(task_rows) if arm != "baseline"]
+    lookup = {
+        (str(row["model"]), str(row["arm"]), str(row["task"])): row
+        for row in task_rows
+        if row.get("valid_runs", 0) > 0
+    }
+    tasks = sorted({str(row["task"]) for row in task_rows})
+    out: list[dict[str, Any]] = []
+    for metric in PRIMARY_METRICS:
+        for arm in arms:
+            contrasts: list[float] = []
+            used_tasks: list[str] = []
+            for task in tasks:
+                a0 = lookup.get((a["model"], "baseline", task))
+                a1 = lookup.get((a["model"], arm, task))
+                b0 = lookup.get((b["model"], "baseline", task))
+                b1 = lookup.get((b["model"], arm, task))
+                values = [
+                    row.get(metric) if row else None
+                    for row in (a0, a1, b0, b1)
+                ]
+                if not all(_finite(value) and float(value) > 0 for value in values):
+                    continue
+                interaction = (
+                    math.log(float(b1[metric]) / float(b0[metric]))
+                    - math.log(float(a1[metric]) / float(a0[metric]))
+                )
+                contrasts.append(interaction)
+                used_tasks.append(task)
+            center, low, high, n = _ci95(contrasts, signed=True)
+            out.append(
+                {
+                    "metric": metric,
+                    "treatment": arm,
+                    "label": LABEL.get(arm, arm),
+                    "model_a": a["model"],
+                    "model_a_label": a["label"],
+                    "model_b": b["model"],
+                    "model_b_label": b["label"],
+                    "n_paired_tasks": n,
+                    "mean_log_ratio_difference": center,
+                    "ci95_low_log_ratio_difference": low,
+                    "ci95_high_log_ratio_difference": high,
+                    "multiplicative_interaction_percent": (
+                        100.0 * (math.exp(center) - 1.0) if _finite(center) else math.nan
+                    ),
+                    "ci95_low_interaction_percent": (
+                        100.0 * (math.exp(low) - 1.0) if _finite(low) else math.nan
+                    ),
+                    "ci95_high_interaction_percent": (
+                        100.0 * (math.exp(high) - 1.0) if _finite(high) else math.nan
+                    ),
+                    "tasks": ";".join(used_tasks),
+                }
+            )
+    return out
+
+
+def task_paired_threeway_interaction(
+    task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Does Caveman×Ponytail synergy differ between models? Task-paired 3-way contrast."""
+    if len(descriptors) != 2:
+        return []
+    required = ("baseline", "caveman", "ponytail", "caveman_ponytail")
+    a, b = descriptors
+    lookup = {
+        (str(row["model"]), str(row["arm"]), str(row["task"])): row
+        for row in task_rows
+        if row.get("valid_runs", 0) > 0
+    }
+    tasks = sorted({str(row["task"]) for row in task_rows})
+    out: list[dict[str, Any]] = []
+    for metric in PRIMARY_METRICS:
+        contrasts: list[float] = []
+        used_tasks: list[str] = []
+        for task in tasks:
+            cells: dict[tuple[str, str], float] = {}
+            complete = True
+            for descriptor in (a, b):
+                for arm in required:
+                    row = lookup.get((descriptor["model"], arm, task))
+                    if row is None or not _finite(row.get(metric)) or float(row[metric]) <= 0:
+                        complete = False
+                        break
+                    cells[(descriptor["model"], arm)] = float(row[metric])
+                if not complete:
+                    break
+            if not complete:
+                continue
+
+            def synergy(model: str) -> float:
+                return (
+                    math.log(cells[(model, "caveman_ponytail")])
+                    - math.log(cells[(model, "caveman")])
+                    - math.log(cells[(model, "ponytail")])
+                    + math.log(cells[(model, "baseline")])
+                )
+
+            contrasts.append(synergy(b["model"]) - synergy(a["model"]))
+            used_tasks.append(task)
+
+        center, low, high, n = _ci95(contrasts, signed=True)
+        out.append(
+            {
+                "metric": metric,
+                "model_a": a["model"],
+                "model_a_label": a["label"],
+                "model_b": b["model"],
+                "model_b_label": b["label"],
+                "n_paired_tasks": n,
+                "mean_threeway_log_contrast": center,
+                "ci95_low_log_contrast": low,
+                "ci95_high_log_contrast": high,
+                "multiplicative_threeway_percent": (
+                    100.0 * (math.exp(center) - 1.0) if _finite(center) else math.nan
+                ),
+                "ci95_low_threeway_percent": (
+                    100.0 * (math.exp(low) - 1.0) if _finite(low) else math.nan
+                ),
+                "ci95_high_threeway_percent": (
+                    100.0 * (math.exp(high) - 1.0) if _finite(high) else math.nan
+                ),
+                "tasks": ";".join(used_tasks),
+            }
+        )
+    return out
 
 
 def _fit_ols(X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
@@ -944,6 +1138,342 @@ def multivariate_analysis(
     return score_rows, loading_rows, [float(x) for x in explained], centroid_rows, similarity_rows
 
 
+
+def multivariate_factorial_coefficients(
+    task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Fit one task-blocked 2×4 design to the standardized multivariate outcomes.
+
+    Coefficients are descriptive standardized effect vectors. With only five
+    independent tasks, this intentionally avoids presenting multivariate
+    significance tests as if the 40 condition rows were independent replicates.
+    """
+    rows, features, z = _feature_matrix(task_rows)
+    if z.size == 0 or len(descriptors) != 2:
+        return []
+    tasks = sorted({str(row["task"]) for row in rows})
+    arms = _ordered_arms(rows)
+    if "baseline" not in arms or len(tasks) < 2:
+        return []
+    comparison_arms = [arm for arm in arms if arm != "baseline"]
+    model_b = descriptors[1]["model"]
+    names = (
+        ["intercept"]
+        + [f"task:{task}" for task in tasks[1:]]
+        + ["model"]
+        + [f"treatment:{arm}" for arm in comparison_arms]
+        + [f"model:treatment:{arm}" for arm in comparison_arms]
+    )
+    X: list[list[float]] = []
+    for row in rows:
+        model_flag = 1.0 if row.get("model") == model_b else 0.0
+        arm = str(row["arm"])
+        treatment_flags = [
+            1.0 if arm == candidate else 0.0
+            for candidate in comparison_arms
+        ]
+        X.append(
+            [1.0]
+            + [1.0 if str(row["task"]) == task else 0.0 for task in tasks[1:]]
+            + [model_flag]
+            + treatment_flags
+            + [model_flag * value for value in treatment_flags]
+        )
+    matrix = np.asarray(X, dtype=float)
+    coefficients = np.linalg.pinv(matrix) @ z
+    report_terms = (
+        ["model"]
+        + [f"treatment:{arm}" for arm in comparison_arms]
+        + [f"model:treatment:{arm}" for arm in comparison_arms]
+    )
+    out: list[dict[str, Any]] = []
+    for term in report_terms:
+        term_index = names.index(term)
+        vector = coefficients[term_index]
+        norm = float(np.linalg.norm(vector))
+        for feature, beta in zip(features, vector):
+            out.append(
+                {
+                    "formula": "standardized multivariate outcome ~ task fixed effects + model * treatment",
+                    "term": term,
+                    "feature": feature,
+                    "standardized_beta": float(beta),
+                    "term_vector_norm": norm,
+                    "n_tasks": len(tasks),
+                    "n_observations": len(rows),
+                }
+            )
+    return out
+
+
+def plot_multivariate_factorial_heatmap(
+    output: Path,
+    rows: list[dict[str, Any]],
+) -> None:
+    if not rows:
+        return
+    terms = list(dict.fromkeys(str(row["term"]) for row in rows))
+    features = list(dict.fromkeys(str(row["feature"]) for row in rows))
+    lookup = {
+        (str(row["term"]), str(row["feature"])): float(row["standardized_beta"])
+        for row in rows if _finite(row.get("standardized_beta"))
+    }
+    matrix = np.asarray(
+        [[lookup.get((term, feature), math.nan) for feature in features] for term in terms],
+        dtype=float,
+    )
+    finite = matrix[np.isfinite(matrix)]
+    if finite.size == 0:
+        return
+    limit = max(float(np.max(np.abs(finite))), 1e-6)
+    for theme in ("light", "dark"):
+        palette = _theme(theme)
+        fig, ax = plt.subplots(
+            figsize=(max(9.0, 1.25 * len(features)), max(5.5, 0.7 * len(terms)))
+        )
+        image = ax.imshow(
+            np.ma.masked_invalid(matrix),
+            aspect="auto",
+            vmin=-limit,
+            vmax=limit,
+            cmap="coolwarm",
+        )
+        fig.patch.set_facecolor(palette["figure"])
+        ax.set_facecolor(palette["axes"])
+        ax.tick_params(colors=palette["text"], labelsize=9.5)
+        ax.set_xticks(range(len(features)), features, rotation=35, ha="right")
+        ax.set_yticks(range(len(terms)), terms)
+        ax.set_title(
+            "Task-blocked multivariate model × treatment effect vectors",
+            fontsize=18, fontweight="bold", color=palette["text"],
+        )
+        for spine in ax.spines.values():
+            spine.set_color(palette["edge"])
+        colorbar = fig.colorbar(image, ax=ax, shrink=0.82)
+        colorbar.set_label("Standardized coefficient", color=palette["text"])
+        colorbar.ax.tick_params(colors=palette["text"])
+        fig.text(
+            0.5,
+            0.01,
+            "Each column is a standardized behavior feature; rows are effects from one common task-blocked 2×4 design.",
+            ha="center",
+            fontsize=9.5,
+            color=palette["muted"],
+        )
+        fig.tight_layout(rect=(0, 0.04, 1, 1))
+        _save(fig, output, "multivariate_factorial_effects", theme)
+
+
+def multivariate_distances(
+    task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Task-paired distances in the same standardized feature space used for PCA."""
+    rows, features, z = _feature_matrix(task_rows)
+    if z.size == 0:
+        return [], [], [], []
+    vector_by_key = {
+        (str(row["model"]), str(row["arm"]), str(row["task"])): z[index]
+        for index, row in enumerate(rows)
+    }
+    arms = _ordered_arms(rows)
+
+    harness_task: list[dict[str, Any]] = []
+    for descriptor in descriptors:
+        model = descriptor["model"]
+        tasks = sorted({
+            str(row["task"]) for row in rows if row.get("model") == model
+        })
+        for task in tasks:
+            baseline = vector_by_key.get((model, "baseline", task))
+            if baseline is None:
+                continue
+            for arm in [value for value in arms if value != "baseline"]:
+                target = vector_by_key.get((model, arm, task))
+                if target is None:
+                    continue
+                delta = target - baseline
+                harness_task.append(
+                    {
+                        "model": model,
+                        "model_key": descriptor["key"],
+                        "model_label": descriptor["label"],
+                        "arm": arm,
+                        "label": LABEL.get(arm, arm),
+                        "task": task,
+                        "standardized_distance_from_own_baseline": float(np.linalg.norm(delta)),
+                        **{
+                            f"delta_{feature}": float(value)
+                            for feature, value in zip(features, delta)
+                        },
+                    }
+                )
+
+    harness_summary: list[dict[str, Any]] = []
+    for descriptor in descriptors:
+        for arm in [value for value in arms if value != "baseline"]:
+            subset = [
+                row for row in harness_task
+                if row["model"] == descriptor["model"] and row["arm"] == arm
+            ]
+            center, low, high, n = _ci95(
+                (row["standardized_distance_from_own_baseline"] for row in subset),
+                signed=False,
+            )
+            harness_summary.append(
+                {
+                    "model": descriptor["model"],
+                    "model_key": descriptor["key"],
+                    "model_label": descriptor["label"],
+                    "arm": arm,
+                    "label": LABEL.get(arm, arm),
+                    "mean_standardized_distance": center,
+                    "ci95_low_distance": low,
+                    "ci95_high_distance": high,
+                    "n_tasks": n,
+                }
+            )
+
+    model_task: list[dict[str, Any]] = []
+    if len(descriptors) == 2:
+        a, b = descriptors
+        tasks = sorted({
+            str(row["task"]) for row in rows
+            if row.get("model") in {a["model"], b["model"]}
+        })
+        for arm in arms:
+            for task in tasks:
+                av = vector_by_key.get((a["model"], arm, task))
+                bv = vector_by_key.get((b["model"], arm, task))
+                if av is None or bv is None:
+                    continue
+                delta = bv - av
+                model_task.append(
+                    {
+                        "model_a": a["model"],
+                        "model_a_label": a["label"],
+                        "model_b": b["model"],
+                        "model_b_label": b["label"],
+                        "arm": arm,
+                        "label": LABEL.get(arm, arm),
+                        "task": task,
+                        "standardized_model_distance": float(np.linalg.norm(delta)),
+                        **{
+                            f"delta_{feature}": float(value)
+                            for feature, value in zip(features, delta)
+                        },
+                    }
+                )
+
+    model_summary: list[dict[str, Any]] = []
+    for arm in arms:
+        subset = [row for row in model_task if row["arm"] == arm]
+        center, low, high, n = _ci95(
+            (row["standardized_model_distance"] for row in subset),
+            signed=False,
+        )
+        model_summary.append(
+            {
+                "arm": arm,
+                "label": LABEL.get(arm, arm),
+                "mean_standardized_model_distance": center,
+                "ci95_low_distance": low,
+                "ci95_high_distance": high,
+                "n_tasks": n,
+            }
+        )
+    return harness_task, harness_summary, model_task, model_summary
+
+
+def plot_multivariate_harness_distance(
+    output: Path,
+    task_rows: list[dict[str, Any]],
+    summary_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> None:
+    if not summary_rows:
+        return
+    arms = [arm for arm in _ordered_arms(summary_rows) if arm != "baseline"]
+    values = [
+        float(row["mean_standardized_distance"])
+        for row in summary_rows if _finite(row.get("mean_standardized_distance"))
+    ]
+    highs = [
+        float(row["ci95_high_distance"])
+        for row in summary_rows if _finite(row.get("ci95_high_distance"))
+    ]
+    if not values:
+        return
+    ymax = max(values + highs) * 1.12
+    for theme in ("light", "dark"):
+        colors = treatment_colors(arms, theme)
+        palette = _theme(theme)
+        fig, axes = plt.subplots(
+            1, len(descriptors), figsize=(7 * len(descriptors), 6.2),
+            sharey=True, squeeze=False,
+        )
+        for index, (ax, descriptor) in enumerate(zip(axes[0], descriptors)):
+            _style_axes(fig, ax, theme)
+            by_arm = {
+                str(row["arm"]): row
+                for row in summary_rows if row.get("model") == descriptor["model"]
+            }
+            x = np.arange(len(arms))
+            means = [
+                float(by_arm.get(arm, {}).get("mean_standardized_distance", math.nan))
+                for arm in arms
+            ]
+            lows = [
+                float(by_arm.get(arm, {}).get("ci95_low_distance", math.nan))
+                for arm in arms
+            ]
+            high = [
+                float(by_arm.get(arm, {}).get("ci95_high_distance", math.nan))
+                for arm in arms
+            ]
+            ax.bar(
+                x, means, color=[colors[arm] for arm in arms],
+                yerr=[
+                    [max(0.0, m - l) if _finite(m) and _finite(l) else 0.0 for m, l in zip(means, lows)],
+                    [max(0.0, h - m) if _finite(m) and _finite(h) else 0.0 for m, h in zip(means, high)],
+                ],
+                capsize=5, edgecolor=palette["edge"],
+                error_kw={"ecolor": palette["text"], "elinewidth": 1.5},
+            )
+            task_order = sorted({
+                str(row["task"]) for row in task_rows if row.get("model") == descriptor["model"]
+            })
+            offsets = np.linspace(-0.10, 0.10, max(1, len(task_order)))
+            offset_by_task = {task: float(offsets[i]) for i, task in enumerate(task_order)}
+            for arm_i, arm in enumerate(arms):
+                points = [
+                    row for row in task_rows
+                    if row.get("model") == descriptor["model"] and row.get("arm") == arm
+                ]
+                ax.scatter(
+                    [arm_i + offset_by_task.get(str(row["task"]), 0.0) for row in points],
+                    [float(row["standardized_distance_from_own_baseline"]) for row in points],
+                    s=30, facecolors="none", edgecolors=palette["text"], linewidths=0.9,
+                )
+            ax.set_xticks(x, [LABEL.get(arm, arm) for arm in arms], rotation=18, ha="right")
+            ax.set_ylim(0, ymax)
+            ax.set_title(str(descriptor["label"]), fontsize=15, fontweight="bold")
+            if index == 0:
+                ax.set_ylabel("Standardized multivariate distance")
+        fig.suptitle(
+            "Multivariate harness distance from each model's baseline",
+            fontsize=18, fontweight="bold", color=palette["text"],
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        _save(fig, output, "multivariate_harness_distance", theme)
+
+
 def plot_multivariate_pca(
     output: Path,
     scores: list[dict[str, Any]],
@@ -1105,6 +1635,8 @@ def trajectory_rows(
             "tool_calls": 0.0,
             "cumulative_tokens": 0.0,
             "context_tokens": 0.0,
+            "tokens_per_api_call": math.nan,
+            "tool_calls_per_api_call": math.nan,
         }]
         for event in events:
             progress = max(0.0, min(100.0, 100.0 * (_event_time(event) - start) / span))
@@ -1136,6 +1668,12 @@ def trajectory_rows(
                 "tool_calls": float(tool_calls),
                 "cumulative_tokens": cumulative_tokens,
                 "context_tokens": context_tokens,
+                "tokens_per_api_call": (
+                    cumulative_tokens / api_calls if api_calls > 0 else math.nan
+                ),
+                "tool_calls_per_api_call": (
+                    tool_calls / api_calls if api_calls > 0 else math.nan
+                ),
             })
 
         descriptor = model_lookup.get(
@@ -1159,8 +1697,12 @@ def trajectory_rows(
             })
 
         state_names = [state for _, state in states]
+        first_inspect = next((progress for progress, state in states if state == "inspect"), math.nan)
+        first_search = next((progress for progress, state in states if state == "search"), math.nan)
         first_edit = next((progress for progress, state in states if state == "edit"), math.nan)
         first_execute = next((progress for progress, state in states if state == "execute"), math.nan)
+        last_edit = next((progress for progress, state in reversed(states) if state == "edit"), math.nan)
+        last_execute = next((progress for progress, state in reversed(states) if state == "execute"), math.nan)
         repeated = sum(a == b for a, b in zip(state_names, state_names[1:]))
         inspect_search_before_edit = sum(
             state in {"inspect", "search"}
@@ -1182,8 +1724,12 @@ def trajectory_rows(
             "repeat": result.repeat,
             "run_index": result.run_index,
             "state_events": len(states),
+            "first_inspect_progress": first_inspect,
+            "first_search_progress": first_search,
             "first_edit_progress": first_edit,
             "first_execute_progress": first_execute,
+            "last_edit_progress": last_edit,
+            "last_execute_progress": last_execute,
             "inspect_search_before_first_edit": inspect_search_before_edit,
             "consecutive_same_state_fraction": repeated / max(1, len(state_names) - 1),
             "edit_to_execute_transitions": edit_execute,
@@ -1230,6 +1776,7 @@ def trajectory_rows(
                 for metric in (
                     "api_wait_seconds", "tool_execution_seconds", "api_calls",
                     "tool_calls", "cumulative_tokens", "context_tokens",
+                    "tokens_per_api_call", "tool_calls_per_api_call",
                 )
             },
         })
@@ -1252,6 +1799,7 @@ def trajectory_rows(
         for metric in (
             "api_wait_seconds", "tool_execution_seconds", "api_calls",
             "tool_calls", "cumulative_tokens", "context_tokens",
+            "tokens_per_api_call", "tool_calls_per_api_call",
         ):
             center, low, high, n = _ci95((row[metric] for row in rows), signed=False)
             entry[f"mean_{metric}"] = center
@@ -1281,6 +1829,8 @@ def plot_trajectory_panels(
         "tool_calls": "Cumulative tool calls",
         "cumulative_tokens": "Cumulative token consumption",
         "context_tokens": "Approximate context size",
+        "tokens_per_api_call": "Cumulative tokens per API call",
+        "tool_calls_per_api_call": "Cumulative tool calls per API call",
     }
     ylabel = title_map.get(metric, metric.replace("_", " ").title())
     model_index = _descriptor_order(descriptors)
@@ -1435,8 +1985,12 @@ def workflow_summaries(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     metrics = (
         "state_events",
+        "first_inspect_progress",
+        "first_search_progress",
         "first_edit_progress",
         "first_execute_progress",
+        "last_edit_progress",
+        "last_execute_progress",
         "inspect_search_before_first_edit",
         "consecutive_same_state_fraction",
         "edit_to_execute_transitions",
@@ -1500,8 +2054,12 @@ def plot_workflow_metric_facets(
         return
     arms = _ordered_arms(summary_rows)
     titles = {
+        "first_inspect_progress": "First inspect progress",
+        "first_search_progress": "First search progress",
         "first_edit_progress": "First edit progress",
         "first_execute_progress": "First execution progress",
+        "last_edit_progress": "Last edit progress",
+        "last_execute_progress": "Last execution progress",
         "consecutive_same_state_fraction": "Repeated-state fraction",
         "edit_to_execute_transitions": "Edit → execute transitions",
         "late_state_fraction": "Late workflow fraction",
@@ -1709,15 +2267,19 @@ def write_multi_model_analysis(
             f"model_treatment_{metric}.vertical.light.png",
             f"model_treatment_{metric}.horizontal.light.png",
         ])
-    plot_faceted_resolve_rate(output, summary_rows, descriptors)
+    plot_faceted_resolve_rate(output, task_rows, descriptors)
 
     pairwise = model_pairwise_effects(task_rows, descriptors)
     harness = harness_effects_within_model(task_rows, descriptors)
+    interactions = task_paired_model_treatment_interactions(task_rows, descriptors)
+    threeway = task_paired_threeway_interaction(task_rows, descriptors)
     regression_2x4 = factorial_2x4_regression(task_rows, descriptors)
     regression_2x2x2 = factorial_2x2x2_regression(task_rows, descriptors)
     pareto = combined_cost_time_rows(summary_rows)
     _write_csv(output / "model_pairwise_effects.csv", pairwise)
     _write_csv(output / "model_harness_effects.csv", harness)
+    _write_csv(output / "model_treatment_interaction_contrasts.csv", interactions)
+    _write_csv(output / "model_caveman_ponytail_threeway_contrast.csv", threeway)
     _write_csv(output / "model_treatment_regression_2x4.csv", regression_2x4)
     _write_csv(output / "model_caveman_ponytail_regression_2x2x2.csv", regression_2x2x2)
     _write_csv(output / "model_treatment_cost_time.csv", pareto)
@@ -1729,10 +2291,19 @@ def write_multi_model_analysis(
     plot_combined_cost_time(output, pareto, descriptors)
 
     scores, loadings, explained, centroids, similarities = multivariate_analysis(task_rows, descriptors)
+    multivariate_factorial = multivariate_factorial_coefficients(task_rows, descriptors)
+    harness_distance_task, harness_distance_summary, model_distance_task, model_distance_summary = (
+        multivariate_distances(task_rows, descriptors)
+    )
     _write_csv(output / "multivariate_pca_scores.csv", scores)
     _write_csv(output / "multivariate_pca_loadings.csv", loadings)
     _write_csv(output / "multivariate_pca_centroids.csv", centroids)
     _write_csv(output / "multivariate_vector_similarity.csv", similarities)
+    _write_csv(output / "multivariate_factorial_coefficients.csv", multivariate_factorial)
+    _write_csv(output / "multivariate_harness_distance_task.csv", harness_distance_task)
+    _write_csv(output / "multivariate_harness_distance_summary.csv", harness_distance_summary)
+    _write_csv(output / "multivariate_model_distance_task.csv", model_distance_task)
+    _write_csv(output / "multivariate_model_distance_summary.csv", model_distance_summary)
     if explained:
         _write_csv(
             output / "multivariate_pca_explained_variance.csv",
@@ -1742,6 +2313,13 @@ def write_multi_model_analysis(
             ],
         )
     plot_multivariate_pca(output, scores, loadings, explained, centroids, descriptors)
+    plot_multivariate_factorial_heatmap(output, multivariate_factorial)
+    plot_multivariate_harness_distance(
+        output,
+        harness_distance_task,
+        harness_distance_summary,
+        descriptors,
+    )
 
     timing_rows = timing_budget_summary(task_rows, descriptors)
     _write_csv(output / "model_treatment_time_budget.csv", timing_rows)
@@ -1759,8 +2337,12 @@ def write_multi_model_analysis(
     _write_csv(output / "workflow_task_metrics.csv", workflow_task)
     _write_csv(output / "workflow_summary.csv", workflow_summary)
     for metric in (
+        "first_inspect_progress",
+        "first_search_progress",
         "first_edit_progress",
         "first_execute_progress",
+        "last_edit_progress",
+        "last_execute_progress",
         "inspect_search_before_first_edit",
         "consecutive_same_state_fraction",
         "edit_to_execute_transitions",
@@ -1777,6 +2359,7 @@ def write_multi_model_analysis(
     for metric in (
         "cumulative_tokens", "context_tokens", "api_wait_seconds",
         "tool_execution_seconds", "api_calls", "tool_calls",
+        "tokens_per_api_call", "tool_calls_per_api_call",
     ):
         plot_trajectory_panels(output, trajectory_summary, descriptors, metric)
     return generated

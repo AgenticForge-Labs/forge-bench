@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, analysis-task-level-refinements]
   pull_request:
 
 jobs:
@@ -66,6 +66,7 @@ jobs:
               ci95,
               create_reanalysis_output_dir,
               model_pairwise_effects,
+              task_summary,
               write_experiment_reports,
               write_html_report,
           )
@@ -449,6 +450,22 @@ jobs:
                           ttft_mean_seconds=0.4,
                           timing_event_count=8,
                       ))
+          repeat_copy = Result(**{
+              **synthetic_results[0].__dict__,
+              "repeat": 2,
+              "run_index": 999,
+              "total_tokens": synthetic_results[0].total_tokens + 1000,
+          })
+          repeat_task = task_summary(
+              [synthetic_results[0], repeat_copy],
+              ["baseline"],
+              ["task-a"],
+          )
+          assert len(repeat_task) == 1
+          assert repeat_task[0]["runs"] == 2
+          assert repeat_task[0]["valid_runs"] == 2
+          assert repeat_task[0]["total_tokens"] == synthetic_results[0].total_tokens + 500
+
           with tempfile.TemporaryDirectory() as td:
               report_root = Path(td)
               for synthetic in synthetic_results:
@@ -493,6 +510,8 @@ jobs:
               assert (report_root / "model_treatment_summary.csv").is_file()
               assert (report_root / "model_pairwise_effects.csv").is_file()
               assert (report_root / "model_harness_effects.csv").is_file()
+              assert (report_root / "model_treatment_interaction_contrasts.csv").is_file()
+              assert (report_root / "model_caveman_ponytail_threeway_contrast.csv").is_file()
               assert (report_root / "model_treatment_regression_2x4.csv").is_file()
               assert (report_root / "model_caveman_ponytail_regression_2x2x2.csv").is_file()
               assert (report_root / "model_treatment_total_tokens.vertical.light.png").is_file()
@@ -500,7 +519,18 @@ jobs:
               assert (report_root / "model_treatment_cost_time.light.png").is_file()
               assert (report_root / "model_treatment_time_budget.dark.svg").is_file()
               assert (report_root / "model_treatment_multivariate_pca.light.png").is_file()
+              assert (report_root / "multivariate_factorial_coefficients.csv").is_file()
+              assert (report_root / "multivariate_factorial_effects.dark.svg").is_file()
+              assert (report_root / "multivariate_harness_distance_summary.csv").is_file()
+              assert (report_root / "multivariate_model_distance_task.csv").is_file()
+              assert (report_root / "multivariate_harness_distance.light.png").is_file()
+              assert (report_root / "model_treatment_resolve_rate.vertical.light.png").is_file()
               assert (report_root / "trajectory_api_calls.light.png").is_file()
+              assert (report_root / "trajectory_tokens_per_api_call.dark.svg").is_file()
+              assert (report_root / "trajectory_tool_calls_per_api_call.light.png").is_file()
+              assert (report_root / "workflow_first_inspect_progress.light.png").is_file()
+              assert (report_root / "workflow_last_edit_progress.dark.svg").is_file()
+              assert (report_root / "workflow_last_execute_progress.light.png").is_file()
               assert (report_root / "workflow_state_transitions.dark.svg").is_file()
               assert (report_root / "workflow_summary.csv").is_file()
               assert (report_root / "models" / "v4" / "report-light.html").is_file()
