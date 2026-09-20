@@ -12,6 +12,8 @@ from typing import Any
 
 import yaml
 
+from .trace_capture import finalize_event_artifacts, install_trace_plugin, trace_plugin_enabled
+
 from .config import (
     ARMS,
     CAVE_URL,
@@ -108,6 +110,8 @@ def make_profile(src: Path, dst: Path) -> None:
         source = src / name
         if source.exists():
             shutil.copy2(source, dst / name)
+
+    install_trace_plugin(dst)
 
 
 def profile_env(profile: Path) -> dict[str, str]:
@@ -629,6 +633,154 @@ def evaluate_patch(
     return True, instance_id in resolved_ids, elapsed, ""
 
 
+def _snapshot_state_db(profile: Path, run_dir: Path) -> bool:
+    """Create a consistent post-run copy of Hermes state.db for audit/replay."""
+    source = profile / "state.db"
+    if not source.is_file():
+        return False
+    destination = run_dir / "hermes-state.db"
+    try:
+        src = sqlite3.connect("file:" + str(source) + "?mode=ro", uri=True)
+        dst = sqlite3.connect(str(destination))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        return destination.is_file()
+    except Exception as exc:
+        (run_dir / "trace-export-error.txt").write_text(
+            f"state.db snapshot failed: {exc}\n",
+            encoding="utf-8",
+        )
+        return False
+
+
+def _session_export_args(
+    profile: Path,
+    filename: str,
+    *,
+    runtime: str,
+) -> tuple[Path, str]:
+    host_path = profile / filename
+    command_path = (
+        f"/opt/data/{filename}"
+        if runtime == "docker"
+        else str(host_path)
+    )
+    return host_path, command_path
+
+
+def _append_trace_error(run_dir: Path, message: str) -> None:
+    with (run_dir / "trace-export-error.txt").open("a", encoding="utf-8") as handle:
+        handle.write(message.rstrip() + "\n")
+
+
+def export_session_artifacts(
+    hermes: str,
+    profile: Path,
+    run_dir: Path,
+    session_id: str,
+    *,
+    runtime: str,
+    image: str | None,
+) -> bool:
+    """Export the native Hermes transcript + trace before the ephemeral profile is removed."""
+    if not session_id:
+        _append_trace_error(run_dir, "session export skipped: missing session_id")
+        _snapshot_state_db(profile, run_dir)
+        return False
+
+    exported = True
+    exports = (
+        ("benchmark-session.jsonl", "jsonl", False),
+        ("benchmark-session.trace.jsonl", "trace", True),
+    )
+    for temp_name, fmt, no_redact in exports:
+        host_path, command_path = _session_export_args(
+            profile,
+            temp_name,
+            runtime=runtime,
+        )
+        args = [
+            "sessions",
+            "export",
+            command_path,
+            "--format",
+            fmt,
+            "--session-id",
+            session_id,
+        ]
+        if no_redact:
+            args.append("--no-redact")
+        proc = hermes_admin(
+            hermes,
+            profile,
+            args,
+            runtime=runtime,
+            image=image,
+            timeout=120,
+        )
+        if proc.returncode or not host_path.is_file():
+            exported = False
+            detail = (proc.stderr or proc.stdout or "").strip()
+            _append_trace_error(
+                run_dir,
+                f"Hermes session {fmt} export failed (exit {proc.returncode}): {detail[:1000]}",
+            )
+            continue
+
+        target = (
+            run_dir / "hermes-session.jsonl"
+            if fmt == "jsonl"
+            else run_dir / "hermes-session.trace.jsonl"
+        )
+        shutil.copy2(host_path, target)
+        if fmt == "jsonl":
+            try:
+                rows = [
+                    json.loads(line)
+                    for line in host_path.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+                if len(rows) == 1:
+                    (run_dir / "hermes-session.json").write_text(
+                        json.dumps(rows[0], indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8",
+                    )
+            except Exception as exc:
+                _append_trace_error(run_dir, f"pretty session export failed: {exc}")
+        try:
+            host_path.unlink()
+        except OSError:
+            pass
+
+    _snapshot_state_db(profile, run_dir)
+
+    # Preserve non-secret runtime configuration and installed-extension evidence.
+    config = profile / "config.yaml"
+    if config.is_file():
+        shutil.copy2(config, run_dir / "hermes-config.yaml")
+    manifest = {
+        "trace_plugin_enabled": trace_plugin_enabled(profile),
+        "plugins": sorted(
+            path.name
+            for path in (profile / "plugins").iterdir()
+            if path.is_dir()
+        ) if (profile / "plugins").is_dir() else [],
+        "skill_files": sorted(
+            str(path.relative_to(profile))
+            for path in profile.rglob("SKILL.md")
+        ),
+        "session_id": session_id,
+    }
+    (run_dir / "hermes-profile-manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return exported
+
+
 def run_one(
     hermes: str,
     profile: Path,
@@ -794,6 +946,16 @@ def run_one(
     session_id = str(usage.get("session_id") or "")
     db = session_db_values(profile, session_id)
 
+    timing = finalize_event_artifacts(profile, run_dir, wall)
+    trace_exported = export_session_artifacts(
+        hermes,
+        profile,
+        run_dir,
+        session_id,
+        runtime=hermes_runtime,
+        image=hermes_image,
+    )
+
     estimated = as_float(grand.get("estimated_cost_usd"))
     if estimated is None:
         estimated = as_float(usage.get("estimated_cost_usd"))
@@ -894,6 +1056,16 @@ def run_one(
         diff_lines=diff_lines,
         run_dir=str(run_dir),
         error="; ".join(errors),
+        api_wait_seconds=as_float(timing.get("api_wait_seconds")),
+        tool_execution_seconds=as_float(timing.get("tool_execution_seconds")),
+        terminal_execution_seconds=as_float(timing.get("terminal_execution_seconds")),
+        unattributed_wall_seconds=as_float(timing.get("unattributed_wall_seconds")),
+        api_duration_mean_seconds=as_float(timing.get("api_duration_mean_seconds")),
+        api_duration_p95_seconds=as_float(timing.get("api_duration_p95_seconds")),
+        ttft_mean_seconds=as_float(timing.get("ttft_mean_seconds")),
+        timing_event_count=as_int(timing.get("event_count")),
+        skill_lifecycle_event_count=as_int(timing.get("skill_lifecycle_event_count")),
+        trace_exported=trace_exported,
     )
     (run_dir / "result.json").write_text(
         json.dumps(result.__dict__, indent=2) + "\n",
