@@ -71,6 +71,7 @@ def make_profile(
     model: str = PINNED_MODEL,
     upstream_provider: str = PINNED_OPENROUTER_UPSTREAM,
     max_turns: int = PINNED_MAX_TURNS,
+    budget_warning_ratio: float | None = None,
 ) -> None:
     """Create a fresh minimal Hermes home for one pinned model/provider condition."""
     dst.mkdir(parents=True, exist_ok=True)
@@ -78,7 +79,10 @@ def make_profile(
     cfg: dict[str, Any] = {
         "_config_version": 45,
         "plugins": {"enabled": [], "disabled": []},
-        "agent": {"max_turns": max_turns},
+        "agent": {
+            "max_turns": max_turns,
+            "budget_warning_ratio": budget_warning_ratio,
+        },
         "provider_routing": {
             "only": [upstream_provider],
             "require_parameters": True,
@@ -127,6 +131,7 @@ def pin_profile_route(
     model: str,
     upstream_provider: str,
     max_turns: int,
+    budget_warning_ratio: float | None = None,
 ) -> None:
     """Reassert the experimental model/provider route after extension installs."""
     config_path = profile / "config.yaml"
@@ -136,6 +141,7 @@ def pin_profile_route(
         else {}
     )
     cfg.setdefault("agent", {})["max_turns"] = max_turns
+    cfg["agent"]["budget_warning_ratio"] = budget_warning_ratio
     cfg["provider_routing"] = {
         "only": [upstream_provider],
         "require_parameters": True,
