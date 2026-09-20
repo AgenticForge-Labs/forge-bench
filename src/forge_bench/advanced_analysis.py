@@ -803,24 +803,37 @@ def _plot_time_calls(output: Path, task_rows: list[dict[str, Any]], theme: str) 
 
 
 def timing_evidence_summary(task_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    tool_rows = [
-        row for row in task_rows
-        if row.get("valid_runs", 0) > 0 and _finite(row.get("tool_calls"))
-    ]
-    total_valid = sum(1 for row in task_rows if row.get("valid_runs", 0) > 0)
+    valid_rows = [row for row in task_rows if row.get("valid_runs", 0) > 0]
+    tool_rows = [row for row in valid_rows if _finite(row.get("tool_calls"))]
+    api_timed = [row for row in valid_rows if _finite(row.get("api_wait_seconds"))]
+    tool_timed = [row for row in valid_rows if _finite(row.get("tool_execution_seconds"))]
+    total_valid = len(valid_rows)
+    direct_available = bool(api_timed or tool_timed)
     return [{
         "task_treatment_rows": total_valid,
         "rows_with_tool_call_count": len(tool_rows),
         "tool_call_coverage_percent": (
             100.0 * len(tool_rows) / total_valid if total_valid else 0.0
         ),
-        "exact_api_wait_seconds_available": False,
-        "exact_tool_execution_seconds_available": False,
+        "rows_with_direct_api_timing": len(api_timed),
+        "direct_api_timing_coverage_percent": (
+            100.0 * len(api_timed) / total_valid if total_valid else 0.0
+        ),
+        "rows_with_direct_tool_timing": len(tool_timed),
+        "direct_tool_timing_coverage_percent": (
+            100.0 * len(tool_timed) / total_valid if total_valid else 0.0
+        ),
+        "exact_api_wait_seconds_available": bool(api_timed),
+        "exact_tool_execution_seconds_available": bool(tool_timed),
         "note": (
-            "Existing Forge Bench runs preserve wall time, token/cost usage, API-call counts, "
-            "and sometimes tool-call counts. Hermes --usage-file does not preserve per-call "
-            "API duration or aggregate tool-execution duration, so those exact components "
-            "cannot be reconstructed from legacy artifacts."
+            "Direct timing comes from the observer-only Forge Bench native Hermes plugin "
+            "when present. Legacy Forge Bench runs preserve wall time, token/cost usage, "
+            "API-call counts, and sometimes tool-call counts but not per-call API/tool "
+            "durations; those older runs remain limited to ratio diagnostics."
+            if direct_available else
+            "This run predates the Forge Bench native Hermes timing observer. Exact API "
+            "wait and tool-execution durations cannot be reconstructed from legacy artifacts; "
+            "ratio diagnostics use saved wall time and call counts."
         ),
     }]
 
