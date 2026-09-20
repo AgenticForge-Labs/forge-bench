@@ -568,7 +568,7 @@ jobs:
           test "$(tail -n +2 /tmp/forge-bench-design-plan/run_plan.csv | wc -l)" -eq 40
           grep -q 'deepseek/deepseek-v4-flash-0731' /tmp/forge-bench-design-plan/run_plan.csv
           grep -q 'deepseek/deepseek-v4.1-flash' /tmp/forge-bench-design-plan/run_plan.csv
-          test "$(tail -n +2 /tmp/forge-bench-design-plan/run_plan.csv | cut -d, -f6 | sort -u | grep -c relace)" -ge 1
+          test "$(grep -c ',relace,' /tmp/forge-bench-design-plan/run_plan.csv)" -eq 40
 
       - name: Verify homogeneous default SWE-bench suite
         run: |
