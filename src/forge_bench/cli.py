@@ -105,6 +105,15 @@ def parse_args() -> argparse.Namespace:
         help="Save/print selected instances without model calls or Docker grading.",
     )
     parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        help=(
+            "Resolve the design and task selection, write metadata/design/run_plan, "
+            "print the fully randomized execution plan, and exit before runtime "
+            "preflight or any paid model calls."
+        ),
+    )
+    parser.add_argument(
         "--no-history",
         action="store_true",
         help="Disable historical Verified solve-rate signal during smart sampling.",
@@ -311,7 +320,7 @@ def _print_selection(selected: list[Any]) -> None:
 
 def _preflight(args: argparse.Namespace) -> str | None:
     """Validate runtime prerequisites and return the immutable Hermes image ID."""
-    if args.selection_only:
+    if args.selection_only or args.plan_only:
         return None
     if not shutil.which("git"):
         raise SystemExit("git is required")
@@ -700,6 +709,32 @@ def main() -> int:
     if args.selection_only:
         print("\nSelection only; no model calls were made.")
         print("Manifest:", output / "selection.json")
+        return 0
+
+    if args.plan_only:
+        preview_task_ids = [candidate.instance_id for candidate in selected]
+        preview_plan, preview_seeds = build_run_plan(
+            list(args.arms),
+            preview_task_ids,
+            args.repeats,
+            args.seed,
+            models=list(design.models),
+        )
+        meta["repeat_seeds"] = preview_seeds
+        (output / "metadata.json").write_text(
+            json.dumps(meta, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        write_csv(output / "run_plan.csv", preview_plan)
+        print("\nRandomized execution plan (no model calls)")
+        for item in preview_plan:
+            print(
+                f"  {int(item['run_index']):02d}: "
+                f"{item['model_label']} / {LABEL[str(item['arm'])]} / "
+                f"{item['instance_id']} / block {item['repeat']}"
+            )
+        print(f"\nPlan: {len(preview_plan)} cells; no model calls were made.")
+        print("Run plan:", output / "run_plan.csv")
         return 0
 
     hermes_image = _preflight(args)
