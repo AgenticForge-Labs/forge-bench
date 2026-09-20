@@ -64,20 +64,27 @@ def source_home() -> Path:
     return Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser().resolve()
 
 
-def make_profile(src: Path, dst: Path) -> None:
-    """Create a fresh, minimal Hermes home containing only benchmark settings and credentials."""
+def make_profile(
+    src: Path,
+    dst: Path,
+    *,
+    model: str = PINNED_MODEL,
+    upstream_provider: str = PINNED_OPENROUTER_UPSTREAM,
+    max_turns: int = PINNED_MAX_TURNS,
+) -> None:
+    """Create a fresh minimal Hermes home for one pinned model/provider condition."""
     dst.mkdir(parents=True, exist_ok=True)
 
     cfg: dict[str, Any] = {
         "_config_version": 45,
         "plugins": {"enabled": [], "disabled": []},
-        "agent": {"max_turns": PINNED_MAX_TURNS},
+        "agent": {"max_turns": max_turns},
         "provider_routing": {
-            "only": [PINNED_OPENROUTER_UPSTREAM],
+            "only": [upstream_provider],
             "require_parameters": True,
             "models": {
-                PINNED_MODEL: {
-                    "only": [PINNED_OPENROUTER_UPSTREAM],
+                model: {
+                    "only": [upstream_provider],
                     "require_parameters": True,
                 }
             },
@@ -897,12 +904,17 @@ def run_one(
     evaluate: bool,
     hermes_runtime: str = "local",
     hermes_image: str | None = None,
+    model: str = PINNED_MODEL,
+    upstream_provider: str = PINNED_OPENROUTER_UPSTREAM,
+    reasoning: str = PINNED_REASONING,
+    model_key: str | None = None,
 ) -> Result:
     instance_id = str(instance["instance_id"])
     repo = str(instance["repo"])
     difficulty = str(instance.get("difficulty") or "")
     task_slug = instance_id.replace("/", "__")
-    run_dir = output / "runs" / f"{run_index:02d}__{arm}__{task_slug}__r{repeat}"
+    model_slug = (model_key or model.rsplit("/", 1)[-1]).replace("/", "_")
+    run_dir = output / "runs" / f"{run_index:02d}__{model_slug}__{arm}__{task_slug}__r{repeat}"
     run_dir.mkdir(parents=True, exist_ok=True)
     workspace = run_dir / "workspace"
 
@@ -926,9 +938,9 @@ def run_one(
         "--provider",
         "openrouter",
         "--model",
-        PINNED_MODEL,
+        model,
         "--reasoning",
-        PINNED_REASONING,
+        reasoning,
     ]
 
     if hermes_runtime == "docker":
@@ -999,9 +1011,9 @@ def run_one(
             evaluation_seconds=0.0,
             repo=repo,
             difficulty=difficulty,
-            model=str(timeout_usage.get("model") or PINNED_MODEL),
+            model=str(timeout_usage.get("model") or model),
             api_provider=str(timeout_usage.get("provider") or "openrouter"),
-            upstream_provider=PINNED_OPENROUTER_UPSTREAM,
+            upstream_provider=upstream_provider,
             session_id=session_id or (
                 str(timing.get("session_ids", [""])[0])
                 if timing.get("session_ids")
@@ -1121,10 +1133,10 @@ def run_one(
         else "unavailable"
     )
 
-    model = str(usage.get("model") or PINNED_MODEL)
+    observed_model = str(usage.get("model") or model)
     provider = str(usage.get("provider") or "openrouter")
     reasoning_tokens = as_int(usage.get("reasoning_tokens"))
-    reasoning_ok = PINNED_REASONING != "none" or reasoning_tokens == 0
+    reasoning_ok = reasoning != "none" or reasoning_tokens == 0
     completed = (
         bool(usage.get("completed", proc.returncode == 0))
         and proc.returncode == 0
@@ -1139,7 +1151,7 @@ def run_one(
     )
     valid = (
         completed
-        and model == PINNED_MODEL
+        and observed_model == model
         and provider.lower() == "openrouter"
         and reasoning_ok
         and eval_ok
@@ -1148,8 +1160,8 @@ def run_one(
     errors: list[str] = []
     if not completed:
         errors.append("Hermes incomplete")
-    if model != PINNED_MODEL:
-        errors.append("wrong model: " + model)
+    if observed_model != model:
+        errors.append("wrong model: " + observed_model)
     if provider.lower() != "openrouter":
         errors.append("wrong API provider: " + provider)
     if not reasoning_ok:
@@ -1172,9 +1184,9 @@ def run_one(
         evaluation_seconds=evaluation_seconds,
         repo=repo,
         difficulty=difficulty,
-        model=model,
+        model=observed_model,
         api_provider=provider,
-        upstream_provider=PINNED_OPENROUTER_UPSTREAM,
+        upstream_provider=upstream_provider,
         session_id=session_id,
         input_tokens=as_int(usage.get("input_tokens")),
         output_tokens=as_int(usage.get("output_tokens")),
