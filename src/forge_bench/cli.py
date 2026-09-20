@@ -793,23 +793,23 @@ def main() -> int:
                     runtime=args.hermes_runtime,
                     image=hermes_image,
                 )
-            # Treatment installers may edit plugins.enabled. Reassert the
-            # observer after installation so every arm is instrumented equally.
-            install_trace_plugin(template)
-            for state_name in ("state.db", "state.db-shm", "state.db-wal"):
-                state = template / state_name
-                if state.exists():
-                    state.unlink()
-            # Admin-time plugin/skill installation must never leak observer
-            # events or export artifacts into an experimental run profile.
-            for artifact_name in (
-                "forge-bench-events.jsonl",
-                "benchmark-session.jsonl",
-                "benchmark-session.trace.jsonl",
-            ):
-                artifact = template / artifact_name
-                if artifact.exists():
-                    artifact.unlink()
+                # Treatment installers may edit plugins.enabled. Reassert the
+                # observer after installation so every arm is instrumented equally.
+                install_trace_plugin(template)
+                for state_name in ("state.db", "state.db-shm", "state.db-wal"):
+                    state = template / state_name
+                    if state.exists():
+                        state.unlink()
+                # Admin-time plugin/skill installation must never leak observer
+                # events or export artifacts into an experimental run profile.
+                for artifact_name in (
+                    "forge-bench-events.jsonl",
+                    "benchmark-session.jsonl",
+                    "benchmark-session.trace.jsonl",
+                ):
+                    artifact = template / artifact_name
+                    if artifact.exists():
+                        artifact.unlink()
                 templates[(model_spec.key, arm)] = template
 
         for item in plan:
