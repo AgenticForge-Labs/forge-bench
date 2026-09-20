@@ -29,6 +29,22 @@ def mean(values: Iterable[float]) -> float:
     return statistics.mean(values) if values else math.nan
 
 
+def safe_ratio(numerator: float | int | None, denominator: float | int | None) -> float:
+    try:
+        n = float(numerator) if numerator is not None else math.nan
+        d = float(denominator) if denominator is not None else math.nan
+    except (TypeError, ValueError):
+        return math.nan
+    if not math.isfinite(n) or not math.isfinite(d) or d <= 0:
+        return math.nan
+    return n / d
+
+
+def finite_mean(values: Iterable[float]) -> float:
+    valid = [float(value) for value in values if math.isfinite(float(value))]
+    return statistics.mean(valid) if valid else math.nan
+
+
 def ci95(values: Iterable[float]) -> tuple[float, float, float, int]:
     vals = [
         float(value)
@@ -125,6 +141,43 @@ def task_summary(
                     ),
                     "api_calls": mean(
                         result.api_calls for result in good
+                    ),
+                    "tool_calls": mean(
+                        result.tool_calls
+                        for result in good
+                        if result.tool_calls is not None
+                    ),
+                    # Per-run ratios are averaged within task so one unusually
+                    # large run cannot dominate by simple ratio-of-totals.
+                    "tokens_per_second": finite_mean(
+                        safe_ratio(result.total_tokens, result.wall_seconds)
+                        for result in good
+                    ),
+                    "seconds_per_api_call": finite_mean(
+                        safe_ratio(result.wall_seconds, result.api_calls)
+                        for result in good
+                    ),
+                    "tokens_per_api_call": finite_mean(
+                        safe_ratio(result.total_tokens, result.api_calls)
+                        for result in good
+                    ),
+                    "cost_per_api_call": finite_mean(
+                        safe_ratio(result.cost_usd, result.api_calls)
+                        for result in good
+                    ),
+                    "cost_per_second": finite_mean(
+                        safe_ratio(result.cost_usd, result.wall_seconds)
+                        for result in good
+                    ),
+                    "seconds_per_tool_call": finite_mean(
+                        safe_ratio(result.wall_seconds, result.tool_calls)
+                        for result in good
+                        if result.tool_calls is not None
+                    ),
+                    "tool_calls_per_api_call": finite_mean(
+                        safe_ratio(result.tool_calls, result.api_calls)
+                        for result in good
+                        if result.tool_calls is not None
                     ),
                     "diff_lines": mean(
                         result.diff_lines for result in good
@@ -433,6 +486,13 @@ def write_html_report(
 
     advanced_specs = [
         ("advanced_cost_time", "Cost-time efficiency frontier"),
+        ("advanced_time_vs_api_calls", "Wall time versus API-call count"),
+        ("advanced_tokens_per_second", "Token throughput by treatment"),
+        ("advanced_seconds_per_api_call", "Time per API call by treatment"),
+        ("advanced_tokens_per_api_call", "Tokens per API call by treatment"),
+        ("advanced_cost_per_api_call", "Cost per API call by treatment"),
+        ("advanced_tool_calls_per_api_call", "Tool calls per API call"),
+        ("advanced_seconds_per_tool_call", "Wall time per tool call"),
         ("advanced_token_effects", "Task-normalized token effects"),
         ("advanced_pca_biplot", "PCA biplot of efficiency profiles"),
         ("advanced_pca_scree", "PCA scree plot"),
@@ -465,10 +525,12 @@ def write_html_report(
         if advanced_cards:
             advanced_section = (
                 "<h2>Advanced analysis</h2>"
-                "<p>Exploratory task-level analyses include paired baseline-normalized effects, "
-                "task-fixed-effect regressions, Caveman×Ponytail factorial regression when available, "
-                "PCA, deterministic clustering, and correlations. These are descriptive/exploratory "
-                "with small benchmark samples and should not be over-interpreted.</p>"
+                "<p>Exploratory task-level analyses include cost/time tradeoffs, token throughput, "
+                "time and tokens per API call, tool-call intensity when available, paired "
+                "baseline-normalized effects, task-fixed-effect regressions, Caveman×Ponytail "
+                "factorial regression when available, PCA, deterministic clustering, and "
+                "correlations. Legacy runs do not contain exact API-wait or tool-execution "
+                "durations, so ratio diagnostics use the saved wall time and call counts.</p>"
                 f'<div class="grid">{advanced_cards}</div>'
             )
 

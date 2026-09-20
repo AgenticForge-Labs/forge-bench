@@ -39,6 +39,8 @@ jobs:
               LIGHT_TREATMENT_COLORS,
               cost_time_analysis,
               factorial_regression,
+              latency_efficiency_analysis,
+              timing_evidence_summary,
               paired_effects,
               pca_analysis,
               treatment_regression,
@@ -278,6 +280,14 @@ jobs:
                       "wall_seconds": (180 + task_i * 4) * multiplier,
                       "api_calls": (40 + task_i) * multiplier,
                       "cost_usd": 0.015 * multiplier,
+                      "tool_calls": (55 + task_i) * multiplier,
+                      "tokens_per_second": (base * multiplier) / ((180 + task_i * 4) * multiplier),
+                      "seconds_per_api_call": ((180 + task_i * 4) * multiplier) / ((40 + task_i) * multiplier),
+                      "tokens_per_api_call": (base * multiplier) / ((40 + task_i) * multiplier),
+                      "cost_per_api_call": (0.015 * multiplier) / ((40 + task_i) * multiplier),
+                      "cost_per_second": (0.015 * multiplier) / ((180 + task_i * 4) * multiplier),
+                      "seconds_per_tool_call": ((180 + task_i * 4) * multiplier) / ((55 + task_i) * multiplier),
+                      "tool_calls_per_api_call": ((55 + task_i) * multiplier) / ((40 + task_i) * multiplier),
                       "diff_lines": 4 + task_i,
                   })
           effects = paired_effects(analysis_rows)
@@ -294,6 +304,12 @@ jobs:
           assert len(cost_time) == 4
           assert all("pareto_efficient" in row for row in cost_time)
           assert -1.0 <= cost_time_corr <= 1.0
+          latency = latency_efficiency_analysis(analysis_rows)
+          assert any(row["metric"] == "tokens_per_second" for row in latency)
+          assert any(row["metric"] == "seconds_per_api_call" for row in latency)
+          timing = timing_evidence_summary(analysis_rows)
+          assert timing[0]["rows_with_tool_call_count"] == 20
+          assert timing[0]["exact_api_wait_seconds_available"] is False
 
           with tempfile.TemporaryDirectory() as td:
               analysis_dir = Path(td)
@@ -307,6 +323,14 @@ jobs:
               assert (analysis_dir / "advanced_correlations.dark.svg").is_file()
               assert (analysis_dir / "advanced_cost_time.light.png").is_file()
               assert (analysis_dir / "advanced_cost_time.dark.svg").is_file()
+              assert (analysis_dir / "advanced_time_vs_api_calls.light.png").is_file()
+              assert (analysis_dir / "advanced_tokens_per_second.dark.svg").is_file()
+              assert (analysis_dir / "advanced_seconds_per_api_call.light.png").is_file()
+              assert (analysis_dir / "advanced_tokens_per_api_call.dark.png").is_file()
+              assert (analysis_dir / "advanced_tool_calls_per_api_call.light.svg").is_file()
+              assert (analysis_dir / "advanced_seconds_per_tool_call.dark.svg").is_file()
+              assert (analysis_dir / "advanced_latency_efficiency.csv").is_file()
+              assert (analysis_dir / "advanced_timing_evidence.csv").is_file()
           PY
       - run: uv run forge-bench --help
       - name: Verify reanalysis CLI accepts existing output

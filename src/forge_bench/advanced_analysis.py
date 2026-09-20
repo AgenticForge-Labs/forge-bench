@@ -12,6 +12,14 @@ import numpy as np
 from .config import LABEL, T975
 
 ADVANCED_METRICS = ("total_tokens", "wall_seconds", "api_calls", "cost_usd")
+LATENCY_EFFICIENCY_METRICS = {
+    "tokens_per_second": ("Token throughput", "tokens / second"),
+    "seconds_per_api_call": ("Time per API call", "seconds / API call"),
+    "tokens_per_api_call": ("Tokens per API call", "tokens / API call"),
+    "cost_per_api_call": ("Cost per API call", "USD / API call"),
+    "tool_calls_per_api_call": ("Tool intensity", "tool calls / API call"),
+    "seconds_per_tool_call": ("Time per tool call", "seconds / tool call"),
+}
 PCA_FEATURES = ("total_tokens", "wall_seconds", "api_calls", "cost_usd", "diff_lines")
 TREATMENT_ORDER = ("baseline", "caveman", "ponytail", "caveman_ponytail", "lean_tools", "all_three")
 
@@ -651,6 +659,172 @@ def _plot_effects(output: Path, rows: list[dict[str, Any]], theme: str) -> None:
     _save_themed(fig, output, "advanced_token_effects", theme)
 
 
+def latency_efficiency_analysis(task_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for arm in _ordered_arms({str(row["arm"]) for row in task_rows}):
+        arm_rows = [
+            row for row in task_rows
+            if str(row.get("arm")) == arm and row.get("valid_runs", 0) > 0
+        ]
+        for metric in LATENCY_EFFICIENCY_METRICS:
+            values = [
+                float(row[metric])
+                for row in arm_rows
+                if _finite(row.get(metric))
+            ]
+            if not values:
+                continue
+            center = float(np.mean(values))
+            if len(values) > 1:
+                sem = float(np.std(values, ddof=1) / math.sqrt(len(values)))
+                crit = T975.get(len(values) - 1, 1.959964)
+                low, high = center - crit * sem, center + crit * sem
+            else:
+                low = high = center
+            rows.append({
+                "arm": arm,
+                "label": LABEL.get(arm, arm),
+                "metric": metric,
+                "n_tasks": len(values),
+                "mean": center,
+                "ci95_low": low,
+                "ci95_high": high,
+            })
+    return rows
+
+
+def _plot_latency_metric(
+    output: Path,
+    task_rows: list[dict[str, Any]],
+    summary_rows: list[dict[str, Any]],
+    metric: str,
+    theme: str,
+) -> None:
+    rows = [row for row in summary_rows if row["metric"] == metric]
+    if not rows:
+        return
+    arms = _ordered_arms([str(row["arm"]) for row in rows])
+    colors = treatment_colors(arms, theme)
+    fig, ax = plt.subplots(figsize=(10.4, 6.8))
+    _style_axes(fig, ax, theme)
+    x = np.arange(len(arms), dtype=float)
+
+    for index, arm in enumerate(arms):
+        raw = [
+            float(row[metric])
+            for row in task_rows
+            if str(row.get("arm")) == arm
+            and row.get("valid_runs", 0) > 0
+            and _finite(row.get(metric))
+        ]
+        if raw:
+            offsets = np.linspace(-0.10, 0.10, len(raw)) if len(raw) > 1 else np.asarray([0.0])
+            ax.scatter(
+                index + offsets,
+                raw,
+                s=48,
+                color=colors[arm],
+                alpha=0.55,
+                edgecolors=_theme(theme)["edge"],
+                linewidths=0.7,
+                zorder=3,
+            )
+
+        summary = next(row for row in rows if str(row["arm"]) == arm)
+        center = float(summary["mean"])
+        low = float(summary["ci95_low"])
+        high = float(summary["ci95_high"])
+        ax.errorbar(
+            index,
+            center,
+            yerr=[[max(0.0, center - low)], [max(0.0, high - center)]],
+            fmt="o",
+            markersize=11,
+            color=colors[arm],
+            ecolor=_theme(theme)["text"],
+            elinewidth=2.1,
+            capsize=7,
+            capthick=1.9,
+            zorder=4,
+        )
+
+    title, ylabel = LATENCY_EFFICIENCY_METRICS[metric]
+    ax.set_xticks(x, [LABEL.get(arm, arm) for arm in arms], fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=14)
+    ax.set_title(f"{title} by treatment", fontsize=19, fontweight="bold")
+    ax.grid(axis="y", alpha=0.30, linewidth=1.1)
+    _save_themed(fig, output, f"advanced_{metric}", theme)
+
+
+def _plot_time_calls(output: Path, task_rows: list[dict[str, Any]], theme: str) -> None:
+    usable = [
+        row for row in task_rows
+        if row.get("valid_runs", 0) > 0
+        and _finite(row.get("api_calls"))
+        and _finite(row.get("wall_seconds"))
+    ]
+    if not usable:
+        return
+    arms = _ordered_arms({str(row["arm"]) for row in usable})
+    colors = treatment_colors(arms, theme)
+    fig, ax = plt.subplots(figsize=(10.2, 7.0))
+    _style_axes(fig, ax, theme)
+
+    for arm in arms:
+        subset = [row for row in usable if str(row["arm"]) == arm]
+        ax.scatter(
+            [float(row["api_calls"]) for row in subset],
+            [float(row["wall_seconds"]) for row in subset],
+            s=90,
+            color=colors[arm],
+            alpha=0.82,
+            edgecolors=_theme(theme)["edge"],
+            linewidths=0.9,
+            label=LABEL.get(arm, arm),
+            zorder=3,
+        )
+        if subset:
+            ax.scatter(
+                [float(np.mean([float(row["api_calls"]) for row in subset]))],
+                [float(np.mean([float(row["wall_seconds"]) for row in subset]))],
+                s=220,
+                marker="*",
+                color=colors[arm],
+                edgecolors=_theme(theme)["text"],
+                linewidths=1.0,
+                zorder=4,
+            )
+
+    ax.set_xlabel("API calls per task", fontsize=14)
+    ax.set_ylabel("Wall-clock time per task (s)", fontsize=14)
+    ax.set_title("Wall time versus API-call count", fontsize=19, fontweight="bold")
+    ax.legend(title="Treatment", fontsize=10.5, title_fontsize=10.5)
+    _save_themed(fig, output, "advanced_time_vs_api_calls", theme)
+
+
+def timing_evidence_summary(task_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    tool_rows = [
+        row for row in task_rows
+        if row.get("valid_runs", 0) > 0 and _finite(row.get("tool_calls"))
+    ]
+    total_valid = sum(1 for row in task_rows if row.get("valid_runs", 0) > 0)
+    return [{
+        "task_treatment_rows": total_valid,
+        "rows_with_tool_call_count": len(tool_rows),
+        "tool_call_coverage_percent": (
+            100.0 * len(tool_rows) / total_valid if total_valid else 0.0
+        ),
+        "exact_api_wait_seconds_available": False,
+        "exact_tool_execution_seconds_available": False,
+        "note": (
+            "Existing Forge Bench runs preserve wall time, token/cost usage, API-call counts, "
+            "and sometimes tool-call counts. Hermes --usage-file does not preserve per-call "
+            "API duration or aggregate tool-execution duration, so those exact components "
+            "cannot be reconstructed from legacy artifacts."
+        ),
+    }]
+
+
 def cost_time_analysis(task_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], float]:
     usable = [
         row for row in task_rows
@@ -760,6 +934,8 @@ def write_advanced_analysis(output: Path, task_rows: list[dict[str, Any]]) -> li
     clusters = cluster_analysis(task_rows, pca_scores)
     corr_features, corr = correlation_analysis(task_rows)
     cost_time_rows, cost_time_corr = cost_time_analysis(task_rows)
+    latency_rows = latency_efficiency_analysis(task_rows)
+    timing_rows = timing_evidence_summary(task_rows)
 
     tables = {
         "advanced_paired_effects.csv": effects,
@@ -769,6 +945,8 @@ def write_advanced_analysis(output: Path, task_rows: list[dict[str, Any]]) -> li
         "advanced_pca_loadings.csv": pca_loadings,
         "advanced_clusters.csv": clusters,
         "advanced_cost_time.csv": cost_time_rows,
+        "advanced_latency_efficiency.csv": latency_rows,
+        "advanced_timing_evidence.csv": timing_rows,
     }
     for name, rows in tables.items():
         if rows:
@@ -801,8 +979,11 @@ def write_advanced_analysis(output: Path, task_rows: list[dict[str, Any]]) -> li
         _plot_clusters(output, clusters, theme)
         _plot_correlations(output, corr_features, corr, theme)
         _plot_cost_time(output, cost_time_rows, cost_time_corr, theme)
+        _plot_time_calls(output, task_rows, theme)
+        for metric in LATENCY_EFFICIENCY_METRICS:
+            _plot_latency_metric(output, task_rows, latency_rows, metric, theme)
 
-    for stem in ("advanced_token_effects", "advanced_pca_biplot", "advanced_pca_scree", "advanced_pca_loadings", "advanced_clusters", "advanced_correlations", "advanced_cost_time"):
+    for stem in ("advanced_token_effects", "advanced_pca_biplot", "advanced_pca_scree", "advanced_pca_loadings", "advanced_clusters", "advanced_correlations", "advanced_cost_time", "advanced_time_vs_api_calls", "advanced_tokens_per_second", "advanced_seconds_per_api_call", "advanced_tokens_per_api_call", "advanced_cost_per_api_call", "advanced_tool_calls_per_api_call", "advanced_seconds_per_tool_call"):
         if (output / f"{stem}.light.png").exists():
             generated.extend([
                 f"{stem}.light.png", f"{stem}.dark.png",

@@ -189,13 +189,26 @@ uv run forge-bench --analysis-mode advanced
 Advanced mode additionally writes task-level paired effects relative to the
 baseline, task-fixed-effect log regressions, a Caveman × Ponytail factorial
 regression when the four 2×2 arms are present, and multivariate diagnostics.
-The PCA section now includes a true biplot with treatment-colored observations
-and loading vectors, a scree plot, and a PC1/PC2 loading chart. Clustering is
-shown in PCA space with cluster circles while points retain the same treatment
-colors used throughout the advanced figures. A cost-vs-wall-time plot shows the
-Pareto frontier for treatments, because minimizing dollars and elapsed time are
-related but distinct objectives. Correlations and all underlying tables are also
-written to CSV. These analyses are exploratory, especially with small task counts.
+The PCA section includes a true biplot with treatment-colored observations and
+loading vectors, a scree plot, and a PC1/PC2 loading chart. Clustering is shown
+in PCA space with cluster circles while points retain the same treatment colors.
+
+Latency/workflow diagnostics are also generated: token throughput
+(tokens/second), seconds/API call, tokens/API call, cost/API call, wall time
+versus API-call count, and, when Hermes recorded tool-call counts,
+tool-calls/API-call and seconds/tool-call. These are reconstructed from
+`runs.json`, so they also work when reanalyzing older Forge Bench runs.
+A cost-vs-wall-time plot shows the Pareto frontier because minimizing dollars
+and elapsed time are related but distinct objectives.
+
+Legacy Forge Bench artifacts do not contain exact per-request API wait durations
+or aggregate tool-execution durations. Advanced analysis writes
+`advanced_timing_evidence.csv` describing what timing evidence was available
+rather than estimating those missing components. Exact API-vs-tool wall-time
+decomposition therefore requires additional runtime instrumentation in a future
+benchmark, while the ratio diagnostics above can be computed immediately from
+existing output. Correlations and all underlying tables are written to CSV.
+These analyses are exploratory, especially with small task counts.
 
 Existing benchmark outputs can be reanalyzed without rerunning Hermes or
 SWE-bench:
