@@ -157,7 +157,9 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help=(
             "Regenerate reports/figures from an existing Forge Bench output "
-            "directory without model calls. Usually combine with --analysis-mode advanced."
+            "directory without model calls. Each invocation writes to a fresh "
+            "timestamped subfolder under <run>/reanalysis/. Usually combine "
+            "with --analysis-mode advanced."
         ),
     )
     parser.add_argument(
@@ -366,10 +368,12 @@ def main() -> int:
     args = parse_args()
 
     if args.reanalyze is not None:
-        reanalyze_output(args.reanalyze, analysis_mode=args.analysis_mode)
-        print("Reanalyzed:", args.reanalyze.expanduser().resolve())
+        source = args.reanalyze.expanduser().resolve()
+        output = reanalyze_output(source, analysis_mode=args.analysis_mode)
+        print("Reanalysis source:", source)
         print("Analysis mode:", args.analysis_mode)
-        print("Report:", args.reanalyze.expanduser().resolve() / "report.html")
+        print("Reanalysis output:", output)
+        print("Report:", output / "report.html")
         return 0
 
     if args.repeats < 1:
