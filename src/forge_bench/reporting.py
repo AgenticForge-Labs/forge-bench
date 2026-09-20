@@ -5,12 +5,14 @@ import html
 import json
 import math
 import statistics
-from dataclasses import asdict
+import shutil
+from dataclasses import asdict, fields
 from pathlib import Path
 from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 
+from .advanced_analysis import write_advanced_analysis
 from .config import LABEL, METRICS, T975, Result
 
 
@@ -208,6 +210,52 @@ def format_value(value: float, kind: str) -> str:
     return f"{value:.1f}"
 
 
+def _plot_theme(theme: str) -> dict[str, str]:
+    if theme == "dark":
+        return {
+            "figure": "#0b1020",
+            "axes": "#111827",
+            "text": "#f8fafc",
+            "muted": "#cbd5e1",
+            "grid": "#64748b",
+            "edge": "#94a3b8",
+        }
+    return {
+        "figure": "#ffffff",
+        "axes": "#ffffff",
+        "text": "#111827",
+        "muted": "#475569",
+        "grid": "#94a3b8",
+        "edge": "#475569",
+    }
+
+
+def _style_axes(fig: Any, ax: Any, theme: str) -> None:
+    colors = _plot_theme(theme)
+    fig.patch.set_facecolor(colors["figure"])
+    ax.set_facecolor(colors["axes"])
+    ax.tick_params(colors=colors["text"], labelsize=12, width=1.4)
+    ax.xaxis.label.set_color(colors["text"])
+    ax.yaxis.label.set_color(colors["text"])
+    ax.title.set_color(colors["text"])
+    for spine in ax.spines.values():
+        spine.set_color(colors["edge"])
+        spine.set_linewidth(1.4)
+    ax.grid(axis="y", alpha=0.30, linewidth=1.15, color=colors["grid"])
+    ax.set_axisbelow(True)
+
+
+def _save_plot(fig: Any, output: Path, stem: str, theme: str) -> None:
+    png = output / f"{stem}.{theme}.png"
+    svg = output / f"{stem}.{theme}.svg"
+    fig.savefig(png, dpi=240, bbox_inches="tight", facecolor=fig.get_facecolor())
+    fig.savefig(svg, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+    if theme == "light":
+        shutil.copyfile(png, output / f"{stem}.png")
+        shutil.copyfile(svg, output / f"{stem}.svg")
+
+
 def plot_metric(
     output: Path,
     summary: list[dict[str, Any]],
@@ -232,37 +280,52 @@ def plot_metric(
         for value, high in zip(values, highs)
     ]
 
-    fig, ax = plt.subplots(figsize=(max(9.4, 1.55 * len(labels)), 6.2))
-    x = list(range(len(labels)))
-    bars = ax.bar(x, values, yerr=[lower, upper], capsize=7)
-    ax.set_title(f"{title} by Hermes treatment")
-    ax.set_xticks(x, labels, rotation=24, ha="right")
-    ax.set_ylabel(title)
-    ax.grid(axis="y", alpha=0.2)
-    ax.set_axisbelow(True)
+    for theme in ("light", "dark"):
+        fig, ax = plt.subplots(figsize=(max(10.2, 1.75 * len(labels)), 6.8))
+        _style_axes(fig, ax, theme)
+        x = list(range(len(labels)))
+        bars = ax.bar(
+            x,
+            values,
+            yerr=[lower, upper],
+            capsize=8,
+            error_kw={"elinewidth": 2.0, "capthick": 1.8},
+            linewidth=1.15,
+            edgecolor=_plot_theme(theme)["edge"],
+        )
+        ax.set_title(
+            f"{title} by Hermes treatment",
+            fontsize=19,
+            fontweight="semibold",
+            pad=14,
+        )
+        ax.set_xticks(x, labels, rotation=20, ha="right", fontsize=12)
+        ax.set_ylabel(title, fontsize=14)
+        ax.grid(axis="y", alpha=0.30, linewidth=1.15)
 
-    for bar, value in zip(bars, values):
-        if math.isfinite(value):
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height(),
-                format_value(value, kind),
-                ha="center",
-                va="bottom",
-                fontsize=9,
-            )
+        for bar, value in zip(bars, values):
+            if math.isfinite(value):
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height(),
+                    format_value(value, kind),
+                    ha="center",
+                    va="bottom",
+                    fontsize=11,
+                    fontweight="semibold",
+                    color=_plot_theme(theme)["text"],
+                )
 
-    fig.text(
-        0.5,
-        0.015,
-        "Mean across selected SWE-bench tasks; error bars are 95% Student-t CIs across task means.",
-        ha="center",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
-    fig.savefig(output / f"{metric}.png", dpi=180)
-    fig.savefig(output / f"{metric}.svg")
-    plt.close(fig)
+        fig.text(
+            0.5,
+            0.018,
+            "Mean across selected SWE-bench tasks; error bars are 95% Student-t CIs across task means.",
+            ha="center",
+            fontsize=11,
+            color=_plot_theme(theme)["muted"],
+        )
+        fig.tight_layout(rect=(0, 0.05, 1, 1))
+        _save_plot(fig, output, metric, theme)
 
 
 def plot_validity(
@@ -272,50 +335,83 @@ def plot_validity(
     labels = [row["label"] for row in summary]
     values = [float(row["run_resolve_rate"]) for row in summary]
 
-    fig, ax = plt.subplots(figsize=(max(9.4, 1.55 * len(labels)), 6.2))
-    x = list(range(len(labels)))
-    bars = ax.bar(x, values)
-    ax.set_title("SWE-bench resolve rate by Hermes treatment")
-    ax.set_xticks(x, labels, rotation=24, ha="right")
-    ax.set_ylabel("Resolved valid runs (%)")
-    ax.set_ylim(0, 105)
-    ax.grid(axis="y", alpha=0.2)
-    ax.set_axisbelow(True)
+    for theme in ("light", "dark"):
+        fig, ax = plt.subplots(figsize=(max(10.2, 1.75 * len(labels)), 6.8))
+        _style_axes(fig, ax, theme)
+        x = list(range(len(labels)))
+        bars = ax.bar(
+            x,
+            values,
+            linewidth=1.15,
+            edgecolor=_plot_theme(theme)["edge"],
+        )
+        ax.set_title(
+            "SWE-bench resolve rate by Hermes treatment",
+            fontsize=19,
+            fontweight="semibold",
+            pad=14,
+        )
+        ax.set_xticks(x, labels, rotation=20, ha="right", fontsize=12)
+        ax.set_ylabel("Resolved valid runs (%)", fontsize=14)
+        ax.set_ylim(0, 105)
+        ax.grid(axis="y", alpha=0.30, linewidth=1.15)
 
-    for bar, value in zip(bars, values):
-        if math.isfinite(value):
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                value,
-                f"{value:.0f}%",
-                ha="center",
-                va="bottom",
-                fontsize=9,
-            )
+        for bar, value in zip(bars, values):
+            if math.isfinite(value):
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    value,
+                    f"{value:.0f}%",
+                    ha="center",
+                    va="bottom",
+                    fontsize=11,
+                    fontweight="semibold",
+                    color=_plot_theme(theme)["text"],
+                )
 
-    fig.tight_layout()
-    fig.savefig(output / "resolve_rate.png", dpi=180)
-    fig.savefig(output / "resolve_rate.svg")
-    plt.close(fig)
+        fig.tight_layout()
+        _save_plot(fig, output, "resolve_rate", theme)
 
+
+def _picture(stem: str, alt: str) -> str:
+    return (
+        '<picture>'
+        f'<source media="(prefers-color-scheme: dark)" srcset="{stem}.dark.svg">'
+        f'<img src="{stem}.light.svg" alt="{html.escape(alt)}">'
+        '</picture>'
+    )
 
 
 def write_html_report(
     output: Path,
     summary: list[dict[str, Any]],
     meta: dict[str, Any],
+    *,
+    analysis_mode: str = "basic",
 ) -> None:
     metric_cards = "".join(
-        (
-            f'<div class="card"><img src="{metric}.png" '
-            f'alt="{html.escape(METRICS[metric][0])}"></div>'
-        )
+        f'<div class="card">{_picture(metric, METRICS[metric][0])}</div>'
         for metric in METRICS
     )
     metric_cards += (
-        '<div class="card"><img src="resolve_rate.png" '
-        'alt="SWE-bench resolve rate"></div>'
+        '<div class="card">'
+        + _picture("resolve_rate", "SWE-bench resolve rate")
+        + '</div>'
     )
+
+    advanced_cards = ""
+    if analysis_mode == "advanced":
+        advanced_specs = [
+            ("advanced_token_effects", "Task-normalized token effects"),
+            ("advanced_pca", "PCA of efficiency profiles"),
+            ("advanced_clusters", "Unsupervised efficiency clusters"),
+            ("advanced_correlations", "Efficiency correlation matrix"),
+        ]
+        advanced_cards = "".join(
+            f'<div class="card">{_picture(stem, alt)}</div>'
+            for stem, alt in advanced_specs
+            if (output / f"{stem}.light.svg").exists()
+        )
 
     table_rows: list[str] = []
     for row in summary:
@@ -337,48 +433,60 @@ def write_html_report(
             "</tr>"
         )
 
+    advanced_section = ""
+    if advanced_cards:
+        advanced_section = (
+            "<h2>Advanced analysis</h2>"
+            "<p>Exploratory task-level analyses include paired baseline-normalized effects, "
+            "task-fixed-effect regressions, Caveman×Ponytail factorial regression when available, "
+            "PCA, deterministic clustering, and correlations. These are descriptive/exploratory "
+            "with small benchmark samples and should not be over-interpreted.</p>"
+            f'<div class="grid">{advanced_cards}</div>'
+        )
+
+    n_tasks = max((int(row["tasks_expected"]) for row in summary), default=0)
     body = f'''<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Forge Bench report</title>
 <style>
-body{{font-family:Inter,system-ui,Arial,sans-serif;background:#f8fafc;color:#111827;max-width:1180px;margin:auto;padding:36px 24px 72px}}
-h1{{font-size:34px;margin-bottom:6px}}
-p{{color:#64748b;line-height:1.5}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:18px}}
-.card{{background:white;border:1px solid #e5e7eb;border-radius:16px;padding:8px;box-shadow:0 3px 12px #0f172a0a}}
+:root{{--bg:#f8fafc;--fg:#111827;--muted:#64748b;--card:#fff;--border:#e5e7eb;--head:#f1f5f9;--note:#eef2ff;--note-border:#c7d2fe;--note-fg:#3730a3}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#090e1a;--fg:#f8fafc;--muted:#cbd5e1;--card:#111827;--border:#334155;--head:#1e293b;--note:#172554;--note-border:#1d4ed8;--note-fg:#dbeafe}}}}
+body{{font-family:Inter,system-ui,Arial,sans-serif;background:var(--bg);color:var(--fg);max-width:1280px;margin:auto;padding:36px 24px 72px}}
+h1{{font-size:36px;margin-bottom:6px}} h2{{font-size:25px;margin-top:34px}}
+p{{color:var(--muted);line-height:1.55;font-size:15px}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(500px,1fr));gap:20px}}
+.card{{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:8px;box-shadow:0 3px 12px #0002}}
 .card img{{width:100%;display:block}}
-table{{width:100%;border-collapse:collapse;background:white;border:1px solid #e5e7eb}}
-th,td{{padding:11px;border-bottom:1px solid #e5e7eb;text-align:right;font-size:13px}}
-th:first-child,td:first-child{{text-align:left}}
-th{{background:#f1f5f9;color:#475569}}
-.note{{background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:13px 15px;color:#3730a3}}
+table{{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--border)}}
+th,td{{padding:12px;border-bottom:1px solid var(--border);text-align:right;font-size:14px}}
+th:first-child,td:first-child{{text-align:left}} th{{background:var(--head);color:var(--muted)}}
+.note{{background:var(--note);border:1px solid var(--note-border);border-radius:12px;padding:14px 16px;color:var(--note-fg)}}
+code{{font-size:.92em}}
 </style>
 <h1>Forge Bench</h1>
-<p><code>{html.escape(meta['model'])}</code> via OpenRouter, pinned to
-<code>{html.escape(meta['upstream_provider'])}</code>. Randomization seed:
-<code>{meta['seed']}</code>.</p>
+<p><code>{html.escape(str(meta.get('model', 'unknown')))}</code> via OpenRouter, pinned to
+<code>{html.escape(str(meta.get('upstream_provider', 'unknown')))}</code>. Randomization seed:
+<code>{html.escape(str(meta.get('seed', 'n/a')))}</code>. Analysis mode:
+<code>{html.escape(analysis_mode)}</code>.</p>
 <p class="note">Primary efficiency bars are means across task-level means, not pooled agent calls.
 Unresolved tasks remain in token, cost, and time averages when the agent run itself is usable.
 Error bars are two-sided 95% Student-t confidence intervals across the selected SWE-bench tasks.
-With only three tasks these intervals are deliberately wide.</p>
+Current task count: {n_tasks}.</p>
 <div class="grid">{metric_cards}</div>
+{advanced_section}
 <h2>Across-task summary</h2>
 <table>
 <thead><tr>
-<th>Treatment</th>
-<th>Valid tasks</th>
-<th>Total tokens (95% CI)</th>
-<th>Cost (95% CI)</th>
-<th>Time (95% CI)</th>
-<th>Resolved runs</th>
-<th>Usable runs</th>
+<th>Treatment</th><th>Valid tasks</th><th>Total tokens (95% CI)</th>
+<th>Cost (95% CI)</th><th>Time (95% CI)</th><th>Resolved runs</th><th>Usable runs</th>
 </tr></thead>
 <tbody>{''.join(table_rows)}</tbody>
 </table>
 <p>Raw evidence: <code>runs.csv</code>, <code>runs.json</code>,
 <code>task_summary.csv</code>, <code>summary.csv</code>,
-<code>run_plan.csv</code>, and per-run directories under <code>runs/</code>.</p>
+<code>run_plan.csv</code>, and per-run directories under <code>runs/</code>.
+Advanced mode also writes analysis tables prefixed with <code>advanced_</code>.</p>
 '''
     (output / "report.html").write_text(body, encoding="utf-8")
 
@@ -389,6 +497,8 @@ def write_reports(
     arms: list[str],
     tasks: list[str],
     meta: dict[str, Any],
+    *,
+    analysis_mode: str = "basic",
 ) -> None:
     raw = [
         asdict(result)
@@ -396,6 +506,7 @@ def write_reports(
     ]
     per_task = task_summary(results, arms, tasks)
     summary = aggregate_summary(per_task, results, arms, tasks)
+    meta["analysis_mode"] = analysis_mode
     write_csv(output / "runs.csv", raw)
     write_csv(output / "task_summary.csv", per_task)
     write_csv(output / "summary.csv", summary)
@@ -411,4 +522,70 @@ def write_reports(
     for metric in METRICS:
         plot_metric(output, summary, metric)
     plot_validity(output, summary)
-    write_html_report(output, summary, meta)
+
+    if analysis_mode == "advanced":
+        write_advanced_analysis(output, per_task)
+
+    write_html_report(
+        output,
+        summary,
+        meta,
+        analysis_mode=analysis_mode,
+    )
+
+
+def reanalyze_output(output: Path, *, analysis_mode: str = "advanced") -> None:
+    output = output.expanduser().resolve()
+    runs_file = output / "runs.json"
+    if not runs_file.is_file():
+        raise FileNotFoundError(f"Missing Forge Bench runs.json: {runs_file}")
+
+    payload = json.loads(runs_file.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("runs.json must contain a list of run records")
+
+    result_fields = {field.name for field in fields(Result)}
+    defaults = {
+        "evaluation_seconds": 0.0,
+        "error": "",
+        "tool_calls": None,
+    }
+    results: list[Result] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        normalized = dict(defaults)
+        normalized.update({key: value for key, value in row.items() if key in result_fields})
+        missing = [
+            name for name in result_fields
+            if name not in normalized and name != "error"
+        ]
+        if missing:
+            raise ValueError(
+                "runs.json predates required Forge Bench fields: " + ", ".join(sorted(missing))
+            )
+        results.append(Result(**normalized))
+
+    if not results:
+        raise ValueError("runs.json contains no usable run records")
+
+    metadata_file = output / "metadata.json"
+    meta = (
+        json.loads(metadata_file.read_text(encoding="utf-8"))
+        if metadata_file.is_file()
+        else {}
+    )
+    arms = list(dict.fromkeys(result.arm for result in results))
+    tasks = list(dict.fromkeys(result.task for result in results))
+    meta.setdefault("model", results[0].model)
+    meta.setdefault("upstream_provider", results[0].upstream_provider)
+    meta.setdefault("seed", "unknown")
+    meta["reanalyzed"] = True
+    write_reports(
+        output,
+        results,
+        arms,
+        tasks,
+        meta,
+        analysis_mode=analysis_mode,
+    )
