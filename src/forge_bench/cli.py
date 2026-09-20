@@ -13,13 +13,13 @@ from typing import Any
 from .config import (
     ARMS,
     CAVE_SHA,
+    DEFAULT_ANCHOR_IDS,
+    DEFAULT_ARMS,
     DEFAULT_DATASET,
     DEFAULT_DIFFICULTY,
-    DEFAULT_HISTORICAL_SUBMISSIONS,
     DEFAULT_SAMPLE_SIZE,
     DEFAULT_SEED,
     DEFAULT_TOOLSETS,
-    DEFAULT_SUITE,
     LABEL,
     LEAN_TOOLSETS,
     PINNED_MAX_TURNS,
@@ -47,6 +47,7 @@ from .swebench_backend import (
     load_rows,
     normalize_difficulty,
     resolve_dataset_name,
+    select_anchor_neighborhood,
     select_spread,
 )
 
@@ -74,8 +75,8 @@ def parse_args() -> argparse.Namespace:
         "--smart-sample",
         action="store_true",
         help=(
-            "Re-run the low/mid/high smart sampler instead of using the frozen "
-            "initial three-task default suite."
+            "Use the broad low/mid/high complexity sampler instead of the "
+            "default homogeneous anchor-neighborhood selector."
         ),
     )
     parser.add_argument(
@@ -130,6 +131,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--hermes", default=shutil.which("hermes") or "hermes", help="Local Hermes binary; used only with --hermes-runtime local.")
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--arms",
+        nargs="+",
+        choices=tuple(ARMS),
+        default=list(DEFAULT_ARMS),
+        help=(
+            "Treatments to run. Default is the Caveman x Ponytail 2x2: "
+            "baseline caveman ponytail caveman_ponytail. Lean variants remain "
+            "available explicitly."
+        ),
+    )
     parser.add_argument(
         "--cache",
         type=Path,
@@ -314,7 +326,7 @@ def _preflight(args: argparse.Namespace) -> str | None:
     return image_id
 
 
-def _use_frozen_default(
+def _use_anchor_default(
     args: argparse.Namespace,
     resolved_dataset: str,
     difficulty: str | None,
@@ -324,60 +336,8 @@ def _use_frozen_default(
         and not args.smart_sample
         and resolved_dataset.endswith("SWE-bench_Verified")
         and normalize_difficulty(difficulty or "") == DEFAULT_DIFFICULTY
-        and args.sample_size == len(DEFAULT_SUITE)
+        and args.sample_size == DEFAULT_SAMPLE_SIZE
     )
-
-
-def _frozen_candidates(
-    row_by_id: dict[str, dict[str, Any]],
-    cache_root: Path,
-) -> tuple[list[Any], dict[str, Any]]:
-    ids = [entry["instance_id"] for entry in DEFAULT_SUITE]
-    missing = [instance_id for instance_id in ids if instance_id not in row_by_id]
-    if missing:
-        raise SystemExit(
-            "Frozen default instance IDs are missing from the selected dataset: "
-            + ", ".join(missing)
-        )
-
-    # Build normal Candidate objects from the current pinned dataset contents,
-    # but do not rescan historical submissions. Then restore the selection
-    # statistics recorded when the suite was frozen.
-    candidates, _ = build_candidates(
-        [row_by_id[instance_id] for instance_id in ids],
-        difficulty=None,
-        cache_root=cache_root,
-        use_history=False,
-    )
-    by_id = {candidate.instance_id: candidate for candidate in candidates}
-
-    selected = []
-    for entry in DEFAULT_SUITE:
-        candidate = by_id[entry["instance_id"]]
-        candidate.selection_rank = str(entry["selection_rank"])
-        candidate.selection_target = None
-        candidate.patch_scope_percentile = float(entry["patch_scope_percentile"])
-        candidate.complexity_score = candidate.patch_scope_percentile
-        candidate.historical_solve_rate = float(entry["historical_solve_rate"])
-        candidate.historical_submissions = DEFAULT_HISTORICAL_SUBMISSIONS
-        candidate.patch_changed_lines = int(entry["patch_changed_lines"])
-        candidate.patch_files = int(entry["patch_files"])
-        selected.append(candidate)
-
-    meta = {
-        "strategy": "frozen initial suite selected once by smart sampler",
-        "frozen_on": "2026-09-19",
-        "source_difficulty": "medium",
-        "source_experiments_commit": EXPERIMENTS_SHA,
-        "selection_band": "historical solve rate approximately 0.78-0.84",
-        "note": (
-            "Initial suite intentionally favors historically high-solve tasks "
-            "while retaining variation in patch scope. Use --smart-sample to "
-            "select a new spread from the current candidate pool."
-        ),
-    }
-    return selected, meta
-
 
 def main() -> int:
     args = parse_args()
@@ -432,9 +392,33 @@ def main() -> int:
             candidate.selection_rank = f"explicit-{index}"
         sampler_meta["strategy"] = "explicit instance ids"
 
-    elif _use_frozen_default(args, resolved_dataset, difficulty):
-        selected, sampler_meta = _frozen_candidates(row_by_id, cache_root)
-        print("  selection: frozen initial suite")
+    elif _use_anchor_default(args, resolved_dataset, difficulty):
+        candidates, sampler_meta = build_candidates(
+            rows,
+            difficulty=difficulty,
+            cache_root=cache_root,
+            use_history=use_history,
+        )
+        selected = select_anchor_neighborhood(
+            candidates,
+            anchor_ids=DEFAULT_ANCHOR_IDS,
+            count=args.sample_size,
+        )
+        sampler_meta["strategy"] = (
+            "homogeneous anchor neighborhood around django__django-13516 and "
+            "pytest-dev__pytest-7571; similarity favored over broad coverage"
+        )
+        sampler_meta["anchors"] = list(DEFAULT_ANCHOR_IDS)
+        sampler_meta["selection_goal"] = (
+            "minimize expected between-task token/time variance for the "
+            "Caveman x Ponytail treatment experiment"
+        )
+        print("  selection: homogeneous anchor neighborhood")
+
+        pool_rows = candidate_rows(candidates)
+        for row in pool_rows:
+            row.pop("problem_statement", None)
+        write_csv(output / "candidate_pool.csv", pool_rows)
 
     else:
         candidates, sampler_meta = build_candidates(
@@ -490,8 +474,12 @@ def main() -> int:
         "ponytail_repo": PONY_REPO,
         "ponytail_commit": PONY_SHA,
         "caveman_commit": CAVE_SHA,
-        "arms": list(ARMS),
-        "treatment_design": "baseline; each approach alone; all three together",
+        "arms": list(args.arms),
+        "available_arms": list(ARMS),
+        "treatment_design": (
+            "default Caveman x Ponytail 2x2 on normal hermes-cli tools; "
+            "lean-tool variants remain optional"
+        ),
         "default_toolsets": DEFAULT_TOOLSETS,
         "lean_toolsets": LEAN_TOOLSETS,
         "repeats": args.repeats,
@@ -525,7 +513,7 @@ def main() -> int:
 
     home = source_home()
 
-    arms = list(ARMS)
+    arms = list(args.arms)
     instances = [row_by_id[candidate.instance_id] for candidate in selected]
     task_ids = [str(instance["instance_id"]) for instance in instances]
     instance_by_id = {
