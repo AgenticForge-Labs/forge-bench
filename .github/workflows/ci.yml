@@ -24,6 +24,7 @@ jobs:
           import yaml
 
           from forge_bench.cli import build_run_plan
+          from forge_bench.designs import ModelSpec, load_design
           from forge_bench.config import (
               ARMS,
               DEFAULT_ANCHOR_IDS,
@@ -34,6 +35,7 @@ jobs:
               LEAN_TOOLSETS,
               PINNED_MAX_TURNS,
               PINNED_REASONING,
+              Result,
           )
           from forge_bench.advanced_analysis import (
               DARK_TREATMENT_COLORS,
@@ -53,6 +55,7 @@ jobs:
               docker_hermes_argv,
               load_swebench_report,
               make_profile,
+              pin_profile_route,
           )
           from forge_bench.trace_capture import (
               TRACE_PLUGIN_NAME,
@@ -62,6 +65,8 @@ jobs:
           from forge_bench.reporting import (
               ci95,
               create_reanalysis_output_dir,
+              model_pairwise_effects,
+              write_experiment_reports,
               write_html_report,
           )
           from forge_bench.swebench_backend import (
@@ -96,6 +101,19 @@ jobs:
           assert DARK_TREATMENT_COLORS["ponytail"] == "#22D3EE"
           assert DARK_TREATMENT_COLORS["caveman_ponytail"] == "#A78BFA"
           assert LIGHT_TREATMENT_COLORS["baseline"] == "#64748B"
+
+          design = load_design(Path("designs/deepseek-v4-v41-relace.yaml"))
+          assert design.name == "deepseek-v4-v41-relace"
+          assert design.blocks == 1
+          assert design.analysis_mode == "advanced"
+          assert len(design.models) == 2
+          assert [model.model for model in design.models] == [
+              "deepseek/deepseek-v4-flash-0731",
+              "deepseek/deepseek-v4.1-flash",
+          ]
+          assert {model.upstream_provider for model in design.models} == {"relace"}
+          assert all(model.reasoning == "none" for model in design.models)
+          assert len(design.instance_ids or ()) == 5
 
           m, lo, hi, n = ci95([1, 2, 3])
           assert n == 3 and lo <= m <= hi
@@ -167,6 +185,19 @@ jobs:
               assert (dst / ".no-bundled-skills").is_file()
               assert (dst / ".env").is_file()
 
+              pin_profile_route(
+                  dst,
+                  model="deepseek/deepseek-v4.1-flash",
+                  upstream_provider="relace",
+                  max_turns=50,
+              )
+              cfg = yaml.safe_load((dst / "config.yaml").read_text())
+              assert cfg["provider_routing"]["only"] == ["relace"]
+              assert list(cfg["provider_routing"]["models"]) == [
+                  "deepseek/deepseek-v4.1-flash"
+              ]
+              assert cfg["provider_routing"]["models"]["deepseek/deepseek-v4.1-flash"]["only"] == ["relace"]
+
               argv = docker_hermes_argv(
                   "sha256:test",
                   dst,
@@ -205,6 +236,53 @@ jobs:
               assert [row["block_position"] for row in block] == list(range(1, 21))
               block_orders.append([(row["arm"], row["instance_id"]) for row in block])
           assert len({tuple(order) for order in block_orders}) == 3
+
+          model_specs = [
+              ModelSpec(
+                  key="v4",
+                  label="V4",
+                  model="deepseek/deepseek-v4-flash-0731",
+                  upstream_provider="relace",
+              ),
+              ModelSpec(
+                  key="v41",
+                  label="V4.1",
+                  model="deepseek/deepseek-v4.1-flash",
+                  upstream_provider="relace",
+              ),
+          ]
+          multi_plan, multi_seeds = build_run_plan(
+              ["baseline", "caveman", "ponytail", "caveman_ponytail"],
+              ["task-a", "task-b", "task-c", "task-d", "task-e"],
+              1,
+              260920,
+              models=model_specs,
+          )
+          assert multi_seeds == [260920]
+          assert len(multi_plan) == 40
+          expected_cells = {
+              (model.key, arm, task)
+              for model in model_specs
+              for arm in ("baseline", "caveman", "ponytail", "caveman_ponytail")
+              for task in ("task-a", "task-b", "task-c", "task-d", "task-e")
+          }
+          assert {
+              (row["model_key"], row["arm"], row["instance_id"])
+              for row in multi_plan
+          } == expected_cells
+          assert [row["block_position"] for row in multi_plan] == list(range(1, 41))
+          assert {row["upstream_provider"] for row in multi_plan} == {"relace"}
+          unshuffled = [
+              (model.key, task, arm)
+              for model in model_specs
+              for task in ("task-a", "task-b", "task-c", "task-d", "task-e")
+              for arm in ("baseline", "caveman", "ponytail", "caveman_ponytail")
+          ]
+          observed = [
+              (row["model_key"], row["instance_id"], row["arm"])
+              for row in multi_plan
+          ]
+          assert observed != unshuffled
 
           # Synthetic native-hook events produce an auditable direct timing budget.
           synthetic_events = [
@@ -315,6 +393,73 @@ jobs:
               "anchor-1", "anchor-2", "match-1", "match-2", "match-3"
           ]
 
+          # Multi-model reporting keeps model conditions separate instead of
+          # treating model identity as a repeated observation of one treatment.
+          synthetic_results = []
+          run_index = 0
+          for model_i, model_spec in enumerate(model_specs):
+              for task_i, task in enumerate(("task-a", "task-b", "task-c", "task-d", "task-e")):
+                  for arm_i, arm in enumerate(("baseline", "caveman", "ponytail", "caveman_ponytail")):
+                      run_index += 1
+                      multiplier = 1.0 - 0.08 * arm_i - 0.10 * model_i
+                      synthetic_results.append(Result(
+                          arm=arm,
+                          task=task,
+                          repeat=1,
+                          run_index=run_index,
+                          valid=True,
+                          resolved=True,
+                          evaluation_completed=True,
+                          patch_nonempty=True,
+                          completed=True,
+                          exit_code=0,
+                          wall_seconds=(100 + task_i) * multiplier,
+                          evaluation_seconds=1.0,
+                          repo="org/repo",
+                          difficulty="medium",
+                          model=model_spec.model,
+                          api_provider="openrouter",
+                          upstream_provider="relace",
+                          session_id=f"s{run_index}",
+                          input_tokens=int(50000 * multiplier),
+                          output_tokens=int(5000 * multiplier),
+                          reasoning_tokens=0,
+                          cache_read_tokens=int(400000 * multiplier),
+                          cache_write_tokens=0,
+                          total_tokens=int(455000 * multiplier),
+                          api_calls=max(1, int(30 * multiplier)),
+                          estimated_cost_usd=0.01 * multiplier,
+                          actual_cost_usd=0.01 * multiplier,
+                          cost_usd=0.01 * multiplier,
+                          cost_source="openrouter_actual",
+                          tool_calls=max(1, int(40 * multiplier)),
+                          files_changed=1,
+                          diff_lines=4,
+                          run_dir=f"/tmp/run-{run_index}",
+                      ))
+          with tempfile.TemporaryDirectory() as td:
+              report_root = Path(td)
+              meta = {
+                  "design_name": "synthetic-two-model",
+                  "models": [model.as_dict() for model in model_specs],
+                  "seed": 260920,
+                  "upstream_provider": "relace",
+              }
+              write_experiment_reports(
+                  report_root,
+                  synthetic_results,
+                  ["baseline", "caveman", "ponytail", "caveman_ponytail"],
+                  ["task-a", "task-b", "task-c", "task-d", "task-e"],
+                  meta,
+                  analysis_mode="basic",
+              )
+              assert (report_root / "model_task_summary.csv").is_file()
+              assert (report_root / "model_treatment_summary.csv").is_file()
+              assert (report_root / "model_pairwise_effects.csv").is_file()
+              assert (report_root / "models" / "v4" / "report-light.html").is_file()
+              assert (report_root / "models" / "v41" / "report-dark.html").is_file()
+              assert (report_root / "report.html").is_file()
+
           # Advanced analysis operates on task-level means and supports the
           # default Caveman x Ponytail 2x2.
           analysis_rows = []
@@ -411,7 +556,20 @@ jobs:
           uv run forge-bench --help | grep -q -- '--reanalyze'
           uv run forge-bench --help | grep -q -- '--analysis-mode'
           uv run forge-bench --help | grep -q -- '--open'
+          uv run forge-bench --help | grep -q -- '--design'
+          uv run forge-bench --help | grep -q -- '--plan-only'
           uv run forge-bench --help | grep -q -- 'timestamped subfolder'
+      - name: Verify two-model design plan without model calls
+        run: |
+          rm -rf /tmp/forge-bench-design-plan
+          uv run forge-bench             --design designs/deepseek-v4-v41-relace.yaml             --plan-only             --output /tmp/forge-bench-design-plan
+          test -f /tmp/forge-bench-design-plan/design.yaml
+          test -f /tmp/forge-bench-design-plan/run_plan.csv
+          test "$(tail -n +2 /tmp/forge-bench-design-plan/run_plan.csv | wc -l)" -eq 40
+          grep -q 'deepseek/deepseek-v4-flash-0731' /tmp/forge-bench-design-plan/run_plan.csv
+          grep -q 'deepseek/deepseek-v4.1-flash' /tmp/forge-bench-design-plan/run_plan.csv
+          test "$(tail -n +2 /tmp/forge-bench-design-plan/run_plan.csv | cut -d, -f6 | sort -u | grep -c relace)" -ge 1
+
       - name: Verify homogeneous default SWE-bench suite
         run: |
           uv run forge-bench --selection-only --output /tmp/forge-bench-selection
