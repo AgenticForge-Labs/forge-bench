@@ -5,6 +5,7 @@ import json
 import random
 import shutil
 import tempfile
+import webbrowser
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -163,11 +164,26 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--open",
+        dest="open_report",
+        action="store_true",
+        help="Open the generated report.html in the default browser when finished.",
+    )
+    parser.add_argument(
         "--cache",
         type=Path,
         default=Path("~/.cache/agenticforge/forge-bench").expanduser(),
     )
     return parser.parse_args()
+
+
+def open_report(path: Path) -> bool:
+    """Open an HTML report in the user's default browser without failing the run."""
+    try:
+        return bool(webbrowser.open(path.expanduser().resolve().as_uri(), new=2))
+    except Exception as exc:
+        print(f"Warning: could not open report automatically: {exc}")
+        return False
 
 
 def failed_result(
@@ -372,8 +388,11 @@ def main() -> int:
         output = reanalyze_output(source, analysis_mode=args.analysis_mode)
         print("Reanalysis source:", source)
         print("Analysis mode:", args.analysis_mode)
+        report = output / "report.html"
         print("Reanalysis output:", output)
-        print("Report:", output / "report.html")
+        print("Report:", report)
+        if args.open_report and not open_report(report):
+            print("Open manually with: xdg-open", report)
         return 0
 
     if args.repeats < 1:
@@ -720,8 +739,11 @@ def main() -> int:
     usable = sum(result.valid for result in results)
     solved = sum(result.resolved for result in results if result.valid)
     print(f"\nCompleted: {usable}/{len(results)} usable runs; {solved} resolved")
-    print("Report:", output / "report.html")
+    report = output / "report.html"
+    print("Report:", report)
     print("PNG figures:", output / "*.png")
+    if args.open_report and not open_report(report):
+        print("Open manually with: xdg-open", report)
     return 0 if usable == len(results) else 1
 
 

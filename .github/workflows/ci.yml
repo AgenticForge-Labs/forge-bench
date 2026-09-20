@@ -271,6 +271,7 @@ jobs:
         run: |
           uv run forge-bench --help | grep -q -- '--reanalyze'
           uv run forge-bench --help | grep -q -- '--analysis-mode'
+          uv run forge-bench --help | grep -q -- '--open'
           uv run forge-bench --help | grep -q -- 'timestamped subfolder'
       - name: Verify homogeneous default SWE-bench suite
         run: |

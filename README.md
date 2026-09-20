@@ -201,6 +201,7 @@ SWE-bench:
 uv run forge-bench \
   --reanalyze benchmark-results/forge-bench-YYYYMMDD-HHMMSS \
   --analysis-mode advanced
+  --open
 ```
 
 This reads the saved `runs.json` and `metadata.json` without modifying the
@@ -212,7 +213,9 @@ benchmark-results/forge-bench-YYYYMMDD-HHMMSS/reanalysis/YYYYMMDD-HHMMSS-advance
 
 The new subfolder contains the regenerated summary tables, themed figures,
 advanced-analysis CSVs, a snapshot of the run records, and `report.html`.
-Repeated reanalysis runs are therefore preserved side by side.
+Repeated reanalysis runs are therefore preserved side by side. Add `--open`
+to either a normal benchmark or reanalysis command to open the finished
+`report.html` in the default browser.
 
 ## Run the default benchmark
 
