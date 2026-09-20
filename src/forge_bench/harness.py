@@ -787,6 +787,62 @@ def export_session_artifacts(
     return exported
 
 
+def write_treatment_evidence(
+    profile: Path,
+    run_dir: Path,
+    arm: str,
+    timing: dict[str, Any],
+) -> None:
+    """Record assigned treatment plus observable installation/uptake evidence."""
+    caveman_expected, ponytail_expected, lean_expected = ARMS.get(
+        arm, (False, False, False)
+    )
+    try:
+        cfg = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8")) or {}
+    except Exception:
+        cfg = {}
+    enabled = [
+        str(value)
+        for value in ((cfg.get("plugins") or {}).get("enabled") or [])
+    ]
+    plugin_dirs = (
+        sorted(path.name for path in (profile / "plugins").iterdir() if path.is_dir())
+        if (profile / "plugins").is_dir()
+        else []
+    )
+    skill_files = sorted(str(path.relative_to(profile)) for path in profile.rglob("SKILL.md"))
+    evidence = {
+        "arm": arm,
+        "assigned": {
+            "caveman": caveman_expected,
+            "ponytail": ponytail_expected,
+            "lean_tools": lean_expected,
+        },
+        "installed": {
+            "caveman_skill": any("caveman" in value.lower() for value in skill_files),
+            "ponytail_plugin": any("ponytail" in value.lower() for value in [*enabled, *plugin_dirs]),
+            "forge_bench_trace_plugin": trace_plugin_enabled(profile),
+        },
+        "plugins_enabled": enabled,
+        "plugin_directories": plugin_dirs,
+        "skill_files": skill_files,
+        "observed": {
+            "skill_lifecycle_event_count": int(timing.get("skill_lifecycle_event_count") or 0),
+            "skill_names": timing.get("skill_names_observed") or [],
+            "caveman_skill_lifecycle_seen": bool(timing.get("caveman_skill_observed")),
+        },
+        "interpretation": (
+            "Treatment assignment remains the causal experimental variable. "
+            "Observed skill lifecycle events are audit/compliance evidence and "
+            "must not replace randomized assignment in treatment-effect estimates."
+        ),
+    }
+    (run_dir / "treatment-evidence.json").write_text(
+        json.dumps(evidence, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def finalize_trace_artifacts(
     hermes: str,
     profile: Path,
@@ -927,6 +983,7 @@ def run_one(
             runtime=hermes_runtime,
             image=hermes_image,
         )
+        write_treatment_evidence(profile, run_dir, arm, timing)
         result = Result(
             arm=arm,
             task=instance_id,
@@ -1043,6 +1100,7 @@ def run_one(
         runtime=hermes_runtime,
         image=hermes_image,
     )
+    write_treatment_evidence(profile, run_dir, arm, timing)
 
     estimated = as_float(grand.get("estimated_cost_usd"))
     if estimated is None:
