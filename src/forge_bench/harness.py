@@ -121,6 +121,37 @@ def make_profile(
     install_trace_plugin(dst)
 
 
+def pin_profile_route(
+    profile: Path,
+    *,
+    model: str,
+    upstream_provider: str,
+    max_turns: int,
+) -> None:
+    """Reassert the experimental model/provider route after extension installs."""
+    config_path = profile / "config.yaml"
+    cfg = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        if config_path.is_file()
+        else {}
+    )
+    cfg.setdefault("agent", {})["max_turns"] = max_turns
+    cfg["provider_routing"] = {
+        "only": [upstream_provider],
+        "require_parameters": True,
+        "models": {
+            model: {
+                "only": [upstream_provider],
+                "require_parameters": True,
+            }
+        },
+    }
+    config_path.write_text(
+        yaml.safe_dump(cfg, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
 def profile_env(profile: Path) -> dict[str, str]:
     env = os.environ.copy()
     for key in list(env):
@@ -799,6 +830,9 @@ def write_treatment_evidence(
     run_dir: Path,
     arm: str,
     timing: dict[str, Any],
+    *,
+    model: str | None = None,
+    upstream_provider: str | None = None,
 ) -> None:
     """Record assigned treatment plus observable installation/uptake evidence."""
     caveman_expected, ponytail_expected, lean_expected = ARMS.get(
@@ -820,6 +854,11 @@ def write_treatment_evidence(
     skill_files = sorted(str(path.relative_to(profile)) for path in profile.rglob("SKILL.md"))
     evidence = {
         "arm": arm,
+        "model_condition": {
+            "model": model,
+            "upstream_provider": upstream_provider,
+            "configured_provider_routing": cfg.get("provider_routing"),
+        },
         "assigned": {
             "caveman": caveman_expected,
             "ponytail": ponytail_expected,
@@ -995,7 +1034,14 @@ def run_one(
             runtime=hermes_runtime,
             image=hermes_image,
         )
-        write_treatment_evidence(profile, run_dir, arm, timing)
+        write_treatment_evidence(
+            profile,
+            run_dir,
+            arm,
+            timing,
+            model=model,
+            upstream_provider=upstream_provider,
+        )
         result = Result(
             arm=arm,
             task=instance_id,
@@ -1112,7 +1158,14 @@ def run_one(
         runtime=hermes_runtime,
         image=hermes_image,
     )
-    write_treatment_evidence(profile, run_dir, arm, timing)
+    write_treatment_evidence(
+        profile,
+        run_dir,
+        arm,
+        timing,
+        model=model,
+        upstream_provider=upstream_provider,
+    )
 
     estimated = as_float(grand.get("estimated_cost_usd"))
     if estimated is None:
