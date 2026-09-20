@@ -269,7 +269,7 @@ def _preflight(args: argparse.Namespace) -> str | None:
             ),
             (
                 [*probe_prefix, "plugins", "install", "--help"],
-                ["--ref", "--enable"],
+                ["--ref", "--force", "--enable"],
                 "Hermes Docker plugin installer",
             ),
             (
@@ -289,7 +289,7 @@ def _preflight(args: argparse.Namespace) -> str | None:
             ),
             (
                 [args.hermes, "plugins", "install", "--help"],
-                ["--ref", "--enable"],
+                ["--ref", "--force", "--enable"],
                 "Hermes plugin installer",
             ),
             (
