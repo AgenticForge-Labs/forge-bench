@@ -925,6 +925,123 @@ def _plot_cost_time(output: Path, rows: list[dict[str, Any]], corr: float, theme
     _save_themed(fig, output, "advanced_cost_time", theme)
 
 
+def time_budget_analysis(task_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Summarize directly observed wall-time components across task means."""
+    out: list[dict[str, Any]] = []
+    for arm in _ordered_arms({str(row["arm"]) for row in task_rows}):
+        subset = [
+            row for row in task_rows
+            if str(row.get("arm")) == arm
+            and row.get("valid_runs", 0) > 0
+            and _finite(row.get("wall_seconds"))
+            and (
+                _finite(row.get("api_wait_seconds"))
+                or _finite(row.get("tool_execution_seconds"))
+            )
+        ]
+        if not subset:
+            continue
+
+        def avg(field: str) -> float:
+            values = [float(row[field]) for row in subset if _finite(row.get(field))]
+            return float(np.mean(values)) if values else math.nan
+
+        wall = avg("wall_seconds")
+        api = avg("api_wait_seconds")
+        tool = avg("tool_execution_seconds")
+        terminal = avg("terminal_execution_seconds")
+        unattributed = avg("unattributed_wall_seconds")
+        out.append({
+            "arm": arm,
+            "label": LABEL.get(arm, arm),
+            "n_tasks": len(subset),
+            "mean_wall_seconds": wall,
+            "mean_api_wait_seconds": api,
+            "mean_tool_execution_seconds": tool,
+            "mean_terminal_execution_seconds": terminal,
+            "mean_unattributed_wall_seconds": unattributed,
+            "mean_api_wait_percent": 100.0 * avg("api_wait_fraction")
+            if any(_finite(row.get("api_wait_fraction")) for row in subset) else math.nan,
+            "mean_tool_execution_percent": 100.0 * avg("tool_execution_fraction")
+            if any(_finite(row.get("tool_execution_fraction")) for row in subset) else math.nan,
+            "mean_api_duration_seconds": avg("api_duration_mean_seconds"),
+            "mean_api_p95_seconds": avg("api_duration_p95_seconds"),
+            "mean_ttft_seconds": avg("ttft_mean_seconds"),
+        })
+    return out
+
+
+def _plot_time_budget(output: Path, rows: list[dict[str, Any]], theme: str) -> None:
+    if not rows:
+        return
+    arms = _ordered_arms([str(row["arm"]) for row in rows])
+    by_arm = {str(row["arm"]): row for row in rows}
+    labels = [LABEL.get(arm, arm) for arm in arms]
+    x = np.arange(len(arms), dtype=float)
+    api = np.asarray([
+        max(0.0, float(by_arm[arm]["mean_api_wait_seconds"]))
+        if _finite(by_arm[arm].get("mean_api_wait_seconds")) else 0.0
+        for arm in arms
+    ])
+    tool = np.asarray([
+        max(0.0, float(by_arm[arm]["mean_tool_execution_seconds"]))
+        if _finite(by_arm[arm].get("mean_tool_execution_seconds")) else 0.0
+        for arm in arms
+    ])
+    other = np.asarray([
+        max(0.0, float(by_arm[arm]["mean_unattributed_wall_seconds"]))
+        if _finite(by_arm[arm].get("mean_unattributed_wall_seconds")) else 0.0
+        for arm in arms
+    ])
+    accents = theme_accents(theme)
+    fig, ax = plt.subplots(figsize=(10.8, 7.0))
+    _style_axes(fig, ax, theme)
+    ax.bar(x, api, label="API wait", color=accents["primary"])
+    ax.bar(x, tool, bottom=api, label="Tool execution", color=accents["secondary"])
+    ax.bar(x, other, bottom=api + tool, label="Unattributed/orchestration", color=accents["tertiary"])
+    ax.set_xticks(x, labels, fontsize=12)
+    ax.set_ylabel("Mean wall-clock seconds per task", fontsize=14)
+    ax.set_title("Direct wall-time budget by treatment", fontsize=19, fontweight="bold")
+    ax.legend(fontsize=10.5)
+    ax.grid(axis="y", alpha=0.30, linewidth=1.1)
+    _save_themed(fig, output, "advanced_time_budget", theme)
+
+
+def _plot_api_latency(output: Path, rows: list[dict[str, Any]], theme: str) -> None:
+    usable = [
+        row for row in rows
+        if _finite(row.get("mean_api_duration_seconds"))
+        or _finite(row.get("mean_ttft_seconds"))
+    ]
+    if not usable:
+        return
+    arms = _ordered_arms([str(row["arm"]) for row in usable])
+    by_arm = {str(row["arm"]): row for row in usable}
+    x = np.arange(len(arms), dtype=float)
+    width = 0.34
+    accents = theme_accents(theme)
+    fig, ax = plt.subplots(figsize=(10.8, 6.8))
+    _style_axes(fig, ax, theme)
+    api = [
+        float(by_arm[arm]["mean_api_duration_seconds"])
+        if _finite(by_arm[arm].get("mean_api_duration_seconds")) else 0.0
+        for arm in arms
+    ]
+    ttft = [
+        float(by_arm[arm]["mean_ttft_seconds"])
+        if _finite(by_arm[arm].get("mean_ttft_seconds")) else 0.0
+        for arm in arms
+    ]
+    ax.bar(x - width / 2, api, width=width, label="Mean API duration", color=accents["primary"])
+    ax.bar(x + width / 2, ttft, width=width, label="Mean time to first chunk", color=accents["secondary"])
+    ax.set_xticks(x, [LABEL.get(arm, arm) for arm in arms], fontsize=12)
+    ax.set_ylabel("Seconds", fontsize=14)
+    ax.set_title("Direct API latency by treatment", fontsize=19, fontweight="bold")
+    ax.legend(fontsize=10.5)
+    ax.grid(axis="y", alpha=0.30, linewidth=1.1)
+    _save_themed(fig, output, "advanced_api_latency", theme)
+
+
 def write_advanced_analysis(output: Path, task_rows: list[dict[str, Any]]) -> list[str]:
     generated: list[str] = []
     effects = paired_effects(task_rows)
@@ -936,6 +1053,7 @@ def write_advanced_analysis(output: Path, task_rows: list[dict[str, Any]]) -> li
     cost_time_rows, cost_time_corr = cost_time_analysis(task_rows)
     latency_rows = latency_efficiency_analysis(task_rows)
     timing_rows = timing_evidence_summary(task_rows)
+    time_budget_rows = time_budget_analysis(task_rows)
 
     tables = {
         "advanced_paired_effects.csv": effects,
@@ -947,6 +1065,7 @@ def write_advanced_analysis(output: Path, task_rows: list[dict[str, Any]]) -> li
         "advanced_cost_time.csv": cost_time_rows,
         "advanced_latency_efficiency.csv": latency_rows,
         "advanced_timing_evidence.csv": timing_rows,
+        "advanced_time_budget.csv": time_budget_rows,
     }
     for name, rows in tables.items():
         if rows:
@@ -980,10 +1099,12 @@ def write_advanced_analysis(output: Path, task_rows: list[dict[str, Any]]) -> li
         _plot_correlations(output, corr_features, corr, theme)
         _plot_cost_time(output, cost_time_rows, cost_time_corr, theme)
         _plot_time_calls(output, task_rows, theme)
+        _plot_time_budget(output, time_budget_rows, theme)
+        _plot_api_latency(output, time_budget_rows, theme)
         for metric in LATENCY_EFFICIENCY_METRICS:
             _plot_latency_metric(output, task_rows, latency_rows, metric, theme)
 
-    for stem in ("advanced_token_effects", "advanced_pca_biplot", "advanced_pca_scree", "advanced_pca_loadings", "advanced_clusters", "advanced_correlations", "advanced_cost_time", "advanced_time_vs_api_calls", "advanced_tokens_per_second", "advanced_seconds_per_api_call", "advanced_tokens_per_api_call", "advanced_cost_per_api_call", "advanced_tool_calls_per_api_call", "advanced_seconds_per_tool_call"):
+    for stem in ("advanced_token_effects", "advanced_pca_biplot", "advanced_pca_scree", "advanced_pca_loadings", "advanced_clusters", "advanced_correlations", "advanced_cost_time", "advanced_time_budget", "advanced_api_latency", "advanced_time_vs_api_calls", "advanced_tokens_per_second", "advanced_seconds_per_api_call", "advanced_tokens_per_api_call", "advanced_cost_per_api_call", "advanced_tool_calls_per_api_call", "advanced_seconds_per_tool_call"):
         if (output / f"{stem}.light.png").exists():
             generated.extend([
                 f"{stem}.light.png", f"{stem}.dark.png",
