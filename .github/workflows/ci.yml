@@ -25,6 +25,9 @@ jobs:
 
           from forge_bench.config import (
               ARMS,
+              DEFAULT_ANCHOR_IDS,
+              DEFAULT_ARMS,
+              DEFAULT_SAMPLE_SIZE,
               DEFAULT_TOOLSETS,
               LEAN_TOOLSETS,
               PINNED_MAX_TURNS,
@@ -41,10 +44,16 @@ jobs:
               Candidate,
               dataset_revision,
               patch_features,
+              select_anchor_neighborhood,
               select_spread,
           )
 
-          assert len(ARMS) == 5
+          assert len(ARMS) == 6
+          assert list(DEFAULT_ARMS) == ["baseline", "caveman", "ponytail", "caveman_ponytail"]
+          assert DEFAULT_SAMPLE_SIZE == 5
+          assert list(DEFAULT_ANCHOR_IDS) == ["django__django-13516", "pytest-dev__pytest-7571"]
+          assert ARMS["caveman_ponytail"] == (True, True, False)
+          assert ARMS["lean_tools"] == (False, False, True)
           assert DEFAULT_TOOLSETS == "hermes-cli"
           assert LEAN_TOOLSETS == "file,terminal,skills,code_execution"
           assert PINNED_REASONING == "none"
@@ -141,11 +150,40 @@ jobs:
           chosen = select_spread(candidates, count=3)
           assert [c.instance_id for c in chosen] == ["x-0", "x-1", "x-2"]
           assert [c.selection_rank for c in chosen] == ["low", "mid", "high"]
+
+          anchor_candidates = []
+          specs = [
+              ("anchor-a", 4, 1, 0.84, "short issue"),
+              ("anchor-b", 4, 2, 0.79, "another short issue"),
+              ("near-1", 5, 1, 0.82, "similar short issue"),
+              ("near-2", 3, 2, 0.80, "similar issue text"),
+              ("near-3", 6, 1, 0.83, "short issue text"),
+              ("far", 10, 3, 0.72, "word " * 200),
+          ]
+          for i, (instance_id, lines, hunks, rate, statement) in enumerate(specs):
+              anchor_candidates.append(Candidate(
+                  instance_id=instance_id, repo=f"org/a{i}", base_commit="b"*40,
+                  difficulty="medium", problem_statement=statement, version="",
+                  patch_files=1, patch_hunks=hunks, patch_additions=lines,
+                  patch_deletions=0, patch_changed_lines=lines, patch_chars=120 + lines,
+                  fail_to_pass_count=1, pass_to_pass_count=2,
+                  historical_solve_rate=rate, historical_submissions=10,
+              ))
+          homogeneous = select_anchor_neighborhood(
+              anchor_candidates,
+              anchor_ids=("anchor-a", "anchor-b"),
+              count=5,
+          )
+          assert [c.instance_id for c in homogeneous[:2]] == ["anchor-a", "anchor-b"]
+          assert "far" not in [c.instance_id for c in homogeneous]
+          assert [c.selection_rank for c in homogeneous] == [
+              "anchor-1", "anchor-2", "match-1", "match-2", "match-3"
+          ]
           PY
       - run: uv run forge-bench --help
-      - name: Verify frozen default SWE-bench suite
+      - name: Verify homogeneous default SWE-bench suite
         run: |
           uv run forge-bench --selection-only --output /tmp/forge-bench-selection
           grep -q '"instance_id": "django__django-13516"' /tmp/forge-bench-selection/selection.json
           grep -q '"instance_id": "pytest-dev__pytest-7571"' /tmp/forge-bench-selection/selection.json
-          grep -q '"instance_id": "sympy__sympy-20154"' /tmp/forge-bench-selection/selection.json
+          test "$(grep -c '"instance_id"' /tmp/forge-bench-selection/selection.json)" -eq 5
