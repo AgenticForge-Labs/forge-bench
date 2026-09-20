@@ -162,6 +162,46 @@ By default it prints the five-task homogeneous anchor neighborhood with:
 
 It saves `selection.json`, `selection.csv`, `candidate_pool.csv`, and `metadata.json` for the default anchored selection.
 
+## Reporting and analysis
+
+Every benchmark now produces web-ready figures in both light and dark themes.
+The legacy filenames such as `total_tokens.png` and `total_tokens.svg`
+remain as light-mode aliases for compatibility. Each figure also has explicit
+`.light.png`, `.dark.png`, `.light.svg`, and `.dark.svg` variants.
+The HTML report automatically follows the browser's light/dark preference.
+
+Plot typography, axis strokes, error bars, and grid lines are intentionally
+heavier than the original exploratory figures so the exports remain readable
+when embedded on a website or in a presentation.
+
+The default analysis mode is `basic`: it keeps the treatment summary,
+confidence-interval plots, resolve-rate plot, tables, and themed HTML report.
+
+For exploratory multivariate analysis, run:
+
+```bash
+uv run forge-bench --analysis-mode advanced
+```
+
+Advanced mode additionally writes task-level paired effects relative to the
+baseline, task-fixed-effect log regressions, a Caveman × Ponytail factorial
+regression when the four 2×2 arms are present, PCA scores/loadings, deterministic
+k-means clusters, and a correlation matrix. It also adds themed PCA, clustering,
+correlation, and token-effect figures to the HTML report. These analyses are
+exploratory, especially with small task counts.
+
+Existing benchmark outputs can be reanalyzed without rerunning Hermes or
+SWE-bench:
+
+```bash
+uv run forge-bench \
+  --reanalyze benchmark-results/forge-bench-YYYYMMDD-HHMMSS \
+  --analysis-mode advanced
+```
+
+This regenerates the summary tables, themed figures, advanced-analysis CSVs,
+and `report.html` in place from the saved `runs.json` and `metadata.json`.
+
 ## Run the default benchmark
 
 ```bash
@@ -272,8 +312,9 @@ Each benchmark writes a timestamped directory under `benchmark-results/` contain
 - `task_summary.csv` — repeats averaged within treatment × task
 - `summary.csv` — across-task treatment means and 95% confidence intervals
 - `report.html`
-- PNG and SVG figures for tokens, cost, agent wall time, API calls, SWE-bench resolve rate
+- light/dark PNG and SVG figures for tokens, cost, agent wall time, API calls, and SWE-bench resolve rate (legacy unsuffixed filenames remain light-mode aliases)
 - one evidence directory per run containing the prompt, Hermes stdout/stderr, usage JSON, generated patch, official evaluation output, and final workspace
+- in advanced mode, `advanced_*.csv` tables plus themed PCA, clustering, correlation, and paired-effect figures
 
 ## Confidence intervals
 
