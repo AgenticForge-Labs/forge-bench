@@ -34,6 +34,13 @@ jobs:
               PINNED_MAX_TURNS,
               PINNED_REASONING,
           )
+          from forge_bench.advanced_analysis import (
+              factorial_regression,
+              paired_effects,
+              pca_analysis,
+              treatment_regression,
+              write_advanced_analysis,
+          )
           from forge_bench.harness import (
               diff_stats,
               docker_hermes_argv,
@@ -187,8 +194,55 @@ jobs:
           assert [c.selection_rank for c in homogeneous] == [
               "anchor-1", "anchor-2", "match-1", "match-2", "match-3"
           ]
+
+          # Advanced analysis operates on task-level means and supports the
+          # default Caveman x Ponytail 2x2.
+          analysis_rows = []
+          multipliers = {
+              "baseline": 1.00,
+              "caveman": 0.72,
+              "ponytail": 0.78,
+              "caveman_ponytail": 0.52,
+          }
+          for task_i, task in enumerate(("task-a", "task-b", "task-c", "task-d", "task-e")):
+              base = 700000 + task_i * 25000
+              for arm, multiplier in multipliers.items():
+                  analysis_rows.append({
+                      "arm": arm,
+                      "label": arm,
+                      "task": task,
+                      "valid_runs": 1,
+                      "total_tokens": base * multiplier,
+                      "wall_seconds": (180 + task_i * 4) * multiplier,
+                      "api_calls": (40 + task_i) * multiplier,
+                      "cost_usd": 0.015 * multiplier,
+                      "diff_lines": 4 + task_i,
+                  })
+          effects = paired_effects(analysis_rows)
+          assert any(row["arm"] == "caveman_ponytail" for row in effects)
+          regressions = treatment_regression(analysis_rows)
+          assert any(row["term"] == "caveman" for row in regressions)
+          factorial = factorial_regression(analysis_rows)
+          assert {row["term"] for row in factorial if row["metric"] == "total_tokens"} == {
+              "caveman", "ponytail", "interaction"
+          }
+          scores, loadings, explained = pca_analysis(analysis_rows)
+          assert len(scores) == 20 and len(loadings) >= 2 and len(explained) >= 2
+
+          with tempfile.TemporaryDirectory() as td:
+              analysis_dir = Path(td)
+              generated = write_advanced_analysis(analysis_dir, analysis_rows)
+              assert "advanced_paired_effects.csv" in generated
+              assert (analysis_dir / "advanced_pca.light.png").is_file()
+              assert (analysis_dir / "advanced_pca.dark.png").is_file()
+              assert (analysis_dir / "advanced_clusters.light.svg").is_file()
+              assert (analysis_dir / "advanced_correlations.dark.svg").is_file()
           PY
       - run: uv run forge-bench --help
+      - name: Verify reanalysis CLI accepts existing output
+        run: |
+          uv run forge-bench --help | grep -q -- '--reanalyze'
+          uv run forge-bench --help | grep -q -- '--analysis-mode'
       - name: Verify homogeneous default SWE-bench suite
         run: |
           uv run forge-bench --selection-only --output /tmp/forge-bench-selection
