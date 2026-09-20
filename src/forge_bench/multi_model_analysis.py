@@ -143,7 +143,7 @@ def _format(value: float, kind: str) -> str:
     if not math.isfinite(value):
         return "n/a"
     if kind == "usd":
-        return f"\${value:.4f}"
+        return "$" + f"{value:.4f}"
     if kind == "tokens":
         return f"{value / 1000:.1f}k" if abs(value) >= 1000 else f"{value:.0f}"
     if kind == "seconds":
