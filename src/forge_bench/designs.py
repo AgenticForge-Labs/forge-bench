@@ -81,7 +81,7 @@ def default_design() -> ExperimentDesign:
         seed=DEFAULT_SEED,
         max_turns=PINNED_MAX_TURNS,
         analysis_mode="basic",
-    require_same_upstream=True,
+        require_same_upstream=True,
     )
 
 
