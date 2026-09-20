@@ -40,6 +40,11 @@ def safe_ratio(numerator: float | int | None, denominator: float | int | None) -
     return n / d
 
 
+def finite_mean(values: Iterable[float]) -> float:
+    valid = [float(value) for value in values if math.isfinite(float(value))]
+    return statistics.mean(valid) if valid else math.nan
+
+
 def ci95(values: Iterable[float]) -> tuple[float, float, float, int]:
     vals = [
         float(value)
@@ -144,32 +149,32 @@ def task_summary(
                     ),
                     # Per-run ratios are averaged within task so one unusually
                     # large run cannot dominate by simple ratio-of-totals.
-                    "tokens_per_second": mean(
+                    "tokens_per_second": finite_mean(
                         safe_ratio(result.total_tokens, result.wall_seconds)
                         for result in good
                     ),
-                    "seconds_per_api_call": mean(
+                    "seconds_per_api_call": finite_mean(
                         safe_ratio(result.wall_seconds, result.api_calls)
                         for result in good
                     ),
-                    "tokens_per_api_call": mean(
+                    "tokens_per_api_call": finite_mean(
                         safe_ratio(result.total_tokens, result.api_calls)
                         for result in good
                     ),
-                    "cost_per_api_call": mean(
+                    "cost_per_api_call": finite_mean(
                         safe_ratio(result.cost_usd, result.api_calls)
                         for result in good
                     ),
-                    "cost_per_second": mean(
+                    "cost_per_second": finite_mean(
                         safe_ratio(result.cost_usd, result.wall_seconds)
                         for result in good
                     ),
-                    "seconds_per_tool_call": mean(
+                    "seconds_per_tool_call": finite_mean(
                         safe_ratio(result.wall_seconds, result.tool_calls)
                         for result in good
                         if result.tool_calls is not None
                     ),
-                    "tool_calls_per_api_call": mean(
+                    "tool_calls_per_api_call": finite_mean(
                         safe_ratio(result.tool_calls, result.api_calls)
                         for result in good
                         if result.tool_calls is not None
