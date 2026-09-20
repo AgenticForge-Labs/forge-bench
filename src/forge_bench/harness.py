@@ -67,6 +67,7 @@ def make_profile(src: Path, dst: Path) -> None:
     dst.mkdir(parents=True, exist_ok=True)
 
     cfg: dict[str, Any] = {
+        "_config_version": 45,
         "plugins": {"enabled": [], "disabled": []},
         "agent": {"max_turns": PINNED_MAX_TURNS},
         "provider_routing": {
@@ -214,7 +215,15 @@ def install_arm(
         proc = hermes_admin(
             hermes,
             profile,
-            ["plugins", "install", PONY_REPO, "--ref", PONY_SHA, "--enable"],
+            [
+                "plugins",
+                "install",
+                PONY_REPO,
+                "--ref",
+                PONY_SHA,
+                "--force",
+                "--enable",
+            ],
             runtime=runtime,
             image=image,
             timeout=240,
