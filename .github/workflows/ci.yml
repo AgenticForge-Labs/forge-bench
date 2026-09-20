@@ -50,7 +50,11 @@ jobs:
               load_swebench_report,
               make_profile,
           )
-          from forge_bench.reporting import ci95, create_reanalysis_output_dir
+          from forge_bench.reporting import (
+              ci95,
+              create_reanalysis_output_dir,
+              write_html_report,
+          )
           from forge_bench.swebench_backend import (
               Candidate,
               dataset_revision,
@@ -98,6 +102,44 @@ jobs:
               assert first.is_dir() and second.is_dir()
               assert first.name.endswith("-advanced")
               assert second.name.startswith(first.name + "-") or second.name.endswith("-advanced")
+
+          with tempfile.TemporaryDirectory() as td:
+              report_dir = Path(td)
+              summary = [{
+                  "label": "Baseline",
+                  "tasks_valid": 5,
+                  "tasks_expected": 5,
+                  "mean_total_tokens": 100.0,
+                  "ci95_low_total_tokens": 90.0,
+                  "ci95_high_total_tokens": 110.0,
+                  "mean_cost_usd": 0.01,
+                  "ci95_low_cost_usd": 0.009,
+                  "ci95_high_cost_usd": 0.011,
+                  "mean_wall_seconds": 100.0,
+                  "ci95_low_wall_seconds": 90.0,
+                  "ci95_high_wall_seconds": 110.0,
+                  "run_resolve_rate": 100.0,
+                  "run_valid_rate": 100.0,
+                  **{f"mean_{metric}": 0.0 for metric in (
+                      "input_tokens", "output_tokens", "reasoning_tokens",
+                      "cache_read_tokens", "api_calls", "diff_lines"
+                  )},
+              }]
+              write_html_report(
+                  report_dir,
+                  summary,
+                  {"model": "test", "upstream_provider": "test", "seed": 1},
+                  analysis_mode="basic",
+              )
+              assert (report_dir / "report-light.html").is_file()
+              assert (report_dir / "report-dark.html").is_file()
+              assert (report_dir / "report.html").is_file()
+              light = (report_dir / "report-light.html").read_text()
+              dark = (report_dir / "report-dark.html").read_text()
+              assert "prefers-color-scheme" not in light
+              assert "prefers-color-scheme" not in dark
+              assert ".light.svg" in light
+              assert ".dark.svg" in dark
 
           # Fresh profile contains only benchmark config/credentials, opts out
           # of bundled skill seeding, and pins the tool-loop budget.
