@@ -535,6 +535,145 @@ def harness_effects_within_model(
     return rows
 
 
+
+def task_paired_model_treatment_interactions(
+    task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Difference-of-log-ratios interaction contrasts with tasks as replicates."""
+    if len(descriptors) != 2:
+        return []
+    a, b = descriptors
+    arms = [arm for arm in _ordered_arms(task_rows) if arm != "baseline"]
+    lookup = {
+        (str(row["model"]), str(row["arm"]), str(row["task"])): row
+        for row in task_rows
+        if row.get("valid_runs", 0) > 0
+    }
+    tasks = sorted({str(row["task"]) for row in task_rows})
+    out: list[dict[str, Any]] = []
+    for metric in PRIMARY_METRICS:
+        for arm in arms:
+            contrasts: list[float] = []
+            used_tasks: list[str] = []
+            for task in tasks:
+                a0 = lookup.get((a["model"], "baseline", task))
+                a1 = lookup.get((a["model"], arm, task))
+                b0 = lookup.get((b["model"], "baseline", task))
+                b1 = lookup.get((b["model"], arm, task))
+                values = [
+                    row.get(metric) if row else None
+                    for row in (a0, a1, b0, b1)
+                ]
+                if not all(_finite(value) and float(value) > 0 for value in values):
+                    continue
+                interaction = (
+                    math.log(float(b1[metric]) / float(b0[metric]))
+                    - math.log(float(a1[metric]) / float(a0[metric]))
+                )
+                contrasts.append(interaction)
+                used_tasks.append(task)
+            center, low, high, n = _ci95(contrasts, signed=True)
+            out.append(
+                {
+                    "metric": metric,
+                    "treatment": arm,
+                    "label": LABEL.get(arm, arm),
+                    "model_a": a["model"],
+                    "model_a_label": a["label"],
+                    "model_b": b["model"],
+                    "model_b_label": b["label"],
+                    "n_paired_tasks": n,
+                    "mean_log_ratio_difference": center,
+                    "ci95_low_log_ratio_difference": low,
+                    "ci95_high_log_ratio_difference": high,
+                    "multiplicative_interaction_percent": (
+                        100.0 * (math.exp(center) - 1.0) if _finite(center) else math.nan
+                    ),
+                    "ci95_low_interaction_percent": (
+                        100.0 * (math.exp(low) - 1.0) if _finite(low) else math.nan
+                    ),
+                    "ci95_high_interaction_percent": (
+                        100.0 * (math.exp(high) - 1.0) if _finite(high) else math.nan
+                    ),
+                    "tasks": ";".join(used_tasks),
+                }
+            )
+    return out
+
+
+def task_paired_threeway_interaction(
+    task_rows: list[dict[str, Any]],
+    descriptors: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Does Caveman×Ponytail synergy differ between models? Task-paired 3-way contrast."""
+    if len(descriptors) != 2:
+        return []
+    required = ("baseline", "caveman", "ponytail", "caveman_ponytail")
+    a, b = descriptors
+    lookup = {
+        (str(row["model"]), str(row["arm"]), str(row["task"])): row
+        for row in task_rows
+        if row.get("valid_runs", 0) > 0
+    }
+    tasks = sorted({str(row["task"]) for row in task_rows})
+    out: list[dict[str, Any]] = []
+    for metric in PRIMARY_METRICS:
+        contrasts: list[float] = []
+        used_tasks: list[str] = []
+        for task in tasks:
+            cells: dict[tuple[str, str], float] = {}
+            complete = True
+            for descriptor in (a, b):
+                for arm in required:
+                    row = lookup.get((descriptor["model"], arm, task))
+                    if row is None or not _finite(row.get(metric)) or float(row[metric]) <= 0:
+                        complete = False
+                        break
+                    cells[(descriptor["model"], arm)] = float(row[metric])
+                if not complete:
+                    break
+            if not complete:
+                continue
+
+            def synergy(model: str) -> float:
+                return (
+                    math.log(cells[(model, "caveman_ponytail")])
+                    - math.log(cells[(model, "caveman")])
+                    - math.log(cells[(model, "ponytail")])
+                    + math.log(cells[(model, "baseline")])
+                )
+
+            contrasts.append(synergy(b["model"]) - synergy(a["model"]))
+            used_tasks.append(task)
+
+        center, low, high, n = _ci95(contrasts, signed=True)
+        out.append(
+            {
+                "metric": metric,
+                "model_a": a["model"],
+                "model_a_label": a["label"],
+                "model_b": b["model"],
+                "model_b_label": b["label"],
+                "n_paired_tasks": n,
+                "mean_threeway_log_contrast": center,
+                "ci95_low_log_contrast": low,
+                "ci95_high_log_contrast": high,
+                "multiplicative_threeway_percent": (
+                    100.0 * (math.exp(center) - 1.0) if _finite(center) else math.nan
+                ),
+                "ci95_low_threeway_percent": (
+                    100.0 * (math.exp(low) - 1.0) if _finite(low) else math.nan
+                ),
+                "ci95_high_threeway_percent": (
+                    100.0 * (math.exp(high) - 1.0) if _finite(high) else math.nan
+                ),
+                "tasks": ";".join(used_tasks),
+            }
+        )
+    return out
+
+
 def _fit_ols(X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
     beta = np.linalg.pinv(X) @ y
     residual = y - X @ beta
@@ -2132,11 +2271,15 @@ def write_multi_model_analysis(
 
     pairwise = model_pairwise_effects(task_rows, descriptors)
     harness = harness_effects_within_model(task_rows, descriptors)
+    interactions = task_paired_model_treatment_interactions(task_rows, descriptors)
+    threeway = task_paired_threeway_interaction(task_rows, descriptors)
     regression_2x4 = factorial_2x4_regression(task_rows, descriptors)
     regression_2x2x2 = factorial_2x2x2_regression(task_rows, descriptors)
     pareto = combined_cost_time_rows(summary_rows)
     _write_csv(output / "model_pairwise_effects.csv", pairwise)
     _write_csv(output / "model_harness_effects.csv", harness)
+    _write_csv(output / "model_treatment_interaction_contrasts.csv", interactions)
+    _write_csv(output / "model_caveman_ponytail_threeway_contrast.csv", threeway)
     _write_csv(output / "model_treatment_regression_2x4.csv", regression_2x4)
     _write_csv(output / "model_caveman_ponytail_regression_2x2x2.csv", regression_2x2x2)
     _write_csv(output / "model_treatment_cost_time.csv", pareto)
