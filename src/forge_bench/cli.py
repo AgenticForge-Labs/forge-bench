@@ -32,6 +32,7 @@ from .config import (
     PONY_SHA,
     Result,
 )
+from .designs import ModelSpec, default_design, load_design
 from .harness import (
     install_arm,
     make_profile,
@@ -40,7 +41,7 @@ from .harness import (
     sh,
     source_home,
 )
-from .reporting import reanalyze_output, write_csv, write_reports
+from .reporting import reanalyze_output, write_csv, write_experiment_reports
 from .trace_capture import install_trace_plugin
 
 from .swebench_backend import (
@@ -59,6 +60,16 @@ from .swebench_backend import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Benchmark Hermes token-saving strategies on SWE-bench tasks."
+    )
+    parser.add_argument(
+        "--design",
+        type=Path,
+        help=(
+            "YAML experiment design. When supplied, it pins dataset selection, "
+            "models, upstream provider(s), treatments, randomization blocks, "
+            "seed, reasoning, max turns, and analysis mode. Runtime/output "
+            "controls remain CLI options."
+        ),
     )
     parser.add_argument(
         "--dataset",
@@ -211,7 +222,9 @@ def failed_result(
     run_index: int,
     run_dir: Path,
     error: Exception,
+    model_spec: ModelSpec | None = None,
 ) -> Result:
+    model_spec = model_spec or default_design().models[0]
     return Result(
         arm=arm,
         task=str(instance["instance_id"]),
@@ -227,9 +240,9 @@ def failed_result(
         evaluation_seconds=0.0,
         repo=str(instance["repo"]),
         difficulty=str(instance.get("difficulty") or ""),
-        model=PINNED_MODEL,
-        api_provider="openrouter",
-        upstream_provider=PINNED_OPENROUTER_UPSTREAM,
+        model=model_spec.model,
+        api_provider=model_spec.api_provider,
+        upstream_provider=model_spec.upstream_provider,
         session_id="",
         input_tokens=0,
         output_tokens=0,
@@ -413,8 +426,9 @@ def build_run_plan(
     task_ids: list[str],
     repeats: int,
     master_seed: int,
+    models: list[ModelSpec] | None = None,
 ) -> tuple[list[dict[str, Any]], list[int]]:
-    """Build separately randomized treatment×task blocks for each repeat."""
+    """Build complete model×treatment×task blocks and shuffle each block once."""
     seed_rng = random.Random(master_seed)
     repeat_seeds = [master_seed]
     while len(repeat_seeds) < repeats:
@@ -422,16 +436,24 @@ def build_run_plan(
         if candidate not in repeat_seeds:
             repeat_seeds.append(candidate)
 
+    model_specs = models or list(default_design().models)
     plan: list[dict[str, Any]] = []
     for repeat in range(1, repeats + 1):
         repeat_seed = repeat_seeds[repeat - 1]
         block = [
             {
+                "model_key": model_spec.key,
+                "model_label": model_spec.label,
+                "model": model_spec.model,
+                "api_provider": model_spec.api_provider,
+                "upstream_provider": model_spec.upstream_provider,
+                "reasoning": model_spec.reasoning,
                 "arm": arm,
                 "instance_id": instance_id,
                 "repeat": repeat,
                 "repeat_seed": repeat_seed,
             }
+            for model_spec in model_specs
             for instance_id in task_ids
             for arm in arms
         ]
@@ -447,6 +469,19 @@ def build_run_plan(
 
 def main() -> int:
     args = parse_args()
+
+    design = load_design(args.design) if args.design is not None else default_design()
+    if args.design is not None:
+        args.dataset = design.dataset
+        args.split = design.split
+        args.difficulty = design.difficulty
+        args.sample_size = design.sample_size
+        args.instance_ids = list(design.instance_ids) if design.instance_ids else None
+        args.smart_sample = False
+        args.arms = list(design.arms)
+        args.repeats = design.blocks
+        args.seed = design.seed
+        args.analysis_mode = design.analysis_mode
 
     if args.reanalyze is not None:
         source = args.reanalyze.expanduser().resolve()
@@ -477,6 +512,8 @@ def main() -> int:
         or Path("benchmark-results") / f"forge-bench-{stamp}"
     ).resolve()
     output.mkdir(parents=True, exist_ok=True)
+    if args.design is not None:
+        shutil.copy2(args.design.expanduser().resolve(), output / "design.yaml")
 
     print("Forge Bench task selection")
     print("  dataset:", resolved_dataset)
@@ -588,11 +625,27 @@ def main() -> int:
         "selected_instance_ids": [candidate.instance_id for candidate in selected],
         "sampler": sampler_meta,
         "experiments_source_pin": EXPERIMENTS_SHA,
-        "model": PINNED_MODEL,
-        "api_provider": "openrouter",
-        "upstream_provider": PINNED_OPENROUTER_UPSTREAM,
-        "reasoning": PINNED_REASONING,
-        "max_turns": PINNED_MAX_TURNS,
+        "design_name": design.name,
+        "design_source": design.source_path,
+        "design_description": design.description,
+        "model": design.models[0].model if len(design.models) == 1 else None,
+        "models": [model.as_dict() for model in design.models],
+        "api_provider": (
+            design.models[0].api_provider
+            if len({model.api_provider for model in design.models}) == 1
+            else "mixed"
+        ),
+        "upstream_provider": (
+            design.models[0].upstream_provider
+            if len({model.upstream_provider for model in design.models}) == 1
+            else "mixed"
+        ),
+        "reasoning": (
+            design.models[0].reasoning
+            if len({model.reasoning for model in design.models}) == 1
+            else "mixed"
+        ),
+        "max_turns": design.max_turns,
         "swebench_version": "4.1.0",
         "hermes_runtime": args.hermes_runtime,
         "hermes_image_ref": args.hermes_image if args.hermes_runtime == "docker" else None,
@@ -612,13 +665,13 @@ def main() -> int:
         "seed": args.seed,
         "repeat_seeds": [],
         "randomization": (
-            "independent randomized blocks: each repeat contains every "
-            "treatment x selected-instance combination exactly once and is "
-            "shuffled with its own recorded repeat_seed"
+            "full-factorial randomized complete blocks: each block contains "
+            "every model x treatment x selected-instance cell exactly once; "
+            "all cells are shuffled together with the block's recorded repeat_seed"
         ),
         "confidence_interval": (
             "two-sided 95% Student-t across selected task means; "
-            "repeats are averaged within task first"
+            "repeats are averaged within model x treatment x task first"
         ),
         "trace_capture": {
             "enabled": True,
@@ -660,6 +713,8 @@ def main() -> int:
     home = source_home()
 
     arms = list(args.arms)
+    models = list(design.models)
+    model_by_key = {model.key: model for model in models}
     instances = [row_by_id[candidate.instance_id] for candidate in selected]
     task_ids = [str(instance["instance_id"]) for instance in instances]
     instance_by_id = {
@@ -683,6 +738,7 @@ def main() -> int:
         task_ids,
         args.repeats,
         args.seed,
+        models=models,
     )
     meta["repeat_seeds"] = repeat_seeds
     (output / "metadata.json").write_text(
@@ -692,9 +748,17 @@ def main() -> int:
     write_csv(output / "run_plan.csv", plan)
 
     print("\nForge Bench execution")
-    print("  model:", PINNED_MODEL)
-    print("  OpenRouter upstream:", PINNED_OPENROUTER_UPSTREAM)
-    print("  reasoning:", PINNED_REASONING)
+    print("  design:", design.name)
+    print("  models:")
+    for model_spec in models:
+        print(
+            "   ",
+            model_spec.label,
+            "=>",
+            model_spec.model,
+            f"via {model_spec.api_provider}/{model_spec.upstream_provider}",
+            f"reasoning={model_spec.reasoning}",
+        )
     print("  Hermes runtime:", args.hermes_runtime)
     if hermes_image:
         print("  Hermes image:", hermes_image)
@@ -707,22 +771,28 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="forge-bench-") as tempdir:
         root = Path(tempdir)
-        templates: dict[str, Path] = {}
+        templates: dict[tuple[str, str], Path] = {}
 
-        # Install treatment additions once per arm, then clone the resulting
-        # profile for every individual run. This prevents state.db, memory,
-        # Ponytail state, or any other session artifact from leaking between
-        # tasks or repeats.
-        for arm in arms:
-            template = root / "templates" / arm
-            make_profile(home, template)
-            install_arm(
-                args.hermes,
-                template,
-                arm,
-                runtime=args.hermes_runtime,
-                image=hermes_image,
-            )
+        # Build one pristine template per model x treatment so provider routing
+        # is pinned before the run begins. Individual observations still receive
+        # a fresh copy, preventing session/state leakage across randomized cells.
+        for model_spec in models:
+            for arm in arms:
+                template = root / "templates" / model_spec.key / arm
+                make_profile(
+                    home,
+                    template,
+                    model=model_spec.model,
+                    upstream_provider=model_spec.upstream_provider,
+                    max_turns=design.max_turns,
+                )
+                install_arm(
+                    args.hermes,
+                    template,
+                    arm,
+                    runtime=args.hermes_runtime,
+                    image=hermes_image,
+                )
             # Treatment installers may edit plugins.enabled. Reassert the
             # observer after installation so every arm is instrumented equally.
             install_trace_plugin(template)
@@ -740,9 +810,11 @@ def main() -> int:
                 artifact = template / artifact_name
                 if artifact.exists():
                     artifact.unlink()
-            templates[arm] = template
+                templates[(model_spec.key, arm)] = template
 
         for item in plan:
+            model_key = str(item["model_key"])
+            model_spec = model_by_key[model_key]
             arm = str(item["arm"])
             instance_id = str(item["instance_id"])
             instance = instance_by_id[instance_id]
@@ -751,12 +823,12 @@ def main() -> int:
 
             print(
                 f"[{run_index:02d}/{len(plan):02d}] "
-                f"{LABEL[arm]} / {instance_id} / r{repeat}"
+                f"{model_spec.label} / {LABEL[arm]} / {instance_id} / b{repeat}"
             )
 
-            run_profile = root / "run-profiles" / f"{run_index:02d}__{arm}"
+            run_profile = root / "run-profiles" / f"{run_index:02d}__{model_key}__{arm}"
             run_profile.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(templates[arm], run_profile, symlinks=True)
+            shutil.copytree(templates[(model_key, arm)], run_profile, symlinks=True)
 
             try:
                 result = run_one(
@@ -774,12 +846,16 @@ def main() -> int:
                     not args.skip_evaluation,
                     hermes_runtime=args.hermes_runtime,
                     hermes_image=hermes_image,
+                    model=model_spec.model,
+                    upstream_provider=model_spec.upstream_provider,
+                    reasoning=model_spec.reasoning,
+                    model_key=model_spec.key,
                 )
             except Exception as exc:
                 run_dir = (
                     output
                     / "runs"
-                    / f"{run_index:02d}__{arm}__{instance_id}__r{repeat}"
+                    / f"{run_index:02d}__{model_key}__{arm}__{instance_id}__r{repeat}"
                 )
                 run_dir.mkdir(parents=True, exist_ok=True)
                 (run_dir / "harness_error.txt").write_text(
@@ -788,7 +864,7 @@ def main() -> int:
                 )
                 print("    HARNESS ERROR:", str(exc).splitlines()[0])
                 result = failed_result(
-                    arm, instance, repeat, run_index, run_dir, exc
+                    arm, instance, repeat, run_index, run_dir, exc, model_spec
                 )
             finally:
                 shutil.rmtree(run_profile, ignore_errors=True)
@@ -825,7 +901,7 @@ def main() -> int:
                 f"api_calls={result.api_calls}",
             )
 
-    write_reports(
+    write_experiment_reports(
         output,
         results,
         arms,
