@@ -39,7 +39,7 @@ from .harness import (
     sh,
     source_home,
 )
-from .reporting import write_csv, write_reports
+from .reporting import reanalyze_output, write_csv, write_reports
 from .swebench_backend import (
     EXPERIMENTS_SHA,
     build_candidates,
@@ -141,6 +141,23 @@ def parse_args() -> argparse.Namespace:
             "Treatments to run. Default is the Caveman x Ponytail 2x2: "
             "baseline caveman ponytail caveman_ponytail. Lean variants remain "
             "available explicitly."
+        ),
+    )
+    parser.add_argument(
+        "--analysis-mode",
+        choices=("basic", "advanced"),
+        default="basic",
+        help=(
+            "basic = web-ready summary plots/report; advanced additionally runs "
+            "paired effects, regressions, PCA, clustering, and correlations."
+        ),
+    )
+    parser.add_argument(
+        "--reanalyze",
+        type=Path,
+        help=(
+            "Regenerate reports/figures from an existing Forge Bench output "
+            "directory without model calls. Usually combine with --analysis-mode advanced."
         ),
     )
     parser.add_argument(
@@ -348,6 +365,13 @@ def _use_anchor_default(
 def main() -> int:
     args = parse_args()
 
+    if args.reanalyze is not None:
+        reanalyze_output(args.reanalyze, analysis_mode=args.analysis_mode)
+        print("Reanalyzed:", args.reanalyze.expanduser().resolve())
+        print("Analysis mode:", args.analysis_mode)
+        print("Report:", args.reanalyze.expanduser().resolve() / "report.html")
+        return 0
+
     if args.repeats < 1:
         raise SystemExit("--repeats must be >= 1")
     if args.sample_size < 1:
@@ -504,6 +528,7 @@ def main() -> int:
             "repeats are averaged within task first"
         ),
         "official_evaluation": not args.skip_evaluation,
+        "analysis_mode": args.analysis_mode,
     }
     (output / "metadata.json").write_text(
         json.dumps(meta, indent=2) + "\n",
@@ -675,7 +700,14 @@ def main() -> int:
                 f"api_calls={result.api_calls}",
             )
 
-    write_reports(output, results, arms, task_ids, meta)
+    write_reports(
+        output,
+        results,
+        arms,
+        task_ids,
+        meta,
+        analysis_mode=args.analysis_mode,
+    )
 
     partial = output / "runs.partial.json"
     if partial.exists():
