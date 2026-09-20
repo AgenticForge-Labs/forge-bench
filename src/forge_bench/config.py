@@ -132,3 +132,15 @@ class Result:
     diff_lines: int
     run_dir: str
     error: str = ""
+    # Direct timing decomposition from the Forge Bench native Hermes observer.
+    # These stay optional so historical runs remain reanalyzable.
+    api_wait_seconds: float | None = None
+    tool_execution_seconds: float | None = None
+    terminal_execution_seconds: float | None = None
+    unattributed_wall_seconds: float | None = None
+    api_duration_mean_seconds: float | None = None
+    api_duration_p95_seconds: float | None = None
+    ttft_mean_seconds: float | None = None
+    timing_event_count: int = 0
+    skill_lifecycle_event_count: int = 0
+    trace_exported: bool = False
