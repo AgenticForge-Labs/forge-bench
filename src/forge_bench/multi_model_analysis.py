@@ -2148,10 +2148,19 @@ def write_multi_model_analysis(
     plot_combined_cost_time(output, pareto, descriptors)
 
     scores, loadings, explained, centroids, similarities = multivariate_analysis(task_rows, descriptors)
+    multivariate_factorial = multivariate_factorial_coefficients(task_rows, descriptors)
+    harness_distance_task, harness_distance_summary, model_distance_task, model_distance_summary = (
+        multivariate_distances(task_rows, descriptors)
+    )
     _write_csv(output / "multivariate_pca_scores.csv", scores)
     _write_csv(output / "multivariate_pca_loadings.csv", loadings)
     _write_csv(output / "multivariate_pca_centroids.csv", centroids)
     _write_csv(output / "multivariate_vector_similarity.csv", similarities)
+    _write_csv(output / "multivariate_factorial_coefficients.csv", multivariate_factorial)
+    _write_csv(output / "multivariate_harness_distance_task.csv", harness_distance_task)
+    _write_csv(output / "multivariate_harness_distance_summary.csv", harness_distance_summary)
+    _write_csv(output / "multivariate_model_distance_task.csv", model_distance_task)
+    _write_csv(output / "multivariate_model_distance_summary.csv", model_distance_summary)
     if explained:
         _write_csv(
             output / "multivariate_pca_explained_variance.csv",
@@ -2161,6 +2170,13 @@ def write_multi_model_analysis(
             ],
         )
     plot_multivariate_pca(output, scores, loadings, explained, centroids, descriptors)
+    plot_multivariate_factorial_heatmap(output, multivariate_factorial)
+    plot_multivariate_harness_distance(
+        output,
+        harness_distance_task,
+        harness_distance_summary,
+        descriptors,
+    )
 
     timing_rows = timing_budget_summary(task_rows, descriptors)
     _write_csv(output / "model_treatment_time_budget.csv", timing_rows)
