@@ -510,6 +510,8 @@ jobs:
               assert (report_root / "model_treatment_summary.csv").is_file()
               assert (report_root / "model_pairwise_effects.csv").is_file()
               assert (report_root / "model_harness_effects.csv").is_file()
+              assert (report_root / "model_treatment_interaction_contrasts.csv").is_file()
+              assert (report_root / "model_caveman_ponytail_threeway_contrast.csv").is_file()
               assert (report_root / "model_treatment_regression_2x4.csv").is_file()
               assert (report_root / "model_caveman_ponytail_regression_2x2x2.csv").is_file()
               assert (report_root / "model_treatment_total_tokens.vertical.light.png").is_file()
