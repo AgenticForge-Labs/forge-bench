@@ -48,6 +48,7 @@ class ExperimentDesign:
     blocks: int
     seed: int
     max_turns: int
+    budget_warning_ratio: float | None
     analysis_mode: str
     require_same_upstream: bool
     source_path: str | None = None
@@ -80,6 +81,7 @@ def default_design() -> ExperimentDesign:
         blocks=1,
         seed=DEFAULT_SEED,
         max_turns=PINNED_MAX_TURNS,
+        budget_warning_ratio=None,
         analysis_mode="basic",
         require_same_upstream=True,
     )
@@ -198,6 +200,12 @@ def load_design(path: Path) -> ExperimentDesign:
     max_turns = int(root.get("max_turns", PINNED_MAX_TURNS))
     if max_turns < 1:
         raise ValueError("max_turns must be >= 1")
+    budget_warning_raw = root.get("budget_warning_ratio")
+    budget_warning_ratio = (
+        None if budget_warning_raw is None else float(budget_warning_raw)
+    )
+    if budget_warning_ratio is not None and not (0.0 < budget_warning_ratio < 1.0):
+        raise ValueError("budget_warning_ratio must be null or strictly between 0 and 1")
     analysis_mode = str(root.get("analysis_mode") or "advanced")
     if analysis_mode not in {"basic", "advanced"}:
         raise ValueError("analysis_mode must be basic or advanced")
@@ -215,6 +223,7 @@ def load_design(path: Path) -> ExperimentDesign:
         blocks=blocks,
         seed=seed,
         max_turns=max_turns,
+        budget_warning_ratio=budget_warning_ratio,
         analysis_mode=analysis_mode,
         require_same_upstream=require_same_upstream,
         source_path=str(path),
