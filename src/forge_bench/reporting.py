@@ -179,6 +179,51 @@ def task_summary(
                         for result in good
                         if result.tool_calls is not None
                     ),
+                    "api_wait_seconds": finite_mean(
+                        result.api_wait_seconds
+                        for result in good
+                        if result.api_wait_seconds is not None
+                    ),
+                    "tool_execution_seconds": finite_mean(
+                        result.tool_execution_seconds
+                        for result in good
+                        if result.tool_execution_seconds is not None
+                    ),
+                    "terminal_execution_seconds": finite_mean(
+                        result.terminal_execution_seconds
+                        for result in good
+                        if result.terminal_execution_seconds is not None
+                    ),
+                    "unattributed_wall_seconds": finite_mean(
+                        result.unattributed_wall_seconds
+                        for result in good
+                        if result.unattributed_wall_seconds is not None
+                    ),
+                    "api_duration_mean_seconds": finite_mean(
+                        result.api_duration_mean_seconds
+                        for result in good
+                        if result.api_duration_mean_seconds is not None
+                    ),
+                    "api_duration_p95_seconds": finite_mean(
+                        result.api_duration_p95_seconds
+                        for result in good
+                        if result.api_duration_p95_seconds is not None
+                    ),
+                    "ttft_mean_seconds": finite_mean(
+                        result.ttft_mean_seconds
+                        for result in good
+                        if result.ttft_mean_seconds is not None
+                    ),
+                    "api_wait_fraction": finite_mean(
+                        safe_ratio(result.api_wait_seconds, result.wall_seconds)
+                        for result in good
+                        if result.api_wait_seconds is not None
+                    ),
+                    "tool_execution_fraction": finite_mean(
+                        safe_ratio(result.tool_execution_seconds, result.wall_seconds)
+                        for result in good
+                        if result.tool_execution_seconds is not None
+                    ),
                     "diff_lines": mean(
                         result.diff_lines for result in good
                     ),
@@ -486,6 +531,8 @@ def write_html_report(
 
     advanced_specs = [
         ("advanced_cost_time", "Cost-time efficiency frontier"),
+        ("advanced_time_budget", "Direct wall-time budget by treatment"),
+        ("advanced_api_latency", "API latency distribution by treatment"),
         ("advanced_time_vs_api_calls", "Wall time versus API-call count"),
         ("advanced_tokens_per_second", "Token throughput by treatment"),
         ("advanced_seconds_per_api_call", "Time per API call by treatment"),
@@ -525,8 +572,9 @@ def write_html_report(
         if advanced_cards:
             advanced_section = (
                 "<h2>Advanced analysis</h2>"
-                "<p>Exploratory task-level analyses include cost/time tradeoffs, token throughput, "
-                "time and tokens per API call, tool-call intensity when available, paired "
+                "<p>Exploratory task-level analyses include direct API/tool/orchestration time "
+                "budgets when native Hermes trace events are available, cost/time tradeoffs, "
+                "token throughput, time and tokens per API call, tool-call intensity when available, paired "
                 "baseline-normalized effects, task-fixed-effect regressions, Caveman×Ponytail "
                 "factorial regression when available, PCA, deterministic clustering, and "
                 "correlations. Legacy runs do not contain exact API-wait or tool-execution "
@@ -702,6 +750,16 @@ def reanalyze_output(
         "evaluation_seconds": 0.0,
         "error": "",
         "tool_calls": None,
+        "api_wait_seconds": None,
+        "tool_execution_seconds": None,
+        "terminal_execution_seconds": None,
+        "unattributed_wall_seconds": None,
+        "api_duration_mean_seconds": None,
+        "api_duration_p95_seconds": None,
+        "ttft_mean_seconds": None,
+        "timing_event_count": 0,
+        "skill_lifecycle_event_count": 0,
+        "trace_exported": False,
     }
     results: list[Result] = []
     for row in payload:
