@@ -107,6 +107,7 @@ jobs:
           assert design.blocks == 1
           assert design.analysis_mode == "advanced"
           assert design.max_turns == 100
+          assert design.budget_warning_ratio is None
           assert len(design.models) == 2
           assert [model.model for model in design.models] == [
               "deepseek/deepseek-v4-flash-0731",
@@ -180,6 +181,7 @@ jobs:
               make_profile(src, dst)
               cfg = yaml.safe_load((dst / "config.yaml").read_text())
               assert cfg["agent"]["max_turns"] == 50
+              assert cfg["agent"]["budget_warning_ratio"] is None
               assert TRACE_PLUGIN_NAME in cfg["plugins"]["enabled"]
               assert (dst / "plugins" / TRACE_PLUGIN_NAME / "plugin.yaml").is_file()
               assert (dst / "plugins" / TRACE_PLUGIN_NAME / "__init__.py").is_file()
@@ -198,6 +200,7 @@ jobs:
                   "deepseek/deepseek-v4.1-flash-20260910"
               ]
               assert cfg["provider_routing"]["models"]["deepseek/deepseek-v4.1-flash-20260910"]["only"] == ["relace"]
+              assert cfg["agent"]["budget_warning_ratio"] is None
 
               argv = docker_hermes_argv(
                   "sha256:test",
@@ -505,7 +508,7 @@ jobs:
               assert (report_root / "report.html").is_file()
               root_html = (report_root / "report.html").read_text()
               assert "Primary model × treatment comparison" in root_html
-              assert "Panels share one y scale" not in root_html or True
+              assert "true subpanel" in root_html
 
           # Advanced analysis operates on task-level means and supports the
           # default Caveman x Ponytail 2x2.
