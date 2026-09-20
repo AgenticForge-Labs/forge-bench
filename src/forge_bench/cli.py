@@ -33,6 +33,7 @@ from .config import (
 from .harness import (
     install_arm,
     make_profile,
+    prepare_workspace,
     run_one,
     sh,
     source_home,
@@ -531,6 +532,18 @@ def main() -> int:
         str(instance["instance_id"]): instance for instance in instances
     }
 
+    # Exercise repository materialization once before any paid model call. If
+    # cache/workspace plumbing is broken, abort here instead of producing a
+    # page of zero-token INVALID observations.
+    with tempfile.TemporaryDirectory(prefix="forge-bench-workspace-smoke-") as smoke:
+        smoke_instance = instances[0]
+        prepare_workspace(
+            cache_root,
+            str(smoke_instance["repo"]),
+            str(smoke_instance["base_commit"]),
+            Path(smoke) / "workspace",
+        )
+
     plan = [
         {"arm": arm, "instance_id": instance_id, "repeat": repeat}
         for repeat in range(1, args.repeats + 1)
@@ -623,6 +636,7 @@ def main() -> int:
                     str(exc) + "\n",
                     encoding="utf-8",
                 )
+                print("    HARNESS ERROR:", str(exc).splitlines()[0])
                 result = failed_result(
                     arm, instance, repeat, run_index, run_dir, exc
                 )
