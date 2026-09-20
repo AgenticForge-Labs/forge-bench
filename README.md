@@ -24,15 +24,20 @@ Verified medium tasks**. The goal is low between-task variance in token use
 and wall-clock time, not broad coverage of SWE-bench difficulty.
 
 Two tasks are retained as anchors because the first experiment showed they are
-small, historically high-solve tasks with useful baseline behavior:
+small, historically high-solve tasks with useful baseline behavior. The pinned
+selector then chose the three closest matches shown below:
 
-| Role | Instance | Repository | Gold patch | Historical solve rate |
-| --- | --- | --- | ---: | ---: |
-| Anchor 1 | `django__django-13516` | django/django | 4 lines, 1 file | 84.4% |
-| Anchor 2 | `pytest-dev__pytest-7571` | pytest-dev/pytest | 4 lines, 1 file | 79.3% |
+| Role | Instance | Repository | Gold patch | Historical solve rate | Anchor distance |
+| --- | --- | --- | ---: | ---: | ---: |
+| Anchor 1 | `django__django-13516` | django/django | 4 lines, 1 file | 84.4% | 0.000 |
+| Anchor 2 | `pytest-dev__pytest-7571` | pytest-dev/pytest | 4 lines, 1 file | 79.3% | 0.000 |
+| Match 1 | `django__django-15731` | django/django | 4 lines, 1 file | 87.4% | 0.251 |
+| Match 2 | `django__django-16662` | django/django | 5 lines, 1 file | 83.0% | 0.276 |
+| Match 3 | `django__django-7530` | django/django | 2 lines, 1 file | 81.5% | 0.298 |
 
-Forge Bench deterministically selects three additional tasks from the pinned
-Verified medium pool by similarity to those anchors. Eligible matches are
+Forge Bench deterministically derives this panel from the pinned Verified
+medium pool by similarity to the two anchors. CI also asserts the exact five
+IDs so the experiment cannot silently drift. Eligible matches are
 restricted to one-file fixes with 2–10 changed lines and a small number of
 hunks. Among those, distance is computed from:
 
