@@ -185,10 +185,14 @@ uv run forge-bench --analysis-mode advanced
 
 Advanced mode additionally writes task-level paired effects relative to the
 baseline, task-fixed-effect log regressions, a Caveman × Ponytail factorial
-regression when the four 2×2 arms are present, PCA scores/loadings, deterministic
-k-means clusters, and a correlation matrix. It also adds themed PCA, clustering,
-correlation, and token-effect figures to the HTML report. These analyses are
-exploratory, especially with small task counts.
+regression when the four 2×2 arms are present, and multivariate diagnostics.
+The PCA section now includes a true biplot with treatment-colored observations
+and loading vectors, a scree plot, and a PC1/PC2 loading chart. Clustering is
+shown in PCA space with cluster circles while points retain the same treatment
+colors used throughout the advanced figures. A cost-vs-wall-time plot shows the
+Pareto frontier for treatments, because minimizing dollars and elapsed time are
+related but distinct objectives. Correlations and all underlying tables are also
+written to CSV. These analyses are exploratory, especially with small task counts.
 
 Existing benchmark outputs can be reanalyzed without rerunning Hermes or
 SWE-bench:
@@ -314,7 +318,7 @@ Each benchmark writes a timestamped directory under `benchmark-results/` contain
 - `report.html`
 - light/dark PNG and SVG figures for tokens, cost, agent wall time, API calls, and SWE-bench resolve rate (legacy unsuffixed filenames remain light-mode aliases)
 - one evidence directory per run containing the prompt, Hermes stdout/stderr, usage JSON, generated patch, official evaluation output, and final workspace
-- in advanced mode, `advanced_*.csv` tables plus themed PCA, clustering, correlation, and paired-effect figures
+- in advanced mode, `advanced_*.csv` tables plus themed cost-time frontier, PCA biplot, scree, loadings, clustering, correlation, and paired-effect figures
 
 ## Confidence intervals
 
