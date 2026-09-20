@@ -19,56 +19,47 @@ CAVE_URL = (
 
 DEFAULT_DATASET = "verified"
 DEFAULT_DIFFICULTY = "medium"
-DEFAULT_SAMPLE_SIZE = 3
+DEFAULT_SAMPLE_SIZE = 5
 DEFAULT_SEED = 260919
 DEFAULT_HISTORICAL_SUBMISSIONS = 135
 
-# Frozen initial suite, selected once by the smart sampler from SWE-bench
-# Verified's official 15 min - 1 hour bucket on 2026-09-19.
-DEFAULT_SUITE = [
-    {
-        "instance_id": "django__django-13516",
-        "selection_rank": "low-1",
-        "patch_scope_percentile": 0.285,
-        "historical_solve_rate": 0.844,
-        "patch_changed_lines": 4,
-        "patch_files": 1,
-    },
-    {
-        "instance_id": "pytest-dev__pytest-7571",
-        "selection_rank": "low-2",
-        "patch_scope_percentile": 0.362,
-        "historical_solve_rate": 0.793,
-        "patch_changed_lines": 4,
-        "patch_files": 1,
-    },
-    {
-        "instance_id": "sympy__sympy-20154",
-        "selection_rank": "low-3",
-        "patch_scope_percentile": 0.714,
-        "historical_solve_rate": 0.785,
-        "patch_changed_lines": 23,
-        "patch_files": 1,
-    },
-]
+# The second-stage benchmark anchors task selection on the two small,
+# historically high-solve tasks whose baseline behavior we have already
+# observed. Three additional tasks are chosen deterministically for similarity
+# to these anchors from the pinned Verified medium pool.
+DEFAULT_ANCHOR_IDS = (
+    "django__django-13516",
+    "pytest-dev__pytest-7571",
+)
 
 DEFAULT_TOOLSETS = "hermes-cli"
 LEAN_TOOLSETS = "file,terminal,skills,code_execution"
 
-# Initial comparison: each token-saving approach alone, plus all together.
+# Available treatments. Lean-tool variants remain available for follow-up
+# experiments, but the default second-stage design is the clean Caveman x
+# Ponytail 2x2 using normal Hermes tools in every arm.
 ARMS = {
     "baseline": (False, False, False),
-    "lean_tools": (False, False, True),
     "caveman": (True, False, False),
     "ponytail": (False, True, False),
+    "caveman_ponytail": (True, True, False),
+    "lean_tools": (False, False, True),
     "all_three": (True, True, True),
 }
 
+DEFAULT_ARMS = (
+    "baseline",
+    "caveman",
+    "ponytail",
+    "caveman_ponytail",
+)
+
 LABEL = {
     "baseline": "Baseline Hermes",
-    "lean_tools": "Lean tools",
     "caveman": "Caveman",
     "ponytail": "Ponytail",
+    "caveman_ponytail": "Caveman + Ponytail",
+    "lean_tools": "Lean tools",
     "all_three": "Caveman + Ponytail + Lean",
 }
 
@@ -83,7 +74,7 @@ METRICS = {
     "api_calls": ("API calls", "count"),
 }
 
-# Two-sided 95% Student-t critical values. n=3 tasks => df=2 => 4.30265.
+# Two-sided 95% Student-t critical values. Default n=5 tasks => df=4 => 2.77645.
 T975 = {
     1: 12.706205, 2: 4.302653, 3: 3.182446, 4: 2.776445, 5: 2.570582,
     6: 2.446912, 7: 2.364624, 8: 2.306004, 9: 2.262157, 10: 2.228139,
