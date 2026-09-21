@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 forge-bench = "forge_bench.cli:main"
+forge-bench-live = "forge_bench.live_status:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/forge_bench"]
