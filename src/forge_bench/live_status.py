@@ -10,6 +10,7 @@ from statistics import mean
 from typing import Any
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from .config import LABEL
 
@@ -47,12 +48,34 @@ def find_latest_run(root: Path = Path("benchmark-results"), *, prefer_incomplete
     return max(candidates, key=lambda row: row[0])[1]
 
 
-def expected_runs(run_dir: Path) -> int:
+def read_run_plan(run_dir: Path) -> list[dict[str, str]]:
     plan = run_dir / "run_plan.csv"
     if not plan.is_file():
-        return 0
+        return []
     with plan.open(newline="", encoding="utf-8") as handle:
-        return sum(1 for _ in csv.DictReader(handle))
+        return list(csv.DictReader(handle))
+
+
+def expected_runs(run_dir: Path) -> int:
+    return len(read_run_plan(run_dir))
+
+
+def planned_factors(run_dir: Path) -> tuple[list[str], list[str], dict[str, str]]:
+    """Return treatment order, model order, and display labels from the run plan."""
+    plan = read_run_plan(run_dir)
+    treatments: list[str] = []
+    models: list[str] = []
+    model_labels: dict[str, str] = {}
+    for row in plan:
+        arm = str(row.get("arm") or "")
+        model = str(row.get("model") or "")
+        if arm and arm not in treatments:
+            treatments.append(arm)
+        if model and model not in models:
+            models.append(model)
+        if model:
+            model_labels.setdefault(model, str(row.get("model_label") or model.rsplit("/", 1)[-1]))
+    return treatments, models, model_labels
 
 
 def load_partial_results(run_dir: Path) -> list[dict[str, Any]]:
@@ -131,15 +154,75 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
     }
 
 
-def _group_mean(rows: list[dict[str, Any]], key: str, metric: str) -> tuple[list[str], list[float], list[int]]:
-    grouped: dict[str, list[float]] = defaultdict(list)
+def _cell_means(
+    rows: list[dict[str, Any]],
+    treatments: list[str],
+    models: list[str],
+    metric: str,
+) -> dict[tuple[str, str], tuple[float | None, int]]:
+    grouped: dict[tuple[str, str], list[float]] = defaultdict(list)
     for row in rows:
         if not bool(row.get("valid")) or not _finite(row.get(metric)):
             continue
-        group = str(row.get(key) or "unknown")
-        grouped[group].append(float(row[metric]))
-    names = list(grouped)
-    return names, [mean(grouped[name]) for name in names], [len(grouped[name]) for name in names]
+        key = (str(row.get("model") or ""), str(row.get("arm") or ""))
+        grouped[key].append(float(row[metric]))
+
+    result: dict[tuple[str, str], tuple[float | None, int]] = {}
+    for model in models:
+        for arm in treatments:
+            values = grouped.get((model, arm), [])
+            result[(model, arm)] = (mean(values) if values else None, len(values))
+    return result
+
+
+def _plot_model_treatment_bars(
+    ax: Any,
+    rows: list[dict[str, Any]],
+    treatments: list[str],
+    models: list[str],
+    model_labels: dict[str, str],
+    metric: str,
+    title: str,
+    ylabel: str,
+) -> None:
+    if not treatments or not models:
+        ax.set_title(title)
+        ax.text(0.5, 0.5, "No planned factors available", ha="center", va="center")
+        return
+
+    cells = _cell_means(rows, treatments, models, metric)
+    x = np.arange(len(treatments), dtype=float)
+    width = 0.8 / max(1, len(models))
+
+    for model_i, model in enumerate(models):
+        offset = (model_i - (len(models) - 1) / 2) * width
+        heights = [
+            cells[(model, arm)][0] if cells[(model, arm)][0] is not None else 0.0
+            for arm in treatments
+        ]
+        bars = ax.bar(
+            x + offset,
+            heights,
+            width=width * 0.92,
+            label=model_labels.get(model, model.rsplit("/", 1)[-1]),
+        )
+        for bar, arm in zip(bars, treatments):
+            value, n = cells[(model, arm)]
+            if value is None:
+                continue
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+                f"n={n}",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+            )
+
+    ax.set_xticks(x, [LABEL.get(arm, arm) for arm in treatments], rotation=20, ha="right")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.legend(fontsize=8)
 
 
 def make_dashboard(run_dir: Path, output: Path | None = None) -> Path:
@@ -149,11 +232,19 @@ def make_dashboard(run_dir: Path, output: Path | None = None) -> Path:
     if not rows:
         raise RuntimeError(f"No completed results yet in {run_dir}")
 
+    treatments, models, model_labels = planned_factors(run_dir)
+    if not treatments:
+        treatments = list(dict.fromkeys(str(row.get("arm") or "") for row in rows if row.get("arm")))
+    if not models:
+        models = list(dict.fromkeys(str(row.get("model") or "") for row in rows if row.get("model")))
+        model_labels = {model: model.rsplit("/", 1)[-1] for model in models}
+
     output = output or (run_dir / "live-dashboard.png")
     output = output.expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    figure_width = max(14.0, 9.0 + 1.4 * len(treatments))
+    fig, axes = plt.subplots(2, 2, figsize=(figure_width, 9))
     fig.suptitle(
         f"Forge Bench live status — {Path(run_dir).name}",
         fontsize=16,
@@ -181,33 +272,32 @@ def make_dashboard(run_dir: Path, output: Path | None = None) -> Path:
     ax.set_ylabel("Completed runs")
     ax.set_title("Outcome status")
 
-    ax = axes[1][0]
-    model_names, model_costs, model_ns = _group_mean(rows, "model", "cost_usd")
-    if model_names:
-        short = [name.rsplit("/", 1)[-1] for name in model_names]
-        bars = ax.bar(short, model_costs)
-        for bar, n in zip(bars, model_ns):
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"n={n}", ha="center", va="bottom", fontsize=8)
-    ax.set_ylabel("Mean cost (USD)")
-    ax.set_title("Mean cost by model")
-    ax.tick_params(axis="x", rotation=15)
-
-    ax = axes[1][1]
-    arm_names, arm_times, arm_ns = _group_mean(rows, "arm", "wall_seconds")
-    if arm_names:
-        display = [LABEL.get(name, name) for name in arm_names]
-        bars = ax.bar(display, arm_times)
-        for bar, n in zip(bars, arm_ns):
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"n={n}", ha="center", va="bottom", fontsize=8)
-    ax.set_ylabel("Mean agent wall time (s)")
-    ax.set_title("Mean time by treatment")
-    ax.tick_params(axis="x", rotation=20)
+    _plot_model_treatment_bars(
+        axes[1][0],
+        rows,
+        treatments,
+        models,
+        model_labels,
+        "cost_usd",
+        "Mean cost by model × treatment",
+        "Mean cost (USD)",
+    )
+    _plot_model_treatment_bars(
+        axes[1][1],
+        rows,
+        treatments,
+        models,
+        model_labels,
+        "wall_seconds",
+        "Mean time by model × treatment",
+        "Mean agent wall time (s)",
+    )
 
     footer = (
         f"Valid={summary['valid_runs']}  Resolved={summary['resolved_runs']}  "
         f"Resolve={summary['resolve_rate_percent'] or 0:.1f}%  "
         f"Spend=${summary['total_cost_usd'] or 0:.4f}  "
-        "Partial means are descriptive only; randomized cells are still accruing."
+        "Partial cell means are descriptive only; task coverage is still accruing."
     )
     fig.text(0.5, 0.01, footer, ha="center", fontsize=9)
     fig.tight_layout(rect=(0, 0.04, 1, 0.95))
