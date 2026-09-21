@@ -54,8 +54,10 @@ This writes:
 The 2x2 dashboard contains:
 1. experiment completion;
 2. current outcome counts;
-3. mean cost by model;
-4. mean agent wall time by treatment.
+3. mean cost by model × treatment;
+4. mean agent wall time by model × treatment.
+
+The treatment categories and model series are read from `run_plan.csv`; the dashboard is not hard-coded to four treatments or two models. Figure width expands with the number of planned treatments. Each completed model × treatment cell shows its current `n`.
 
 The command prints the exact PNG path. If the surrounding agent/chat system supports file upload or attachment, attach that PNG directly. Do not regenerate charts manually unless the live helper is missing a required view.
 
@@ -88,15 +90,18 @@ from forge_bench.live_status import (
     find_latest_run,
     load_partial_results,
     make_dashboard,
+    planned_factors,
     summarize_run,
 )
 
 run = find_latest_run(Path("benchmark-results"))
 summary = summarize_run(run)
 rows = load_partial_results(run)
+treatments, models, model_labels = planned_factors(run)
 png = make_dashboard(run)
 
 print(summary)
+print(treatments, models)
 print(png)
 ```
 
@@ -106,7 +111,11 @@ Prefer these helpers over duplicating run-discovery or partial-result parsing lo
 
 Live summaries are descriptive only. A randomized factorial experiment is incomplete until all planned cells in the block finish.
 
-Do not treat partial means by model or treatment as final treatment effects because the randomized execution order can leave temporarily unbalanced task/model/treatment coverage.
+Do not collapse model and treatment together when looking for a treatment effect during a multi-model run. A treatment may help one model and hurt another; averaging across models can make a real model-specific effect appear to disappear. The live dashboard therefore displays model × treatment cells rather than separate model-only and treatment-only marginal means.
+
+Do not treat partial model × treatment means as final treatment effects because the randomized execution order can leave temporarily unbalanced task coverage. The displayed `n` values are there to make that imbalance visible.
+
+Do not infer that a treatment effect has vanished merely because one live metric is flat. Cost, wall time, tokens, API calls, and correctness can move differently. Use `uv run forge-bench-live --json` or the Python API for additional metrics if needed, and use the final Forge Bench report for inferential comparisons.
 
 Do not discard unresolved valid runs from efficiency summaries. Forge Bench intentionally keeps valid unresolved runs as efficiency observations.
 
