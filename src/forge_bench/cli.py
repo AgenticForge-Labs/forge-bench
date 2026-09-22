@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import shutil
 import tempfile
@@ -33,6 +34,10 @@ from .config import (
     Result,
 )
 from .designs import ModelSpec, default_design, load_design
+from .credentials import (
+    available_hermes_credential_files,
+    select_openrouter_credential,
+)
 from .harness import (
     install_arm,
     make_profile,
@@ -70,6 +75,14 @@ def parse_args() -> argparse.Namespace:
             "models, upstream provider(s), treatments, randomization blocks, "
             "seed, reasoning, max turns, and analysis mode. Runtime/output "
             "controls remain CLI options."
+        ),
+    )
+    parser.add_argument(
+        "--check-credentials",
+        action="store_true",
+        help=(
+            "Show which OpenRouter credential source Forge Bench will use, "
+            "without displaying the key or making network/model calls."
         ),
     )
     parser.add_argument(
@@ -480,6 +493,54 @@ def build_run_plan(
 def main() -> int:
     args = parse_args()
 
+    if args.check_credentials:
+        home = source_home()
+        try:
+            credential = select_openrouter_credential()
+        except (OSError, ValueError) as exc:
+            print("OpenRouter credential configuration: invalid")
+            print(str(exc))
+            return 1
+
+        print("OpenRouter credential check (key value is never displayed)")
+        if credential.value:
+            print("  selected source:", credential.source)
+            print("  selected key will be passed to Hermes:", "yes")
+            print("  runtime environment forwarding:", "enabled")
+            print(
+                "  inherited Hermes credential files:",
+                "excluded from benchmark profile",
+            )
+            return 0
+
+        hermes_files = available_hermes_credential_files(home)
+        if hermes_files:
+            print("  selected source: Hermes home credential files")
+            print("  files copied into run profiles:", ", ".join(hermes_files))
+            print("  runtime environment forwarding: no explicit shell key")
+            print(
+                "  note: Hermes selects the credential from these files; "
+                "Forge Bench cannot identify which one without reading key data."
+            )
+            return 0
+
+        print("  selected source: none")
+        print("  available to Hermes: no")
+        print(
+            "  expected: ~/.config/forge-bench/openrouter.env, "
+            "OPENROUTER_API_KEY in the shell, or Hermes home credentials"
+        )
+        return 1
+
+    try:
+        credential = select_openrouter_credential()
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Invalid Forge Bench OpenRouter credential file: {exc}")
+    if credential.value:
+        # Use the resolved key for every fresh Docker profile. Keeping the
+        # value in the subprocess environment avoids putting it in command args.
+        os.environ["OPENROUTER_API_KEY"] = credential.value
+
     design = load_design(args.design) if args.design is not None else default_design()
     if args.design is not None:
         args.dataset = design.dataset
@@ -702,6 +763,8 @@ def main() -> int:
         },
         "official_evaluation": not args.skip_evaluation,
         "analysis_mode": args.analysis_mode,
+        "credential_source": credential.source or "hermes_home_files",
+        "hermes_home_credentials_isolated": bool(credential.value),
     }
     (output / "metadata.json").write_text(
         json.dumps(meta, indent=2) + "\n",
@@ -823,6 +886,7 @@ def main() -> int:
                     upstream_provider=model_spec.upstream_provider,
                     max_turns=design.max_turns,
                     budget_warning_ratio=design.budget_warning_ratio,
+                    copy_source_credentials=not bool(credential.value),
                 )
                 install_arm(
                     args.hermes,
@@ -871,6 +935,9 @@ def main() -> int:
                 f"{model_spec.label} / {LABEL[arm]} / {instance_id} / b{repeat}"
             )
 
+            def report_run_progress(message: str) -> None:
+                print("    " + message, flush=True)
+
             run_profile = root / "run-profiles" / f"{run_index:02d}__{model_key}__{arm}"
             run_profile.parent.mkdir(parents=True, exist_ok=True)
             shutil.copytree(templates[(model_key, arm)], run_profile, symlinks=True)
@@ -895,6 +962,7 @@ def main() -> int:
                     upstream_provider=model_spec.upstream_provider,
                     reasoning=model_spec.reasoning,
                     model_key=model_spec.key,
+                    progress=report_run_progress,
                 )
             except Exception as exc:
                 run_dir = (

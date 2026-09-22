@@ -6,13 +6,19 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
-from .trace_capture import finalize_event_artifacts, install_trace_plugin, trace_plugin_enabled
+from .trace_capture import (
+    TRACE_EVENT_FILE,
+    finalize_event_artifacts,
+    install_trace_plugin,
+    trace_plugin_enabled,
+)
 
 from .config import (
     ARMS,
@@ -64,6 +70,38 @@ def source_home() -> Path:
     return Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser().resolve()
 
 
+def _trace_progress_monitor(
+    profile: Path,
+    stop: threading.Event,
+    progress: Callable[[str], None],
+) -> None:
+    """Periodically report observer-only API/tool counts during Hermes execution."""
+    started = time.monotonic()
+    event_path = profile / TRACE_EVENT_FILE
+    api_done = api_errors = tool_done = 0
+    next_report = started + 30
+    while not stop.wait(1):
+        now = time.monotonic()
+        if now < next_report:
+            continue
+        try:
+            events = [
+                json.loads(line)
+                for line in event_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ] if event_path.is_file() else []
+            api_done = sum(row.get("event") == "post_api_request" for row in events)
+            api_errors = sum(row.get("event") == "api_request_error" for row in events)
+            tool_done = sum(row.get("event") == "post_tool_call" for row in events)
+        except (OSError, json.JSONDecodeError):
+            pass
+        progress(
+            f"agent running {now - started:.0f}s | API responses={api_done}, "
+            f"API errors={api_errors}, tool calls={tool_done}"
+        )
+        next_report = now + 30
+
+
 def make_profile(
     src: Path,
     dst: Path,
@@ -72,6 +110,7 @@ def make_profile(
     upstream_provider: str = PINNED_OPENROUTER_UPSTREAM,
     max_turns: int = PINNED_MAX_TURNS,
     budget_warning_ratio: float | None = None,
+    copy_source_credentials: bool = True,
 ) -> None:
     """Create a fresh minimal Hermes home for one pinned model/provider condition."""
     dst.mkdir(parents=True, exist_ok=True)
@@ -85,6 +124,9 @@ def make_profile(
         },
         "provider_routing": {
             "only": [upstream_provider],
+            # OpenRouter may otherwise reject providers that permit training.
+            # Review this policy periodically; set to "deny" to opt out.
+            "data_collection": "allow",
             "require_parameters": True,
             "models": {
                 model: {
@@ -117,10 +159,11 @@ def make_profile(
         encoding="utf-8",
     )
 
-    for name in (".env", "auth.json"):
-        source = src / name
-        if source.exists():
-            shutil.copy2(source, dst / name)
+    if copy_source_credentials:
+        for name in (".env", "auth.json"):
+            source = src / name
+            if source.exists():
+                shutil.copy2(source, dst / name)
 
     install_trace_plugin(dst)
 
@@ -144,6 +187,8 @@ def pin_profile_route(
     cfg["agent"]["budget_warning_ratio"] = budget_warning_ratio
     cfg["provider_routing"] = {
         "only": [upstream_provider],
+        # Keep this consistent with make_profile; review the policy periodically.
+        "data_collection": "allow",
         "require_parameters": True,
         "models": {
             model: {
@@ -160,8 +205,16 @@ def pin_profile_route(
 
 def profile_env(profile: Path) -> dict[str, str]:
     env = os.environ.copy()
+    explicit_openrouter_key = bool(env.get("OPENROUTER_API_KEY"))
     for key in list(env):
-        if key.startswith("HERMES_") or key.startswith("PONYTAIL_"):
+        if (
+            key.startswith("HERMES_")
+            or key.startswith("PONYTAIL_")
+            or (
+                explicit_openrouter_key
+                and key.startswith("OPENROUTER_API_KEY_")
+            )
+        ):
             env.pop(key, None)
 
     xdg = profile / "xdg-config"
@@ -201,8 +254,9 @@ def docker_hermes_argv(
         f"{profile.resolve()}:/opt/data",
     ]
 
-    # Support users who keep the OpenRouter key only in their shell rather than
-    # ~/.hermes/.env. Docker's "-e NAME" form forwards the current value.
+    # The parent process environment is constructed from Forge Bench's
+    # credential selector. Docker's "-e NAME" form forwards the selected value
+    # without placing it in argv, logs, or error messages.
     if os.environ.get("OPENROUTER_API_KEY"):
         argv.extend(["-e", "OPENROUTER_API_KEY"])
 
@@ -953,7 +1007,12 @@ def run_one(
     upstream_provider: str = PINNED_OPENROUTER_UPSTREAM,
     reasoning: str = PINNED_REASONING,
     model_key: str | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> Result:
+    def report(message: str) -> None:
+        if progress is not None:
+            progress(message)
+
     instance_id = str(instance["instance_id"])
     repo = str(instance["repo"])
     difficulty = str(instance.get("difficulty") or "")
@@ -963,12 +1022,14 @@ def run_one(
     run_dir.mkdir(parents=True, exist_ok=True)
     workspace = run_dir / "workspace"
 
+    report("preparing task workspace")
     prepare_workspace(
         cache_root,
         repo,
         str(instance["base_commit"]),
         workspace,
     )
+    report("task workspace ready; starting Hermes agent")
 
     prompt = benchmark_prompt(instance, arm)
     (run_dir / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
@@ -1014,6 +1075,13 @@ def run_one(
             run_env["PONYTAIL_DEFAULT_MODE"] = "full"
 
     started = time.perf_counter()
+    monitor_stop = threading.Event()
+    monitor = threading.Thread(
+        target=_trace_progress_monitor,
+        args=(profile, monitor_stop, report),
+        daemon=True,
+    )
+    monitor.start()
     try:
         proc = sh(argv, cwd=run_cwd, env=run_env, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
@@ -1107,8 +1175,12 @@ def run_one(
             encoding="utf-8",
         )
         return result
+    finally:
+        monitor_stop.set()
+        monitor.join(timeout=2)
 
     wall = time.perf_counter() - started
+    report(f"Hermes agent finished in {wall:.1f}s (exit={proc.returncode}); collecting patch")
     (run_dir / "stdout.txt").write_text(proc.stdout, encoding="utf-8")
     (run_dir / "stderr.txt").write_text(proc.stderr, encoding="utf-8")
 
@@ -1128,6 +1200,8 @@ def run_one(
     eval_error = ""
 
     if evaluate:
+        report("official SWE-bench grading started")
+        evaluation_started = time.perf_counter()
         (
             evaluation_completed,
             resolved,
@@ -1138,6 +1212,9 @@ def run_one(
             instance,
             patch,
             timeout=evaluation_timeout,
+        )
+        report(
+            f"official grading finished in {time.perf_counter() - evaluation_started:.1f}s"
         )
     elif not patch_nonempty:
         eval_error = "evaluation skipped; empty patch"

@@ -1,0 +1,34 @@
+version: 1
+name: deepseek-v41-direct-smoke
+description: One task to verify the OpenRouter key and direct DeepSeek route.
+
+selection:
+  dataset: verified
+  split: test
+  difficulty: medium
+  sample_size: 1
+  instance_ids:
+    - django__django-13516
+
+provider:
+  api: openrouter
+  upstream: deepseek
+  require_same_upstream: true
+
+reasoning: none
+max_turns: 100
+analysis_mode: basic
+
+models:
+  - key: v4-1-flash
+    label: DeepSeek V4.1 Flash via DeepSeek
+    model: deepseek/deepseek-v4.1-flash-20260910
+    upstream_provider: deepseek
+
+treatments:
+  - baseline
+
+randomization:
+  mode: full-factorial-within-block
+  blocks: 1
+  seed: 260922

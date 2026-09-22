@@ -1,0 +1,72 @@
+[
+  {
+    "id": "prior_relace",
+    "label": "Previous · both models via Relace",
+    "edge": "#35445c",
+    "source_path": "benchmark-results/deepseek-v4-v41-relace-20260920-185646",
+    "generated_at": "2026-09-20T22:56:47.831627+00:00",
+    "dataset": "SWE-bench/SWE-bench_Verified",
+    "dataset_revision": "78f471bf655a3137b2e8a75af1501690ec009ec3",
+    "selected_instance_ids": [
+      "django__django-13516",
+      "pytest-dev__pytest-7571",
+      "django__django-15731",
+      "django__django-16662",
+      "django__django-7530"
+    ],
+    "runtime_official_evaluation_setting": true,
+    "models": [
+      {
+        "key": "v4-flash-0731",
+        "label": "DeepSeek V4 Flash 0731",
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "api_provider": "openrouter",
+        "upstream_provider": "relace",
+        "reasoning": "none"
+      },
+      {
+        "key": "v4-1-flash",
+        "label": "DeepSeek V4.1 Flash",
+        "model": "deepseek/deepseek-v4.1-flash-20260910",
+        "api_provider": "openrouter",
+        "upstream_provider": "relace",
+        "reasoning": "none"
+      }
+    ]
+  },
+  {
+    "id": "current_mixed_provider",
+    "label": "Current · V4 via Relace; V4.1 via DeepSeek",
+    "edge": "#b45309",
+    "source_path": "benchmark-results/deepseek-v4-v41-relace-deepseek-seed-260924",
+    "generated_at": "2026-09-21T16:16:58.563152+00:00",
+    "dataset": "SWE-bench/SWE-bench_Verified",
+    "dataset_revision": "78f471bf655a3137b2e8a75af1501690ec009ec3",
+    "selected_instance_ids": [
+      "django__django-13516",
+      "pytest-dev__pytest-7571",
+      "django__django-15731",
+      "django__django-16662",
+      "django__django-7530"
+    ],
+    "runtime_official_evaluation_setting": false,
+    "models": [
+      {
+        "key": "v4-flash-0731",
+        "label": "DeepSeek V4 Flash 0731 via Relace",
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "api_provider": "openrouter",
+        "upstream_provider": "relace",
+        "reasoning": "none"
+      },
+      {
+        "key": "v4-1-flash",
+        "label": "DeepSeek V4.1 Flash via DeepSeek",
+        "model": "deepseek/deepseek-v4.1-flash-20260910",
+        "api_provider": "openrouter",
+        "upstream_provider": "deepseek",
+        "reasoning": "none"
+      }
+    ]
+  }
+]

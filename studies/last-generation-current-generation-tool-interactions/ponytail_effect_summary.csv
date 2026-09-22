@@ -1,0 +1,9 @@
+study_id,study_label,model,model_short,metric,n_paired_tasks,n_lower_usage_tasks,geometric_mean_ratio,mean_percent_change,ci95_low_percent_change,ci95_high_percent_change
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4-flash-0731,V4,total_tokens,3,2,0.5373804874014138,-46.26195125985863,-88.59157583062463,153.12679819091284
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4-flash-0731,V4,tool_calls,3,3,0.5865544669158834,-41.344553308411655,-77.27749232293375,51.41204815444762
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4-flash-0731,V4,total_tokens,5,4,0.5857110877992765,-41.42889122007235,-69.12350183572514,11.10634261236938
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4-flash-0731,V4,tool_calls,5,5,0.6381177950204533,-36.188220497954674,-57.42582240707974,-4.356503555930502
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4.1-flash-20260910,V4.1,total_tokens,4,1,1.3786477442111835,37.864774421118355,-56.7560269120921,339.5224274963902
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4.1-flash-20260910,V4.1,tool_calls,4,2,1.1032719778327107,10.32719778327107,-49.27583704460431,139.96631706692813
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4.1-flash-20260910,V4.1,total_tokens,5,2,1.419841139589832,41.9841139589832,-61.15927321098509,419.02964448180995
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4.1-flash-20260910,V4.1,tool_calls,5,2,1.1758087362571479,17.580873625714787,-49.5020881247398,173.77888172361332

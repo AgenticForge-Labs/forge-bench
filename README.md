@@ -1,479 +1,86 @@
 # Forge Bench
 
-Forge Bench is a reproducible benchmark harness for comparing AI coding-agent strategies on correctness, token use, cost, latency, and tool behavior.
+Forge Bench is a basic, reproducible tool for comparing AI coding-agent harnesses, models, and providers. It uses experimental design and trace-level data science to understand long-running agent runs: how interventions change behavior, where tokens and time go, and which pain points are worth optimizing.
 
-The default experiment is now a clean 2x2 comparison of two behavioral
-interventions while keeping the normal Hermes coding toolset constant:
+The project is intended to grow beyond this first study. Future work can add models, providers, tasks, harnesses, and broader execution environments such as Harbor. The goal is to test community assumptions with pinned configurations, raw traces, and analysis code that researchers can inspect, reproduce, and challenge.
 
-- Baseline Hermes
-- Caveman only
-- Ponytail only
-- Caveman + Ponytail
+## Why test token-saving tools?
 
-Lean tools remain available as an explicit optional treatment, along with the
-legacy Caveman + Ponytail + Lean combination, but neither is part of the
-default experiment. The first 15-run study showed that lean-tool pruning
-reduced token use on average but increased wall-clock time and behaved
-inconsistently across tasks, so it is being treated as a separate question
-rather than a factor in the Caveman/Ponytail interaction test.
+People want coding agents to finish useful work with fewer tokens, lower cost, and less waiting. [Caveman](https://github.com/JuliusBrussee/caveman/tree/542442bab314973709f95b85b1ac0b3f6f5b5dc6/skills/caveman) asks agents to communicate more directly and avoid unnecessary response tokens. [Ponytail](https://github.com/DietrichGebert/ponytail/tree/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156) encourages reuse, native features, and the smallest solution that meets the task.
 
-## Default SWE-bench experiment
+Ponytail explicitly suggests using these approaches together. That creates a reasonable experimental hypothesis: if each intervention reduces work, combining them should deliver additive or compounding savings. Forge Bench was built to test assumptions like this instead of accepting them from a tool description or a single successful run.
 
-The second-stage default uses **five deliberately homogeneous SWE-bench
-Verified medium tasks**. The goal is low between-task variance in token use
-and wall-clock time, not broad coverage of SWE-bench difficulty.
+## Featured study
 
-Two tasks are retained as anchors because the first experiment showed they are
-small, historically high-solve tasks with useful baseline behavior. The pinned
-selector then chose the three closest matches shown below:
+This release combines two five-task SWE-bench Verified studies of a last-generation model and its current-generation successor under four harness conditions: Baseline Hermes, Caveman, Ponytail, and Caveman + Ponytail. The release bundle retains run records and raw traces with model, provider, treatment, task, and source-study identity.
 
-| Role | Instance | Repository | Gold patch | Historical solve rate | Anchor distance |
-| --- | --- | --- | ---: | ---: | ---: |
-| Anchor 1 | `django__django-13516` | django/django | 4 lines, 1 file | 84.4% | 0.000 |
-| Anchor 2 | `pytest-dev__pytest-7571` | pytest-dev/pytest | 4 lines, 1 file | 79.3% | 0.000 |
-| Match 1 | `django__django-15731` | django/django | 4 lines, 1 file | 87.4% | 0.251 |
-| Match 2 | `django__django-16662` | django/django | 5 lines, 1 file | 83.0% | 0.276 |
-| Match 3 | `django__django-7530` | django/django | 2 lines, 1 file | 81.5% | 0.298 |
+> The short preview: the tools do not save work uniformly, their benefits do not reliably add, and the current-generation model is economical at baseline for a reason that is easy to miss from headline token prices.
 
-Forge Bench deterministically derives this panel from the pinned Verified
-medium pool by similarity to the two anchors. CI also asserts the exact five
-IDs so the experiment cannot silently drift. Eligible matches are
-restricted to one-file fixes with 2–10 changed lines and a small number of
-hunks. Among those, distance is computed from:
+The complete reproducible data package is in [studies/last-generation-current-generation-tool-interactions](studies/last-generation-current-generation-tool-interactions/).
 
-- gold-patch changed lines and hunks;
-- gold-patch character size;
-- FAIL_TO_PASS and PASS_TO_PASS counts;
-- issue-statement length; and
-- historical Verified solve rate when available.
+## The first result: newer is cheaper at baseline; older wins with Ponytail
 
-Historical solve rate is kept within roughly 10 percentage points below the
-anchor mean. Unlike the original smart sampler, repository diversity is **not**
-forced for this default because similarity and variance reduction are the
-primary design goals.
+The current-generation V4.1 baseline is already cost-effective in this cache-heavy workload. Its non-cached tokens cost more, but cache reads are much cheaper, so its baseline cost is lower than the last-generation V4 baseline.
 
-The exact selected five tasks and their anchor-distance values are written to
-`selection.json`, `selection.csv`, and `candidate_pool.csv` before any
-model calls. Because the dataset revision and historical-results source are
-pinned, the selection is deterministic.
+The unexpected result comes when the tools enter: Ponytail lowers V4 token use and tool calls, while V4.1 uses more of both with Ponytail. Caveman + Ponytail also does not show a reliable additive gain. The plot puts that interaction first.
 
-The default experiment is therefore **5 tasks × 4 treatments = 20 randomized
-Hermes runs** per repeat.
+![Model treatment interaction](studies/last-generation-current-generation-tool-interactions/combined_interactions.png)
 
-## YAML experiment designs
+This may reflect a model × tool interaction, provider routing, or differences in trace and task handling. V4 used Relace in both studies; V4.1 used Relace in the earlier study and DeepSeek in the later study. Community validation is requested: can others reproduce the pattern with the same tasks and pinned providers, and can trace inspection explain the model-specific behavior?
 
-For model-comparison experiments, Forge Bench can now load a versioned YAML
-design instead of hard-coding the scientific factors in CLI flags. A design can
-pin the exact model IDs, OpenRouter upstream, reasoning mode, task IDs,
-treatments, block count, randomization seed, Hermes turn budget, and analysis
-mode.
+## Focused case study: an efficient last-generation configuration
 
-The first model-comparison design is:
+The focused comparison asks how the current-generation baseline compares with the last-generation baseline and the last-generation model plus Ponytail.
 
-```text
-designs/deepseek-v4-v41-relace.yaml
-```
+- The current-generation baseline is already cost-effective. Its non-cached token prices are higher, but cache reads are much cheaper; this cache-heavy workload makes its baseline cost lower than the last-generation baseline.
+- Adding Ponytail to the last-generation model goes further: it costs about **48% less** and takes about **32% less wall time** than the last-generation baseline while using substantially fewer tokens.
 
-It compares:
+The current generation is effective on its own yet less compatible with this intervention. That interaction is more useful than a simple old-versus-new ranking.
 
-- `deepseek/deepseek-v4-flash-0731`
-- `deepseek/deepseek-v4.1-flash-20260910`
+![Focused configuration comparison](studies/last-generation-current-generation-tool-interactions/focused_configuration_comparison.png)
 
-Both are pinned to the **Relace** OpenRouter upstream with reasoning disabled.
-The design uses a **100-turn Hermes maximum** so the turn ceiling is less likely
-to truncate difficult trajectories, while the per-run wall-clock timeout remains
-the outer safety bound. `budget_warning_ratio: null` is pinned explicitly so
-the finite ceiling does not introduce early budget-pressure prompts. It uses the
-same five frozen SWE-bench tasks and the four Caveman × Ponytail treatments.
+### Current-study PCA and raw trace trajectories
 
-One block is therefore:
+PCA uses the current study only, combining models and treatments. Color encodes treatment, point shape encodes model, and orange arrows show the biplot loading directions for standardized features. The trajectory figure is derived from the merged API, tool, and Hermes observer events.
 
-```text
-2 models × 4 treatments × 5 tasks = 40 runs
-```
+![Shared PCA](studies/last-generation-current-generation-tool-interactions/combined_shared_pca.png)
 
-All 40 cells are constructed first and then shuffled together once using the
-design seed. Forge Bench does **not** run one model as a batch followed by the
-other. The model, treatment, and task dimensions are all interleaved within the
-same randomized complete block.
+![Combined raw trace trajectories](studies/last-generation-current-generation-tool-interactions/combined_trace_trajectories.png)
 
-Preview the exact order without making any model calls:
+## Experimental design and pooled analysis
 
-```bash
-uv run forge-bench \
-  --design designs/deepseek-v4-v41-relace.yaml \
-  --plan-only
-```
+The two five-task studies are complementary randomized blocks. We merge their run records and raw traces while retaining study ID, provider, model, treatment, task, and source path for every row.
 
-Run the design:
+For interaction and focused comparisons, each usage outcome uses a log1p mixed-effects model with study and task random intercepts, then transforms estimates back to original units. The interaction figure omits intervals for readability; the accompanying CSV files retain estimates and uncertainty.
 
-```bash
-uv run forge-bench \
-  --design designs/deepseek-v4-v41-relace.yaml
-```
+The model pools descriptive results but cannot separate the V4.1 provider change from the study change, and two study blocks are too few to estimate study-level variation precisely. That limitation is itself a reason to test provider × model and provider × tool interactions directly.
 
-The source YAML is copied into the result directory as `design.yaml`.
-`run_plan.csv` records model key/ID, treatment, task, block, block seed,
-within-block position, and global run index.
+## Install and use Forge Bench
 
-For multi-model designs, raw runs remain in one root experiment directory so
-the execution order is preserved. The root report is the primary **model ×
-treatment** analysis; the original single-model treatment reports remain under
-`models/<model-key>/` as drill-down pages.
-
-The primary simple plots are true model subpanels with **one shared scale**.
-Treatment colors remain identical across model panels, individual task means are
-overlaid as open points, and both vertical-bar and horizontal-bar versions are
-written for each core metric. With repeated randomized blocks, repeats are first
-averaged within task × model × treatment, so tasks remain the independent units
-for confidence intervals and treatment/model effects.
-
-Root-level analysis additionally includes:
-
-- paired V4.1-versus-V4 effects within the same task and treatment;
-- a task-fixed-effect `model * treatment` log-linear factorial analysis;
-- a secondary `model * caveman * ponytail` 2×2×2 decomposition;
-- within-model harness effects normalized to each model's own baseline;
-- an eight-condition cost-time Pareto analysis;
-- shared-panel direct API/tool/unattributed wall-time decomposition;
-- multivariate PCA of task-level agent behavior and condition centroids;
-- standardized vector-angle/cosine comparisons asking whether model upgrades
-  move behavior in the same multivariate direction as harness interventions;
-- normalized 0–100% within-run trajectories for context growth, cumulative
-  tokens, API wait, tool execution, API calls, and tool calls;
-- workflow timing/rework summaries such as first edit, first execution,
-  repeated-state fraction, edit→execute transitions, and late-run activity;
-- task-normalized workflow state-transition matrices.
-
-Trace events are observations along a trajectory, not statistical replicates.
-For trajectory summaries, stochastic repeats are averaged within task first and
-uncertainty is then calculated across tasks.
-
-See `designs/README.md` for the version-1 schema and how to add additional
-models or blocks.
-
-### Optional broad within-bucket sampling
-
-Forge Bench deliberately does not pick the first three tasks or randomly sample three tasks and call them representative.
-
-For every candidate in the requested difficulty bucket it calculates:
-
-- gold-patch changed-line percentile
-- gold-patch file-count percentile
-- gold-patch hunk-count percentile
-- historical solve fraction across compatible official SWE-bench Verified leaderboard submissions
-
-The gold patch is used only by the benchmark controller to characterize task scope. It is never copied into the Hermes workspace or included in the prompt.
-
-Patch scope is:
-
-```text
-0.60 * changed-lines percentile
-+ 0.25 * files-touched percentile
-+ 0.15 * diff-hunks percentile
-```
-
-When historical Verified results are available, composite complexity is:
-
-```text
-0.55 * patch-scope percentile
-+ 0.45 * historical-hardness percentile
-```
-
-where historical hardness increases as historical solve rate falls.
-
-When `--smart-sample` is requested, Forge Bench uses the older broad-spread design, targeting composite scores from approximately 0.20 to 0.80 across the requested sample size. This is useful for generalization studies, but it is intentionally not the default for the low-variance Caveman/Ponytail experiment.
-
-The historical signal is derived from public `results/results.json` files in the official `SWE-bench/experiments` repository at a recorded source revision. The exact candidate pool, selected instances, formula, source commit, and selected task features are saved with every benchmark.
-
-For datasets without official difficulty or compatible historical results, Forge Bench falls back gracefully to the available patch-scope features rather than inventing missing information.
-
-## Reproducibility pins
-
-The default experiment currently pins:
-
-- model: `deepseek/deepseek-v4-flash-0731`
-- reasoning: `none` (runs reporting reasoning tokens are invalid)
-- API aggregator: OpenRouter
-- upstream provider: `relace`
-- Hermes runtime: official `nousresearch/hermes-agent:latest` image, pulled once at benchmark start and resolved to its immutable image ID for all runs in that experiment
-- Hermes maximum tool-loop iterations: 50 for the historical default single-model design; the V4/V4.1 YAML design pins 100
-- SWE-bench evaluator: `swebench==4.1.0`
-- SWE-bench Verified dataset revision: `78f471bf655a3137b2e8a75af1501690ec009ec3`
-- SWE-bench experiments source: `40f164d5b8f1d249bf95a6df8b74b577fd8e519d`
-- Ponytail: `e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156`
-- Caveman: `542442bab314973709f95b85b1ac0b3f6f5b5dc6`
-- master randomization seed: `260919`
-
-Every repeat is a **separately randomized complete block**. Each block contains
-every treatment × task combination exactly once, receives its own recorded
-`repeat_seed`, and is shuffled independently. `run_plan.csv` stores the repeat
-seed and within-block position for every observation. The master seed makes the
-whole plan reproducible; changing it generates a new randomization.
-
-Every individual observation starts from a fresh minimal Hermes home and a brand-new `docker run --rm` container. The profile contains only benchmark configuration, credentials, the treatment being tested, and Forge Bench's observer-only trace plugin; user personalities, memories, user hooks, project plugins, bundled skills, and prior sessions are not inherited. Treatment templates are installed once, then copied into a pristine per-run profile before the container starts.
-
-Each agent run also gets a fresh self-contained repository at the requested SWE-bench base commit. The workspace has no network Git remote and does not contain the solution PR. Model fallbacks and compression are disabled, reasoning is explicitly off, and OpenRouter routing is restricted to the pinned upstream provider.
-
-The exact selected SWE-bench row is written to a local JSON file after the agent finishes and passed to the official evaluator. This prevents grading from silently changing because a remote dataset branch moved.
-
-## Install
-
-Prerequisites:
-
-- Python 3.12+
-- `uv`
-- `git`
-- Docker
-- a working OpenRouter credential in the normal Hermes `~/.hermes/.env` or `auth.json` (or `OPENROUTER_API_KEY` in the shell)
-
-By default you do **not** need a host Hermes installation. Forge Bench pulls the official Hermes image, resolves the pulled image to an immutable Docker image ID, and starts a fresh container for every observation. The official SWE-bench evaluator also uses Docker, so the first run can require substantial image downloads and disk space.
-
-A host Hermes installation remains available as an explicit fallback:
-
-```bash
-uv run forge-bench --hermes-runtime local
-```
+Forge Bench installs as a normal Python package and provides the `forge-bench` command:
 
 ```bash
 git clone https://github.com/AgenticForge-Labs/forge-bench.git
 cd forge-bench
 uv sync
+uv run forge-bench --check-credentials
 ```
 
-## Inspect the sample first
-
-This is the recommended first command. It makes no model calls and does not grade anything:
+Plan a design without making model calls, then run it into a named output directory:
 
 ```bash
-uv run forge-bench --selection-only
+uv run forge-bench --design designs/your-study.yaml --plan-only
+uv run forge-bench --design designs/your-study.yaml --output benchmark-results/my-study
 ```
 
-By default it prints the five-task homogeneous anchor neighborhood with:
+## Data and reproducibility
 
-- anchor/match role
-- distance from the Django/pytest anchor profile
-- historical solve rate
-- gold-patch changed-line count
-- files touched
-- repository and instance ID
+The [study package](studies/last-generation-current-generation-tool-interactions/) contains both pinned YAML designs, 80 joined run records, raw merged JSONL traces, source checksums, derived CSV tables, the analysis script, and only the five PNGs shown in this README. It excludes the original 2.6 GB execution workspace, Hermes state databases, evaluation logs, duplicate reports, SVG versions, and unused figures.
 
-It saves `selection.json`, `selection.csv`, `candidate_pool.csv`, and `metadata.json` for the default anchored selection.
-
-## Reporting and analysis
-
-Every benchmark now produces web-ready figures in both light and dark themes.
-The legacy filenames such as `total_tokens.png` and `total_tokens.svg`
-remain as light-mode aliases for compatibility. Each figure also has explicit
-`.light.png`, `.dark.png`, `.light.svg`, and `.dark.svg` variants.
-Forge Bench writes two explicit HTML reports: `report-light.html` and
-`report-dark.html`. Each report is fixed to its matching figure set and does
-not depend on the browser or operating-system theme. `report.html` remains a
-compatibility alias for the light report.
-
-Plot typography, axis strokes, error bars, and grid lines are intentionally
-heavier than the original exploratory figures so the exports remain readable
-when embedded on a website or in a presentation.
-
-The default analysis mode is `basic`: it keeps the treatment summary,
-confidence-interval plots, resolve-rate plot, tables, and themed HTML report.
-
-For exploratory multivariate analysis, run:
+Rebuild the tables and figures from the published aggregate data:
 
 ```bash
-uv run forge-bench --analysis-mode advanced
+.venv/bin/python studies/last-generation-current-generation-tool-interactions/analysis.py
 ```
 
-Advanced mode additionally writes task-level paired effects relative to the
-baseline, task-fixed-effect log regressions, a Caveman × Ponytail factorial
-regression when the four 2×2 arms are present, and multivariate diagnostics.
-The PCA section includes a true biplot with treatment-colored observations and
-loading vectors, a scree plot, and a PC1/PC2 loading chart. Clustering is shown
-in PCA space with cluster circles while points retain the same treatment colors.
-
-Latency/workflow diagnostics are also generated. Ratio diagnostics include
-token throughput (tokens/second), seconds/API call, tokens/API call, cost/API
-call, wall time versus API-call count, and, when Hermes recorded tool-call
-counts, tool-calls/API-call and seconds/tool-call. These are reconstructed from
-`runs.json`, so they continue to work when reanalyzing older Forge Bench runs.
-
-New runs additionally install an **observer-only native Hermes plugin** in every
-treatment profile. It subscribes to Hermes lifecycle hooks such as
-`post_api_request`, `post_tool_call`, and `on_skill_lifecycle` without adding
-tools or changing model context. That gives direct per-run measurements of API
-wait time, tool execution time, terminal/process time, API latency, and
-time-to-first-chunk. Advanced analysis writes `advanced_time_budget.csv` and
-light/dark `advanced_time_budget` and `advanced_api_latency` figures. The
-remaining wall time is reported as unattributed/orchestration time rather than
-silently assigned to the model or tools.
-
-Legacy Forge Bench artifacts predate this observer and therefore cannot recover
-exact API/tool durations. `advanced_timing_evidence.csv` records the actual
-coverage available in each analysis instead of fabricating missing timing
-components. A cost-vs-wall-time plot still shows the Pareto frontier because
-minimizing dollars and elapsed time are related but distinct objectives.
-Correlations and all underlying tables are written to CSV. These analyses are
-exploratory, especially with small task counts.
-
-Existing benchmark outputs can be reanalyzed without rerunning Hermes or
-SWE-bench:
-
-```bash
-uv run forge-bench \
-  --reanalyze benchmark-results/forge-bench-YYYYMMDD-HHMMSS \
-  --analysis-mode advanced \
-  --open
-```
-
-This reads the saved `runs.json` and `metadata.json` without modifying the
-original analysis. Each invocation creates a fresh timestamped directory under:
-
-```text
-benchmark-results/forge-bench-YYYYMMDD-HHMMSS/reanalysis/YYYYMMDD-HHMMSS-advanced/
-```
-
-The new subfolder contains the regenerated summary tables, themed figures,
-advanced-analysis CSVs, a snapshot of the run records, `report-light.html`,
-and `report-dark.html`.
-Repeated reanalysis runs are therefore preserved side by side. Add `--open`
-to either a normal benchmark or reanalysis command to open the finished
-`report.html` in the default browser.
-
-## Run the default benchmark
-
-```bash
-uv run forge-bench
-```
-
-The default is 5 selected tasks × 4 treatments = 20 randomized Hermes runs.
-
-The four treatments all use the normal `hermes-cli` toolset. To explicitly
-revisit lean-tool pruning, use for example:
-
-```bash
-uv run forge-bench --arms baseline lean_tools
-```
-
-Or include the legacy combined lean treatment:
-
-```bash
-uv run forge-bench --arms baseline caveman ponytail caveman_ponytail lean_tools all_three
-```
-
-For repeated stochastic attempts in the default single-model design:
-
-```bash
-uv run forge-bench --repeats 3 --seed 260920
-```
-
-This creates three separately randomized 20-run blocks. Each repeat gets a
-different deterministic `repeat_seed`, recorded in both `metadata.json` and
-`run_plan.csv`; no repeat reuses the same execution order. Repeats are averaged
-within task × treatment before across-task statistics are calculated.
-
-For YAML designs, put the desired block count and seed under
-`randomization:`. Each block then contains the complete
-model × treatment × task factorial before shuffling.
-
-## Other SWE-bench samples
-
-Re-run the smart sampler within the default medium bucket:
-
-```bash
-uv run forge-bench --smart-sample --selection-only
-```
-
-Choose a different Verified difficulty bucket (these automatically use smart sampling because the frozen suite is medium-only):
-
-```bash
-uv run forge-bench --difficulty easy --selection-only
-uv run forge-bench --difficulty hard --selection-only
-uv run forge-bench --difficulty expert --selection-only
-```
-
-Take a larger spread sample:
-
-```bash
-uv run forge-bench --sample-size 5 --selection-only
-```
-
-Use SWE-bench Lite or the full text benchmark:
-
-```bash
-uv run forge-bench --dataset lite --difficulty all --sample-size 3 --selection-only
-uv run forge-bench --dataset full --difficulty all --sample-size 3 --selection-only
-```
-
-An arbitrary Hugging Face dataset with standard SWE-bench fields can also be supplied as `--dataset owner/name`.
-
-Run exact instances instead of sampling:
-
-```bash
-uv run forge-bench --instance-ids django__django-12345 sympy__sympy-12345
-```
-
-Disable the historical leaderboard signal and sample only from patch scope:
-
-```bash
-uv run forge-bench --no-history --selection-only
-```
-
-Generate Hermes patches without SWE-bench grading:
-
-```bash
-uv run forge-bench --skip-evaluation
-```
-
-With the default Hermes runtime this still uses Docker for the fresh Hermes containers. To avoid Docker entirely for a local plumbing test, combine it with `--hermes-runtime local`. Skipped evaluation should not be used for correctness comparisons.
-
-## Agent and evaluation separation
-
-For each selected SWE-bench instance Forge Bench:
-
-1. loads the task from the pinned SWE-bench dataset revision;
-2. fetches only the exact `base_commit` into an isolated local repository cache;
-3. creates a fresh self-contained workspace and removes its Git network remote;
-4. copies the treatment template into a brand-new minimal Hermes home;
-5. starts a new official Hermes Docker container with that profile and workspace mounted in;
-6. gives Hermes only the issue statement, repository state, and treatment instructions, with reasoning disabled; the prompt blocks external solution sources and cross-run leakage but otherwise allows normal local Hermes workflow;
-7. captures observer-hook timing events and the Hermes session before the ephemeral profile is removed;
-8. exports the full Hermes session in native JSON/trace forms and snapshots `state.db` for auditability;
-9. records treatment-installation evidence plus observed skill-lifecycle events (including whether Caveman was actually loaded);
-10. removes the Hermes container after the one-shot run;
-11. captures the complete working tree relative to the base commit, including committed and untracked changes;
-12. grades that patch with SWE-bench 4.1 against the exact frozen task row.
-
-The gold solution patch and test patch are never exposed to Hermes.
-
-An unresolved task is still a valid efficiency observation. Its tokens, time, and cost remain in treatment averages. This avoids making an inefficient treatment look cheap merely because its expensive failures were discarded.
-
-## Outputs
-
-Each benchmark writes a timestamped directory under `benchmark-results/` containing:
-
-- `selection.json` / `selection.csv` — exact selected tasks and their selection features
-- `candidate_pool.csv` — all candidates considered by smart sampling
-- `run_plan.csv` — exact execution order, repeat block, within-block position, and per-repeat randomization seed
-- `metadata.json` — dataset, source revisions, model/provider pins, master/repeat seeds, trace mechanism, and settings
-- `runs.csv` / `runs.json` — raw run-level results, including direct timing fields on newly instrumented runs
-- `task_summary.csv` — repeats averaged within treatment × task
-- `summary.csv` — across-task treatment means and 95% confidence intervals
-- `report-light.html` / `report-dark.html` (`report.html` remains a light compatibility alias)
-- light/dark PNG and SVG figures for tokens, cost, agent wall time, API calls, and SWE-bench resolve rate
-- one evidence directory per run containing the prompt, Hermes stdout/stderr, usage JSON, generated patch, official evaluation output, and final workspace
-- per-run `hermes-events.jsonl`, `api-events.jsonl`, `tool-events.jsonl`, `lifecycle-events.jsonl`, and `timing-summary.json`
-- per-run `hermes-session.json` / `hermes-session.jsonl`, `hermes-session.trace.jsonl`, and a consistent `hermes-state.db` snapshot
-- per-run `treatment-evidence.json`, which records assigned treatment, installed Caveman/Ponytail components, and observed skill-lifecycle uptake without replacing randomized assignment as the causal variable
-- in advanced mode, `advanced_*.csv` tables plus themed cost-time frontier, direct time-budget/API-latency plots when available, PCA biplot, scree, loadings, clustering, correlation, and paired-effect figures
-
-## Confidence intervals
-
-The selected SWE-bench tasks are treated as the independent experimental units.
-
-If repeats are requested, Forge Bench first averages repeated runs within each treatment × task, then computes a two-sided 95% Student-t confidence interval across task means.
-
-With five selected tasks, the default second-stage experiment reduces the extreme
-small-n uncertainty of the first three-task study, but the intervals remain
-conservative. Repeats are still valuable because coding-agent trajectories are
-stochastic; task homogeneity reduces between-task variance but does not remove
-within-task run-to-run variation.
+The analysis is descriptive. There is one run per model × treatment × task cell in each study, and the upstream provider changed for V4.1 between studies.

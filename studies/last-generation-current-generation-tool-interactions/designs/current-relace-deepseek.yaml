@@ -1,0 +1,48 @@
+version: 1
+name: deepseek-v4-v41-relace-deepseek
+description: >
+  One fully randomized block comparing V4 on Relace with V4.1 on DeepSeek
+  across the Caveman x Ponytail 2x2 on the frozen five-task panel.
+
+selection:
+  dataset: verified
+  split: test
+  difficulty: medium
+  sample_size: 5
+  instance_ids:
+    - django__django-13516
+    - pytest-dev__pytest-7571
+    - django__django-15731
+    - django__django-16662
+    - django__django-7530
+
+provider:
+  api: openrouter
+  upstream: relace
+  require_same_upstream: false
+
+reasoning: none
+max_turns: 100
+budget_warning_ratio: null
+analysis_mode: advanced
+
+models:
+  - key: v4-flash-0731
+    label: DeepSeek V4 Flash 0731 via Relace
+    model: deepseek/deepseek-v4-flash-0731
+    upstream_provider: relace
+  - key: v4-1-flash
+    label: DeepSeek V4.1 Flash via DeepSeek
+    model: deepseek/deepseek-v4.1-flash-20260910
+    upstream_provider: deepseek
+
+treatments:
+  - baseline
+  - caveman
+  - ponytail
+  - caveman_ponytail
+
+randomization:
+  mode: full-factorial-within-block
+  blocks: 1
+  seed: 260921

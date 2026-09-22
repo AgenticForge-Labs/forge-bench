@@ -1,0 +1,5 @@
+study_id,study_label,model,model_short,metric,n_paired_tasks,n_lower_usage_tasks,geometric_mean_ratio,mean_percent_change,ci95_low_percent_change,ci95_high_percent_change
+pooled,Both studies pooled,deepseek/deepseek-v4-flash-0731,V4,total_tokens,8,6,0.5670976704608091,-43.290232953919094,-60.30921049149563,-18.973703515479713
+pooled,Both studies pooled,deepseek/deepseek-v4-flash-0731,V4,tool_calls,8,8,0.6182706988358171,-38.17293011641829,-50.56819702074564,-22.66948927609279
+pooled,Both studies pooled,deepseek/deepseek-v4.1-flash-20260910,V4.1,total_tokens,9,3,1.4013831552075673,40.13831552075673,-20.24888842406619,146.2504545569428
+pooled,Both studies pooled,deepseek/deepseek-v4.1-flash-20260910,V4.1,tool_calls,9,4,1.14299932456146,14.299932456146003,-21.121805231003034,65.62846801629041

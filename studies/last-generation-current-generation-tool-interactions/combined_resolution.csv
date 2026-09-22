@@ -1,0 +1,17 @@
+study_id,study_label,model,model_short,arm,treatment_label,assigned_runs,agent_completed,nonempty_patches,graded_runs,resolved_runs,resolution_rate
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4-flash-0731,V4,baseline,Baseline,5,5,5,5,5,1.0
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4-flash-0731,V4,caveman,Caveman,5,5,5,5,5,1.0
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4-flash-0731,V4,ponytail,Ponytail,5,5,4,4,4,0.8
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4-flash-0731,V4,caveman_ponytail,Caveman + Ponytail,5,5,5,5,5,1.0
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4.1-flash-20260910,V4.1,baseline,Baseline,5,4,3,3,3,0.6
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4.1-flash-20260910,V4.1,caveman,Caveman,5,5,4,4,4,0.8
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4.1-flash-20260910,V4.1,ponytail,Ponytail,5,5,5,5,5,1.0
+prior_relace,Previous · both models via Relace,deepseek/deepseek-v4.1-flash-20260910,V4.1,caveman_ponytail,Caveman + Ponytail,5,4,4,4,4,0.8
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4-flash-0731,V4,baseline,Baseline,5,5,4,5,4,0.8
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4-flash-0731,V4,caveman,Caveman,5,5,5,5,5,1.0
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4-flash-0731,V4,ponytail,Ponytail,5,5,5,5,5,1.0
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4-flash-0731,V4,caveman_ponytail,Caveman + Ponytail,5,5,5,5,5,1.0
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4.1-flash-20260910,V4.1,baseline,Baseline,5,5,5,5,5,1.0
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4.1-flash-20260910,V4.1,caveman,Caveman,5,5,5,5,5,1.0
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4.1-flash-20260910,V4.1,ponytail,Ponytail,5,5,5,5,5,1.0
+current_mixed_provider,Current · V4 via Relace; V4.1 via DeepSeek,deepseek/deepseek-v4.1-flash-20260910,V4.1,caveman_ponytail,Caveman + Ponytail,5,5,5,5,4,0.8

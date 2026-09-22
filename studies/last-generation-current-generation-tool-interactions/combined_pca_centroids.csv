@@ -1,0 +1,17 @@
+study_id,model,arm,n,pc1,pc2
+prior_relace,deepseek/deepseek-v4-flash-0731,baseline,5,-0.29796336148074826,-0.04034385762790423
+prior_relace,deepseek/deepseek-v4-flash-0731,caveman,5,-0.5068989569078061,0.04620240484557725
+prior_relace,deepseek/deepseek-v4-flash-0731,ponytail,5,-1.7069058652343387,-0.3146548665447827
+prior_relace,deepseek/deepseek-v4-flash-0731,caveman_ponytail,5,-1.893306742897605,0.1310769797149844
+prior_relace,deepseek/deepseek-v4.1-flash-20260910,baseline,4,-0.1939442198120463,-0.9081371544415657
+prior_relace,deepseek/deepseek-v4.1-flash-20260910,caveman,5,-0.58573961612232,-0.4452248375900334
+prior_relace,deepseek/deepseek-v4.1-flash-20260910,ponytail,5,1.5657178061410977,-0.2942183104461346
+prior_relace,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,4,1.378398597660036,0.15759375767492684
+current_mixed_provider,deepseek/deepseek-v4-flash-0731,baseline,5,-0.17994955098103743,-0.26332855096923496
+current_mixed_provider,deepseek/deepseek-v4-flash-0731,caveman,5,-0.39642851358117703,0.11956688647723006
+current_mixed_provider,deepseek/deepseek-v4-flash-0731,ponytail,5,-1.3193016042303713,0.11014380771635308
+current_mixed_provider,deepseek/deepseek-v4-flash-0731,caveman_ponytail,5,-0.7116172895972778,0.1450937293862296
+current_mixed_provider,deepseek/deepseek-v4.1-flash-20260910,baseline,5,-0.2633941313254455,0.6087571378809993
+current_mixed_provider,deepseek/deepseek-v4.1-flash-20260910,caveman,5,2.24768780275324,0.5181187806546228
+current_mixed_provider,deepseek/deepseek-v4.1-flash-20260910,ponytail,5,0.659316854418791,-0.041122526290434044
+current_mixed_provider,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,5,2.4412196667666506,0.32036794020581766

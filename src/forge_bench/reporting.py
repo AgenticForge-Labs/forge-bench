@@ -885,6 +885,7 @@ def _write_multi_model_index(
     ]
     multivariate_stems = [
         ("model_treatment_multivariate_pca", "Multivariate agent-behavior PCA"),
+        ("model_treatment_multivariate_pca_loadings", "PCA feature loadings"),
         ("workflow_state_transitions", "Workflow transition matrices"),
     ]
     trajectory_stems = [
@@ -898,6 +899,11 @@ def _write_multi_model_index(
         ("workflow_first_execute_progress", "First execution"),
         ("workflow_consecutive_same_state_fraction", "Repeated-state fraction"),
         ("workflow_edit_to_execute_transitions", "Edit-to-execute transitions"),
+    ]
+    trace_specs = [
+        ("trace_example_timeline", "Token and tool timeline for high-usage runs"),
+        ("trace_token_tool_trajectories", "Token pools and computer activity over progress"),
+        ("trace_response_vs_tool_work", "Per-response tokens and following tool work"),
     ]
     for theme in ("light", "dark"):
         if theme == "dark":
@@ -919,6 +925,12 @@ def _write_multi_model_index(
         effect_cards = cards(effect_stems)
         multivariate_cards = cards(multivariate_stems)
         trajectory_cards = cards(trajectory_stems)
+        trace_cards = "".join(
+            f'<div class="card"><h3>{html.escape(title)}</h3>'
+            f'<img src="{stem}.png" alt="{html.escape(title)}"></div>'
+            for stem, title in trace_specs
+            if (output / f"{stem}.png").exists()
+        )
         body = f"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -959,9 +971,10 @@ factors and fits <code>model * caveman * ponytail</code>.</p>
 
 <h2>Multivariate workflow phenotype</h2>
 <p>PCA uses task-level agent behavior rather than individual API/tool events as
-replicates. Treatment is encoded consistently by color and model by marker.
-State-transition probabilities are normalized within task before across-task
-averaging.</p>
+replicates. Treatment is encoded by color and model by marker; numbered tags
+identify the larger model × treatment centers, with a separate loading chart
+for PC1 and PC2. State-transition probabilities are normalized within task
+before across-task averaging.</p>
 <div class="grid">{multivariate_cards}</div>
 
 <h2>Within-run trajectories</h2>
@@ -971,6 +984,15 @@ averaged across tasks. Individual turns are observations along a run, not
 independent replicates.</p>
 <div class="grid">{trajectory_cards}</div>
 
+<h2>Token pools versus computer work</h2>
+<p>Observer traces show cache-read input, other input, output, and reasoning
+tokens alongside tool calls and execution time. The response/tool scatter links
+each model response to the tool calls before its next request; it is descriptive,
+not a causal estimate. Trace-observed activity is retained even when a run's
+overall benchmark result is invalid; the trace CSVs mark result validity so
+those observations can be inspected separately.</p>
+<div class="grid">{trace_cards}</div>
+
 <h2>Across-task summary</h2>
 <table><thead><tr><th>Model</th><th>Treatment</th><th>Tokens</th><th>Cost</th><th>Time</th><th>Resolve</th></tr></thead>
 <tbody>{''.join(table_rows)}</tbody></table>
@@ -979,7 +1001,7 @@ independent replicates.</p>
 <code>model_treatment_regression_2x4.csv</code>,
 <code>model_caveman_ponytail_regression_2x2x2.csv</code>,
 the <code>multivariate_*</code> tables, and the <code>trajectory_*</code> /
-<code>workflow_*</code> tables. Raw execution evidence remains in
+<code>workflow_*</code>, and <code>trace_*</code> tables. Raw execution evidence remains in
 <code>runs/</code>, <code>runs.json</code>, and <code>run_plan.csv</code>.</p>
 """
         (output / f"report-{theme}.html").write_text(body, encoding="utf-8")

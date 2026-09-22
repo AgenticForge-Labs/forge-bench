@@ -9,9 +9,11 @@ from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
 
 from .advanced_analysis import TREATMENT_ORDER, treatment_colors
 from .config import LABEL, METRICS, T975, Result
+from .trace_timeseries import write_trace_timeseries
 
 
 PRIMARY_METRICS = ("total_tokens", "cost_usd", "wall_seconds", "api_calls")
@@ -960,56 +962,142 @@ def plot_multivariate_pca(
     for theme in ("light", "dark"):
         colors = treatment_colors(arms, theme)
         palette = _theme(theme)
-        fig, ax = plt.subplots(figsize=(11.0, 8.0))
+        fig, ax = plt.subplots(figsize=(12.0, 12.0))
         _style_axes(fig, ax, theme)
         for row in scores:
             index = model_index.get(str(row["model"]), 0)
             ax.scatter(
-                float(row["pc1"]), float(row["pc2"]), s=65, alpha=0.55,
+                float(row["pc1"]), float(row["pc2"]), s=125, alpha=0.68,
                 marker=markers[index % len(markers)], color=colors[str(row["arm"])],
-                edgecolors=palette["edge"], linewidths=0.7, zorder=2,
+                edgecolors=palette["edge"], linewidths=1.1, zorder=2,
             )
-        for row in centroids:
+        model_short = {
+            str(descriptor["model"]): str(descriptor["label"])
+            .replace("DeepSeek ", "")
+            .replace(" Flash 0731", "")
+            .replace(" Flash", "")
+            for descriptor in descriptors
+        }
+        arm_short = {
+            "baseline": "Baseline",
+            "caveman": "Caveman",
+            "ponytail": "Ponytail",
+            "caveman_ponytail": "Caveman + Ponytail",
+        }
+        arm_order = {arm: index for index, arm in enumerate(arms)}
+        center_offsets = [(-32, 24), (0, -38), (36, 10), (30, -32),
+                          (-30, -24), (36, 28), (-34, 8), (-30, -38)]
+        ordered_centroids = sorted(
+            centroids,
+            key=lambda row: (
+                model_index.get(str(row["model"]), 0),
+                arm_order.get(str(row["arm"]), len(arm_order)),
+            ),
+        )
+        center_key = []
+        for center_id, row in enumerate(ordered_centroids, start=1):
             index = model_index.get(str(row["model"]), 0)
             ax.scatter(
-                float(row["pc1"]), float(row["pc2"]), s=220,
+                float(row["pc1"]), float(row["pc2"]), s=390,
                 marker=markers[index % len(markers)], color=colors[str(row["arm"])],
-                edgecolors=palette["text"], linewidths=2.0, zorder=5,
+                edgecolors=palette["figure"], linewidths=3.0, zorder=5,
             )
+            model_name = model_short.get(str(row["model"]), str(row["model_label"]))
+            treatment_name = arm_short.get(
+                str(row["arm"]), LABEL.get(str(row["arm"]), str(row["arm"]))
+            )
+            center_key.append(f"{center_id} {model_name} · {treatment_name}")
+            offset = center_offsets[(center_id - 1) % len(center_offsets)]
             ax.annotate(
-                f"{row['model_label']} / {LABEL.get(str(row['arm']), str(row['arm']))}",
-                (float(row["pc1"]), float(row["pc2"])),
-                xytext=(6, 6), textcoords="offset points",
-                fontsize=8.5, color=palette["text"],
+                str(center_id), (float(row["pc1"]), float(row["pc2"])),
+                xytext=offset, textcoords="offset points", ha="center", va="center",
+                fontsize=9, fontweight="bold", color=palette["text"], zorder=7,
+                bbox={"boxstyle": "round,pad=0.2", "fc": palette["figure"],
+                      "ec": colors[str(row["arm"])], "lw": 1.3, "alpha": 0.98},
+                arrowprops={"arrowstyle": "-", "color": colors[str(row["arm"])],
+                            "lw": 0.8, "shrinkA": 4, "shrinkB": 10},
             )
-        x_extent = max([abs(float(row["pc1"])) for row in scores] + [1.0])
-        y_extent = max([abs(float(row["pc2"])) for row in scores] + [1.0])
-        loading_extent = max(
-            [abs(float(row["pc1_loading"])) for row in loadings]
-            + [abs(float(row["pc2_loading"])) for row in loadings] + [1e-9]
-        )
-        scale = 0.62 * min(x_extent, y_extent) / loading_extent
-        for row in loadings:
-            x = float(row["pc1_loading"]) * scale
-            y = float(row["pc2_loading"]) * scale
-            ax.annotate(
-                "", xy=(x, y), xytext=(0, 0),
-                arrowprops={"arrowstyle": "->", "lw": 1.5, "color": palette["text"]},
-            )
-            ax.text(
-                x * 1.07, y * 1.07, str(row["feature"]),
-                fontsize=9, color=palette["text"], ha="center",
-            )
+
+        limit = max(
+            [abs(float(row[component])) for row in scores for component in ("pc1", "pc2")]
+            + [1.0]
+        ) * 1.12
+        ax.set_xlim(-limit, limit)
+        ax.set_ylim(-limit, limit)
+        ax.set_box_aspect(1)
         ax.axhline(0, color=palette["muted"], linewidth=1.0, alpha=0.5)
         ax.axvline(0, color=palette["muted"], linewidth=1.0, alpha=0.5)
         ax.set_xlabel(f"PC1 ({100 * explained[0]:.1f}% variance)")
         ax.set_ylabel(f"PC2 ({100 * explained[1]:.1f}% variance)" if len(explained) > 1 else "PC2")
-        ax.set_title(
-            "Multivariate agent-behavior PCA: model × treatment × task",
-            fontsize=18, fontweight="bold",
+
+        treatment_handles = [
+            Line2D([], [], marker="o", linestyle="None", color=colors[arm],
+                   markersize=10, label=LABEL.get(arm, arm))
+            for arm in arms
+        ]
+        model_handles = [
+            Line2D([], [], marker=markers[index % len(markers)], linestyle="None",
+                   color=palette["text"], markerfacecolor=palette["muted"],
+                   markersize=10, label=descriptor["label"])
+            for index, descriptor in enumerate(descriptors)
+        ]
+        fig.suptitle(
+            "Agent-behavior PCA: task-level runs and condition centers",
+            y=0.99, fontsize=19, fontweight="bold", color=palette["text"],
         )
-        fig.tight_layout()
+        fig.legend(
+            handles=treatment_handles, title="Color = treatment", loc="upper center",
+            bbox_to_anchor=(0.5, 0.94), ncol=max(1, len(treatment_handles)),
+            frameon=False, fontsize=10, title_fontsize=10, labelcolor=palette["text"],
+        )
+        fig.legend(
+            handles=model_handles, title="Shape = model", loc="upper center",
+            bbox_to_anchor=(0.5, 0.875), ncol=max(1, len(model_handles)),
+            frameon=False, fontsize=10, title_fontsize=10, labelcolor=palette["text"],
+        )
+        split = (len(center_key) + 1) // 2
+        key_columns = (center_key[:split], center_key[split:])
+        for column_index, column in enumerate(key_columns):
+            x_position = 0.25 if column_index == 0 else 0.75
+            alignment = "right" if column_index == 0 else "left"
+            for line_index, label in enumerate(column):
+                fig.text(
+                    x_position, 0.81 - 0.03 * line_index,
+                    f"Center {label}", ha=alignment, va="center",
+                    fontsize=8.8, color=palette["text"],
+                )
+        fig.subplots_adjust(left=0.09, right=0.98, top=0.67, bottom=0.10)
         _save(fig, output, "model_treatment_multivariate_pca", theme)
+
+
+def plot_multivariate_pca_loadings(
+    output: Path,
+    loadings: list[dict[str, Any]],
+    explained: list[float],
+) -> None:
+    if not loadings:
+        return
+    ordered = sorted(loadings, key=lambda row: str(row["feature"]))
+    labels = [str(row["feature"]).replace("_", " ") for row in ordered]
+    pc1 = [float(row["pc1_loading"]) for row in ordered]
+    pc2 = [float(row["pc2_loading"]) for row in ordered]
+    y = np.arange(len(ordered), dtype=float)
+    for theme in ("light", "dark"):
+        palette = _theme(theme)
+        fig, ax = plt.subplots(figsize=(11.5, max(5.4, 0.72 * len(ordered))))
+        _style_axes(fig, ax, theme)
+        pc1_label = f"PC1 ({100 * explained[0]:.1f}%)" if explained else "PC1"
+        pc2_label = f"PC2 ({100 * explained[1]:.1f}%)" if len(explained) > 1 else "PC2"
+        ax.barh(y - 0.19, pc1, height=0.34, color="#2563eb", label=pc1_label)
+        ax.barh(y + 0.19, pc2, height=0.34, color="#f97316", label=pc2_label)
+        ax.set_yticks(y, labels)
+        ax.axvline(0, color=palette["text"], linewidth=1.0)
+        ax.set_xlabel("Loading (direction and contribution)")
+        ax.set_title("Features that shape the PCA axes", fontsize=18, fontweight="bold")
+        ax.legend(frameon=False, ncol=2)
+        ax.invert_yaxis()
+        fig.tight_layout()
+        _save(fig, output, "model_treatment_multivariate_pca_loadings", theme)
 
 
 def _load_events(run_dir: str) -> list[dict[str, Any]]:
@@ -1742,6 +1830,7 @@ def write_multi_model_analysis(
             ],
         )
     plot_multivariate_pca(output, scores, loadings, explained, centroids, descriptors)
+    plot_multivariate_pca_loadings(output, loadings, explained)
 
     timing_rows = timing_budget_summary(task_rows, descriptors)
     _write_csv(output / "model_treatment_time_budget.csv", timing_rows)
@@ -1779,4 +1868,5 @@ def write_multi_model_analysis(
         "tool_execution_seconds", "api_calls", "tool_calls",
     ):
         plot_trajectory_panels(output, trajectory_summary, descriptors, metric)
+    generated.extend(write_trace_timeseries(output, results, descriptors))
     return generated

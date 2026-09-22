@@ -1,0 +1,157 @@
+study_id,source_run_id,model,arm,event_kind,n_events,duration_ns,trajectory_included
+prior_relace,01__v4-1-flash__caveman__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,16,61044235425,True
+prior_relace,01__v4-1-flash__caveman__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,17,61044235425,True
+prior_relace,02__v4-flash-0731__ponytail__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,29,192661204675,True
+prior_relace,02__v4-flash-0731__ponytail__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,28,192661204675,True
+prior_relace,03__v4-flash-0731__baseline__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,38,126089805294,True
+prior_relace,03__v4-flash-0731__baseline__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,37,126089805294,True
+prior_relace,04__v4-flash-0731__caveman_ponytail__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,15,52122647644,True
+prior_relace,04__v4-flash-0731__caveman_ponytail__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,14,52122647644,True
+prior_relace,05__v4-1-flash__baseline__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,API responses,34,169099037694,True
+prior_relace,05__v4-1-flash__baseline__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,Completed tool calls,37,169099037694,True
+prior_relace,06__v4-1-flash__caveman__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,71,427695232895,True
+prior_relace,06__v4-1-flash__caveman__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,75,427695232895,True
+prior_relace,07__v4-1-flash__ponytail__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,31,178037769660,True
+prior_relace,07__v4-1-flash__ponytail__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,34,178037769660,True
+prior_relace,08__v4-1-flash__caveman__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,35,249203580034,True
+prior_relace,08__v4-1-flash__caveman__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,38,249203580034,True
+prior_relace,09__v4-flash-0731__caveman_ponytail__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,19,222585372718,True
+prior_relace,09__v4-flash-0731__caveman_ponytail__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,18,222585372718,True
+prior_relace,10__v4-1-flash__baseline__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,API responses,27,278978619865,True
+prior_relace,10__v4-1-flash__baseline__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,Completed tool calls,30,278978619865,True
+prior_relace,11__v4-1-flash__baseline__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,API responses,60,339368308366,True
+prior_relace,11__v4-1-flash__baseline__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,Completed tool calls,63,339368308366,True
+prior_relace,12__v4-flash-0731__caveman_ponytail__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,27,81111995413,True
+prior_relace,12__v4-flash-0731__caveman_ponytail__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,29,81111995413,True
+prior_relace,13__v4-1-flash__caveman_ponytail__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,API responses,155,1364421052987,True
+prior_relace,13__v4-1-flash__caveman_ponytail__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,Completed tool calls,157,1364421052987,True
+prior_relace,14__v4-flash-0731__caveman_ponytail__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,22,70124052284,True
+prior_relace,14__v4-flash-0731__caveman_ponytail__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,23,70124052284,True
+prior_relace,15__v4-flash-0731__caveman__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,35,193396507401,True
+prior_relace,15__v4-flash-0731__caveman__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,36,193396507401,True
+prior_relace,16__v4-flash-0731__baseline__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,51,170086743253,True
+prior_relace,16__v4-flash-0731__baseline__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,54,170086743253,True
+prior_relace,17__v4-flash-0731__ponytail__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,27,69664722597,True
+prior_relace,17__v4-flash-0731__ponytail__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,26,69664722597,True
+prior_relace,18__v4-flash-0731__ponytail__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,17,40948112290,True
+prior_relace,18__v4-flash-0731__ponytail__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,16,40948112290,True
+prior_relace,19__v4-flash-0731__caveman__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,44,133671637873,True
+prior_relace,19__v4-flash-0731__caveman__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,44,133671637873,True
+prior_relace,20__v4-1-flash__ponytail__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,61,407819412382,True
+prior_relace,20__v4-1-flash__ponytail__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,64,407819412382,True
+prior_relace,21__v4-1-flash__ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,46,351962851946,True
+prior_relace,21__v4-1-flash__ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,46,351962851946,True
+prior_relace,22__v4-flash-0731__ponytail__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,23,50208007361,True
+prior_relace,22__v4-flash-0731__ponytail__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,23,50208007361,True
+prior_relace,23__v4-flash-0731__baseline__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,53,189433875461,True
+prior_relace,23__v4-flash-0731__baseline__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,52,189433875461,True
+prior_relace,24__v4-flash-0731__baseline__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,31,116430121044,True
+prior_relace,24__v4-flash-0731__baseline__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,30,116430121044,True
+prior_relace,25__v4-flash-0731__baseline__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,38,127681103196,True
+prior_relace,25__v4-flash-0731__baseline__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,40,127681103196,True
+prior_relace,26__v4-1-flash__caveman__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,34,168631786314,True
+prior_relace,26__v4-1-flash__caveman__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,39,168631786314,True
+prior_relace,27__v4-1-flash__caveman_ponytail__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,API responses,63,446655618582,True
+prior_relace,27__v4-1-flash__caveman_ponytail__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,Completed tool calls,66,446655618582,True
+prior_relace,28__v4-1-flash__caveman__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,32,239590894964,True
+prior_relace,28__v4-1-flash__caveman__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,34,239590894964,True
+prior_relace,29__v4-flash-0731__caveman__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,53,175683029407,True
+prior_relace,29__v4-flash-0731__caveman__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,54,175683029407,True
+prior_relace,30__v4-1-flash__ponytail__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,185,1099858603098,True
+prior_relace,30__v4-1-flash__ponytail__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,190,1099858603098,True
+prior_relace,31__v4-flash-0731__caveman__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,30,97222690624,True
+prior_relace,31__v4-flash-0731__caveman__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,30,97222690624,True
+prior_relace,32__v4-1-flash__caveman_ponytail__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,API responses,31,164246914985,True
+prior_relace,32__v4-1-flash__caveman_ponytail__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,Completed tool calls,32,164246914985,True
+prior_relace,33__v4-flash-0731__caveman_ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,30,77319083596,True
+prior_relace,33__v4-flash-0731__caveman_ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,32,77319083596,True
+prior_relace,34__v4-1-flash__baseline__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,API responses,54,273596720364,True
+prior_relace,34__v4-1-flash__baseline__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,Completed tool calls,57,273596720364,True
+prior_relace,36__v4-flash-0731__caveman__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,31,144319210718,True
+prior_relace,36__v4-flash-0731__caveman__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,32,144319210718,True
+prior_relace,37__v4-1-flash__ponytail__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,57,323256156911,True
+prior_relace,37__v4-1-flash__ponytail__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,59,323256156911,True
+prior_relace,39__v4-1-flash__caveman_ponytail__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,API responses,45,243885925844,True
+prior_relace,39__v4-1-flash__caveman_ponytail__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,Completed tool calls,52,243885925844,True
+prior_relace,40__v4-flash-0731__ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,37,223358420388,True
+prior_relace,40__v4-flash-0731__ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,36,223358420388,True
+current_mixed_provider,01__v4-1-flash__caveman_ponytail__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,API responses,48,247661940222,True
+current_mixed_provider,01__v4-1-flash__caveman_ponytail__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,Completed tool calls,52,247661940222,True
+current_mixed_provider,02__v4-flash-0731__ponytail__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,25,93189702537,True
+current_mixed_provider,02__v4-flash-0731__ponytail__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,26,93189702537,True
+current_mixed_provider,03__v4-1-flash__caveman__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,38,84416243286,True
+current_mixed_provider,03__v4-1-flash__caveman__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,39,84416243286,True
+current_mixed_provider,04__v4-1-flash__caveman_ponytail__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,API responses,27,56721527970,True
+current_mixed_provider,04__v4-1-flash__caveman_ponytail__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,Completed tool calls,29,56721527970,True
+current_mixed_provider,05__v4-flash-0731__caveman_ponytail__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,33,116626301258,True
+current_mixed_provider,05__v4-flash-0731__caveman_ponytail__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,35,116626301258,True
+current_mixed_provider,06__v4-flash-0731__caveman_ponytail__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,30,91577236544,True
+current_mixed_provider,06__v4-flash-0731__caveman_ponytail__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,32,91577236544,True
+current_mixed_provider,07__v4-1-flash__caveman__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,112,648905452400,True
+current_mixed_provider,07__v4-1-flash__caveman__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,118,648905452400,True
+current_mixed_provider,08__v4-1-flash__caveman__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,73,192388601512,True
+current_mixed_provider,08__v4-1-flash__caveman__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,75,192388601512,True
+current_mixed_provider,09__v4-flash-0731__ponytail__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,29,91206209566,True
+current_mixed_provider,09__v4-flash-0731__ponytail__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,28,91206209566,True
+current_mixed_provider,10__v4-1-flash__ponytail__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,317,825349073984,True
+current_mixed_provider,10__v4-1-flash__ponytail__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,325,825349073984,True
+current_mixed_provider,11__v4-1-flash__ponytail__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,22,45874535132,True
+current_mixed_provider,11__v4-1-flash__ponytail__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,22,45874535132,True
+current_mixed_provider,12__v4-1-flash__baseline__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,API responses,51,142840906789,True
+current_mixed_provider,12__v4-1-flash__baseline__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,Completed tool calls,56,142840906789,True
+current_mixed_provider,13__v4-1-flash__caveman_ponytail__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,API responses,397,1088358206670,True
+current_mixed_provider,13__v4-1-flash__caveman_ponytail__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,Completed tool calls,400,1088358206670,True
+current_mixed_provider,14__v4-1-flash__caveman_ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,API responses,125,292003917217,True
+current_mixed_provider,14__v4-1-flash__caveman_ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,Completed tool calls,125,292003917217,True
+current_mixed_provider,15__v4-1-flash__ponytail__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,49,376611666305,True
+current_mixed_provider,15__v4-1-flash__ponytail__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,54,376611666305,True
+current_mixed_provider,16__v4-1-flash__caveman__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,46,200008881501,True
+current_mixed_provider,16__v4-1-flash__caveman__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,46,200008881501,True
+current_mixed_provider,17__v4-flash-0731__caveman__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,34,107323878097,True
+current_mixed_provider,17__v4-flash-0731__caveman__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,33,107323878097,True
+current_mixed_provider,18__v4-1-flash__baseline__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,API responses,94,220922759797,True
+current_mixed_provider,18__v4-1-flash__baseline__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,Completed tool calls,95,220922759797,True
+current_mixed_provider,19__v4-1-flash__ponytail__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,27,56192337984,True
+current_mixed_provider,19__v4-1-flash__ponytail__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,28,56192337984,True
+current_mixed_provider,20__v4-flash-0731__caveman_ponytail__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,24,72372940496,True
+current_mixed_provider,20__v4-flash-0731__caveman_ponytail__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,25,72372940496,True
+current_mixed_provider,21__v4-1-flash__baseline__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,API responses,25,48224103028,True
+current_mixed_provider,21__v4-1-flash__baseline__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,Completed tool calls,25,48224103028,True
+current_mixed_provider,22__v4-1-flash__caveman_ponytail__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,API responses,116,264776722192,True
+current_mixed_provider,22__v4-1-flash__caveman_ponytail__django__django-15731__r1,deepseek/deepseek-v4.1-flash-20260910,caveman_ponytail,Completed tool calls,116,264776722192,True
+current_mixed_provider,23__v4-flash-0731__ponytail__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,29,68389847226,True
+current_mixed_provider,23__v4-flash-0731__ponytail__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,28,68389847226,True
+current_mixed_provider,24__v4-flash-0731__baseline__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,35,82623260514,True
+current_mixed_provider,24__v4-flash-0731__baseline__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,36,82623260514,True
+current_mixed_provider,25__v4-1-flash__caveman__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,API responses,340,864609202865,True
+current_mixed_provider,25__v4-1-flash__caveman__django__django-7530__r1,deepseek/deepseek-v4.1-flash-20260910,caveman,Completed tool calls,349,864609202865,True
+current_mixed_provider,26__v4-flash-0731__baseline__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,59,369765468022,True
+current_mixed_provider,26__v4-flash-0731__baseline__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,58,369765468022,True
+current_mixed_provider,27__v4-flash-0731__ponytail__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,25,159359709608,True
+current_mixed_provider,27__v4-flash-0731__ponytail__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,24,159359709608,True
+current_mixed_provider,28__v4-flash-0731__caveman_ponytail__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,48,307574485870,True
+current_mixed_provider,28__v4-flash-0731__caveman_ponytail__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,50,307574485870,True
+current_mixed_provider,29__v4-1-flash__baseline__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,API responses,36,73122826305,True
+current_mixed_provider,29__v4-1-flash__baseline__django__django-16662__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,Completed tool calls,39,73122826305,True
+current_mixed_provider,30__v4-flash-0731__baseline__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,43,155435006378,True
+current_mixed_provider,30__v4-flash-0731__baseline__django__django-16662__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,42,155435006378,True
+current_mixed_provider,31__v4-flash-0731__caveman__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,37,227160118254,True
+current_mixed_provider,31__v4-flash-0731__caveman__django__django-15731__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,40,227160118254,True
+current_mixed_provider,32__v4-flash-0731__ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,ponytail,API responses,29,259820060774,True
+current_mixed_provider,32__v4-flash-0731__ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,ponytail,Completed tool calls,30,259820060774,True
+current_mixed_provider,33__v4-flash-0731__caveman__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,43,246218776323,True
+current_mixed_provider,33__v4-flash-0731__caveman__django__django-13516__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,42,246218776323,True
+current_mixed_provider,34__v4-flash-0731__caveman__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,30,351468400900,True
+current_mixed_provider,34__v4-flash-0731__caveman__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,32,351468400900,True
+current_mixed_provider,35__v4-1-flash__ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,API responses,44,397994964626,True
+current_mixed_provider,35__v4-1-flash__ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4.1-flash-20260910,ponytail,Completed tool calls,45,397994964626,True
+current_mixed_provider,36__v4-flash-0731__caveman__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,caveman,API responses,35,127905974130,True
+current_mixed_provider,36__v4-flash-0731__caveman__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,caveman,Completed tool calls,36,127905974130,True
+current_mixed_provider,37__v4-1-flash__baseline__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,API responses,39,110030045438,True
+current_mixed_provider,37__v4-1-flash__baseline__django__django-13516__r1,deepseek/deepseek-v4.1-flash-20260910,baseline,Completed tool calls,41,110030045438,True
+current_mixed_provider,38__v4-flash-0731__baseline__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,27,59041186323,True
+current_mixed_provider,38__v4-flash-0731__baseline__django__django-7530__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,27,59041186323,True
+current_mixed_provider,39__v4-flash-0731__baseline__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,baseline,API responses,54,545462223839,True
+current_mixed_provider,39__v4-flash-0731__baseline__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,baseline,Completed tool calls,57,545462223839,True
+current_mixed_provider,40__v4-flash-0731__caveman_ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,API responses,33,193116904212,True
+current_mixed_provider,40__v4-flash-0731__caveman_ponytail__pytest-dev__pytest-7571__r1,deepseek/deepseek-v4-flash-0731,caveman_ponytail,Completed tool calls,33,193116904212,True
