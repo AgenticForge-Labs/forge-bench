@@ -536,6 +536,58 @@ def as_float(value: Any) -> float | None:
         return None
 
 
+def stream_json_usage(
+    stdout: str,
+    *,
+    model: str,
+    provider: str = "openrouter",
+) -> dict[str, Any]:
+    """Recover usage from the finite Hermes chat stream-json result.
+
+    Forge Bench uses the finite chat path because the legacy -z path bypasses
+    the normal CLI turn-limit plumbing. API-call and iteration counts come
+    from the observer hooks separately.
+    """
+    terminal: dict[str, Any] | None = None
+    session_id = ""
+    for line in (stdout or "").splitlines():
+        try:
+            row = json.loads(line)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(row, dict):
+            continue
+        if row.get("type") == "system" and row.get("subtype") == "init":
+            session_id = str(row.get("session_id") or session_id)
+        if row.get("type") == "result":
+            terminal = row
+            session_id = str(row.get("session_id") or session_id)
+
+    if terminal is None:
+        return {
+            "model": model,
+            "provider": provider,
+            "session_id": session_id,
+        }
+
+    tokens = terminal.get("tokens") or {}
+    exit_code = as_int(terminal.get("exit_code"))
+    return {
+        "model": model,
+        "provider": provider,
+        "session_id": session_id,
+        "input_tokens": as_int(tokens.get("input")),
+        "output_tokens": as_int(tokens.get("output")),
+        "cache_read_tokens": as_int(tokens.get("cache_read")),
+        "cache_write_tokens": as_int(tokens.get("cache_write")),
+        "reasoning_tokens": 0,
+        "total_tokens": as_int(tokens.get("total")),
+        "completed": exit_code == 0,
+        "failed": exit_code != 0,
+        "turn_exit_reason": str(terminal.get("error") or ""),
+    }
+
+
 def session_db_values(profile: Path, session_id: str) -> dict[str, Any]:
     db = profile / "state.db"
     if not db.exists() or not session_id:
@@ -1007,6 +1059,8 @@ def run_one(
     upstream_provider: str = PINNED_OPENROUTER_UPSTREAM,
     reasoning: str = PINNED_REASONING,
     model_key: str | None = None,
+    max_turns: int = PINNED_MAX_TURNS,
+    budget_warning_ratio: float | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> Result:
     def report(message: str) -> None:
@@ -1036,8 +1090,14 @@ def run_one(
 
     _caveman, ponytail, lean = ARMS.get(arm, (False, False, False))
     hermes_args = [
-        "-z",
+        "chat",
+        "--oneshot",
+        "-q",
         prompt,
+        "--format",
+        "stream-json",
+        "--max-turns",
+        str(max_turns),
         "--ignore-rules",
         "--toolsets",
         LEAN_TOOLSETS if lean else DEFAULT_TOOLSETS,
@@ -1094,10 +1154,18 @@ def run_one(
             timeout_usage = (
                 json.loads(usage_file.read_text(encoding="utf-8"))
                 if usage_file.exists()
-                else {}
+                else stream_json_usage(
+                    str(exc.stdout or ""),
+                    model=model,
+                    provider="openrouter",
+                )
             )
         except Exception:
-            timeout_usage = {}
+            timeout_usage = stream_json_usage(
+                str(exc.stdout or ""),
+                model=model,
+                provider="openrouter",
+            )
         session_id = str(timeout_usage.get("session_id") or "")
         timing, trace_exported = finalize_trace_artifacts(
             hermes,
@@ -1159,6 +1227,20 @@ def run_one(
             diff_lines=0,
             run_dir=str(run_dir),
             error="Hermes timeout",
+            max_turns=max_turns,
+            budget_warning_ratio=budget_warning_ratio,
+            main_api_calls=as_int(timing.get("api_post_event_count")),
+            auxiliary_api_calls=None,
+            iterations_used=(
+                as_int(timing.get("iterations_used"))
+                if timing.get("iterations_used") is not None
+                else None
+            ),
+            turn_exit_reason=str(
+                timing.get("turn_exit_reason")
+                or timeout_usage.get("turn_exit_reason")
+                or "timeout"
+            ),
             api_wait_seconds=as_float(timing.get("api_wait_seconds")),
             tool_execution_seconds=as_float(timing.get("tool_execution_seconds")),
             terminal_execution_seconds=as_float(timing.get("terminal_execution_seconds")),
@@ -1223,10 +1305,18 @@ def run_one(
         usage = (
             json.loads(usage_file.read_text(encoding="utf-8"))
             if usage_file.exists()
-            else {}
+            else stream_json_usage(
+                proc.stdout,
+                model=model,
+                provider="openrouter",
+            )
         )
     except Exception:
-        usage = {}
+        usage = stream_json_usage(
+            proc.stdout,
+            model=model,
+            provider="openrouter",
+        )
 
     grand = usage.get("total_including_auxiliary") or {}
     session_id = str(usage.get("session_id") or "")
@@ -1248,6 +1338,26 @@ def run_one(
         timing,
         model=model,
         upstream_provider=upstream_provider,
+    )
+
+    auxiliary = usage.get("auxiliary") or {}
+    main_api_calls = (
+        as_int(timing.get("api_post_event_count"))
+        or as_int(usage.get("api_calls"))
+    )
+    total_api_calls = (
+        as_int(grand.get("api_calls"))
+        or main_api_calls
+    )
+    iterations_used = (
+        as_int(timing.get("iterations_used"))
+        if timing.get("iterations_used") is not None
+        else None
+    )
+    turn_exit_reason = str(
+        timing.get("turn_exit_reason")
+        or usage.get("turn_exit_reason")
+        or ""
     )
 
     estimated = as_float(grand.get("estimated_cost_usd"))
@@ -1333,10 +1443,7 @@ def run_one(
             as_int(grand.get("total_tokens"))
             or as_int(usage.get("total_tokens"))
         ),
-        api_calls=(
-            as_int(grand.get("api_calls"))
-            or as_int(usage.get("api_calls"))
-        ),
+        api_calls=total_api_calls,
         estimated_cost_usd=estimated,
         actual_cost_usd=actual,
         cost_usd=cost,
@@ -1350,6 +1457,15 @@ def run_one(
         diff_lines=diff_lines,
         run_dir=str(run_dir),
         error="; ".join(errors),
+        max_turns=max_turns,
+        budget_warning_ratio=budget_warning_ratio,
+        main_api_calls=main_api_calls,
+        auxiliary_api_calls=(
+            as_int(auxiliary.get("api_calls"))
+            if auxiliary else None
+        ),
+        iterations_used=iterations_used,
+        turn_exit_reason=turn_exit_reason,
         api_wait_seconds=as_float(timing.get("api_wait_seconds")),
         tool_execution_seconds=as_float(timing.get("tool_execution_seconds")),
         terminal_execution_seconds=as_float(timing.get("terminal_execution_seconds")),
