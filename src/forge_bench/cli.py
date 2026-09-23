@@ -382,8 +382,8 @@ def _preflight(args: argparse.Namespace) -> str | None:
             (
                 [*probe_prefix, "chat", "--help"],
                 [
-                    "--toolsets", "--reasoning", "--usage-file", "--ignore-rules",
-                    "--oneshot", "--max-turns",
+                    "--toolsets", "--reasoning", "--ignore-rules",
+                    "--oneshot", "--max-turns", "--format",
                 ],
                 "Hermes Docker finite chat CLI",
             ),
@@ -410,8 +410,8 @@ def _preflight(args: argparse.Namespace) -> str | None:
             (
                 [args.hermes, "chat", "--help"],
                 [
-                    "--toolsets", "--reasoning", "--usage-file", "--ignore-rules",
-                    "--oneshot", "--max-turns",
+                    "--toolsets", "--reasoning", "--ignore-rules",
+                    "--oneshot", "--max-turns", "--format",
                 ],
                 "Hermes finite chat CLI",
             ),
