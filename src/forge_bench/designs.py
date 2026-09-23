@@ -49,6 +49,8 @@ class ExperimentDesign:
     seed: int
     max_turns: int
     budget_warning_ratio: float | None
+    max_turns_levels: tuple[int, ...]
+    budget_warning_ratio_levels: tuple[float | None, ...]
     analysis_mode: str
     require_same_upstream: bool
     source_path: str | None = None
@@ -82,6 +84,8 @@ def default_design() -> ExperimentDesign:
         seed=DEFAULT_SEED,
         max_turns=PINNED_MAX_TURNS,
         budget_warning_ratio=None,
+        max_turns_levels=(PINNED_MAX_TURNS,),
+        budget_warning_ratio_levels=(None,),
         analysis_mode="basic",
         require_same_upstream=True,
     )
@@ -197,15 +201,49 @@ def load_design(path: Path) -> ExperimentDesign:
             "each block contains every model x treatment x task cell exactly once"
         )
 
-    max_turns = int(root.get("max_turns", PINNED_MAX_TURNS))
-    if max_turns < 1:
-        raise ValueError("max_turns must be >= 1")
-    budget_warning_raw = root.get("budget_warning_ratio")
-    budget_warning_ratio = (
-        None if budget_warning_raw is None else float(budget_warning_raw)
+    factors = _require_mapping(root.get("factors") or {}, "factors")
+
+    max_turns_source = factors.get(
+        "max_turns",
+        [root.get("max_turns", PINNED_MAX_TURNS)],
     )
-    if budget_warning_ratio is not None and not (0.0 < budget_warning_ratio < 1.0):
-        raise ValueError("budget_warning_ratio must be null or strictly between 0 and 1")
+    if not isinstance(max_turns_source, list):
+        max_turns_source = [max_turns_source]
+    if not max_turns_source:
+        raise ValueError("factors.max_turns must contain at least one level")
+    max_turns_levels = tuple(int(value) for value in max_turns_source)
+    if any(value < 1 for value in max_turns_levels):
+        raise ValueError("all factors.max_turns levels must be >= 1")
+    if len(set(max_turns_levels)) != len(max_turns_levels):
+        raise ValueError("factors.max_turns must not contain duplicate levels")
+
+    warning_source = factors.get(
+        "budget_warning_ratio",
+        [root.get("budget_warning_ratio")],
+    )
+    if not isinstance(warning_source, list):
+        warning_source = [warning_source]
+    if not warning_source:
+        raise ValueError("factors.budget_warning_ratio must contain at least one level")
+    budget_warning_ratio_levels = tuple(
+        None if value is None else float(value)
+        for value in warning_source
+    )
+    if any(
+        value is not None and not (0.0 < value < 1.0)
+        for value in budget_warning_ratio_levels
+    ):
+        raise ValueError(
+            "all factors.budget_warning_ratio levels must be null or strictly between 0 and 1"
+        )
+    if len(set(budget_warning_ratio_levels)) != len(budget_warning_ratio_levels):
+        raise ValueError("factors.budget_warning_ratio must not contain duplicate levels")
+
+    # Keep the scalar attributes for backward compatibility with older callers.
+    # Factorial execution uses the explicit level tuples below.
+    max_turns = max_turns_levels[0]
+    budget_warning_ratio = budget_warning_ratio_levels[0]
+
     analysis_mode = str(root.get("analysis_mode") or "advanced")
     if analysis_mode not in {"basic", "advanced"}:
         raise ValueError("analysis_mode must be basic or advanced")
@@ -224,6 +262,8 @@ def load_design(path: Path) -> ExperimentDesign:
         seed=seed,
         max_turns=max_turns,
         budget_warning_ratio=budget_warning_ratio,
+        max_turns_levels=max_turns_levels,
+        budget_warning_ratio_levels=budget_warning_ratio_levels,
         analysis_mode=analysis_mode,
         require_same_upstream=require_same_upstream,
         source_path=str(path),
