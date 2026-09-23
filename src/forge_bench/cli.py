@@ -246,6 +246,9 @@ def failed_result(
     run_dir: Path,
     error: Exception,
     model_spec: ModelSpec | None = None,
+    *,
+    max_turns: int | None = None,
+    budget_warning_ratio: float | None = None,
 ) -> Result:
     model_spec = model_spec or default_design().models[0]
     return Result(
@@ -283,6 +286,11 @@ def failed_result(
         diff_lines=0,
         run_dir=str(run_dir),
         error=str(error),
+        max_turns=max_turns,
+        budget_warning_ratio=budget_warning_ratio,
+        main_api_calls=0,
+        auxiliary_api_calls=0,
+        turn_exit_reason="harness_error",
     )
 
 
@@ -818,6 +826,8 @@ def main() -> int:
             args.repeats,
             args.seed,
             models=list(design.models),
+            max_turns_levels=design.max_turns_levels,
+            budget_warning_ratio_levels=design.budget_warning_ratio_levels,
         )
         meta["repeat_seeds"] = preview_seeds
         (output / "metadata.json").write_text(
@@ -830,6 +840,8 @@ def main() -> int:
             print(
                 f"  {int(item['run_index']):02d}: "
                 f"{item['model_label']} / {LABEL[str(item['arm'])]} / "
+                f"turns={item['max_turns']} / "
+                f"reminder={item['budget_warning_ratio']} / "
                 f"{item['instance_id']} / block {item['repeat']}"
             )
         print(f"\nPlan: {len(preview_plan)} cells; no model calls were made.")
