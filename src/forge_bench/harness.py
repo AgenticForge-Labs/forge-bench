@@ -550,6 +550,7 @@ def stream_json_usage(
     """
     terminal: dict[str, Any] | None = None
     session_id = ""
+    observed_model = model
     for line in (stdout or "").splitlines():
         try:
             row = json.loads(line)
@@ -559,13 +560,14 @@ def stream_json_usage(
             continue
         if row.get("type") == "system" and row.get("subtype") == "init":
             session_id = str(row.get("session_id") or session_id)
+            observed_model = str(row.get("model") or observed_model)
         if row.get("type") == "result":
             terminal = row
             session_id = str(row.get("session_id") or session_id)
 
     if terminal is None:
         return {
-            "model": model,
+            "model": observed_model,
             "provider": provider,
             "session_id": session_id,
         }
@@ -573,7 +575,7 @@ def stream_json_usage(
     tokens = terminal.get("tokens") or {}
     exit_code = as_int(terminal.get("exit_code"))
     return {
-        "model": model,
+        "model": observed_model,
         "provider": provider,
         "session_id": session_id,
         "input_tokens": as_int(tokens.get("input")),
