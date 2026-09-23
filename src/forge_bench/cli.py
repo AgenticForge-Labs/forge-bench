@@ -48,6 +48,7 @@ from .harness import (
     source_home,
 )
 from .reporting import reanalyze_output, write_csv, write_experiment_reports
+from .factorial_analysis import write_factorial_analysis
 from .trace_capture import install_trace_plugin
 
 from .swebench_backend import (
@@ -246,6 +247,9 @@ def failed_result(
     run_dir: Path,
     error: Exception,
     model_spec: ModelSpec | None = None,
+    *,
+    max_turns: int | None = None,
+    budget_warning_ratio: float | None = None,
 ) -> Result:
     model_spec = model_spec or default_design().models[0]
     return Result(
@@ -283,6 +287,11 @@ def failed_result(
         diff_lines=0,
         run_dir=str(run_dir),
         error=str(error),
+        max_turns=max_turns,
+        budget_warning_ratio=budget_warning_ratio,
+        main_api_calls=0,
+        auxiliary_api_calls=0,
+        turn_exit_reason="harness_error",
     )
 
 
@@ -371,9 +380,12 @@ def _preflight(args: argparse.Namespace) -> str | None:
         probe_prefix = ["docker", "run", "--rm", "--pull=never", image_id]
         checks = [
             (
-                [*probe_prefix, "--help"],
-                ["--toolsets", "--reasoning", "--usage-file", "--ignore-rules"],
-                "Hermes Docker one-shot CLI",
+                [*probe_prefix, "chat", "--help"],
+                [
+                    "--toolsets", "--reasoning", "--ignore-rules",
+                    "--oneshot", "--max-turns", "--format",
+                ],
+                "Hermes Docker finite chat CLI",
             ),
             (
                 [*probe_prefix, "plugins", "install", "--help"],
@@ -396,9 +408,12 @@ def _preflight(args: argparse.Namespace) -> str | None:
             raise SystemExit(f"Hermes executable not found: {args.hermes}")
         checks = [
             (
-                [args.hermes, "--help"],
-                ["--toolsets", "--reasoning", "--usage-file", "--ignore-rules"],
-                "Hermes one-shot CLI",
+                [args.hermes, "chat", "--help"],
+                [
+                    "--toolsets", "--reasoning", "--ignore-rules",
+                    "--oneshot", "--max-turns", "--format",
+                ],
+                "Hermes finite chat CLI",
             ),
             (
                 [args.hermes, "plugins", "install", "--help"],
@@ -450,8 +465,15 @@ def build_run_plan(
     repeats: int,
     master_seed: int,
     models: list[ModelSpec] | None = None,
+    max_turns_levels: tuple[int, ...] | list[int] | None = None,
+    budget_warning_ratio_levels: tuple[float | None, ...] | list[float | None] | None = None,
 ) -> tuple[list[dict[str, Any]], list[int]]:
-    """Build complete model×treatment×task blocks and shuffle each block once."""
+    """Build complete factorial blocks and shuffle each block once.
+
+    Iteration budget and reminder ratio are explicit randomized factors, not
+    global execution settings, so their main effects and interactions remain
+    estimable independently of model, treatment, and task.
+    """
     seed_rng = random.Random(master_seed)
     repeat_seeds = [master_seed]
     while len(repeat_seeds) < repeats:
@@ -459,7 +481,12 @@ def build_run_plan(
         if candidate not in repeat_seeds:
             repeat_seeds.append(candidate)
 
-    model_specs = models or list(default_design().models)
+    defaults = default_design()
+    model_specs = models or list(defaults.models)
+    turn_levels = list(max_turns_levels or defaults.max_turns_levels)
+    warning_levels = list(
+        budget_warning_ratio_levels or defaults.budget_warning_ratio_levels
+    )
     plan: list[dict[str, Any]] = []
     for repeat in range(1, repeats + 1):
         repeat_seed = repeat_seeds[repeat - 1]
@@ -472,6 +499,8 @@ def build_run_plan(
                 "upstream_provider": model_spec.upstream_provider,
                 "reasoning": model_spec.reasoning,
                 "arm": arm,
+                "max_turns": max_turns,
+                "budget_warning_ratio": budget_warning_ratio,
                 "instance_id": instance_id,
                 "repeat": repeat,
                 "repeat_seed": repeat_seed,
@@ -479,6 +508,8 @@ def build_run_plan(
             for model_spec in model_specs
             for instance_id in task_ids
             for arm in arms
+            for max_turns in turn_levels
+            for budget_warning_ratio in warning_levels
         ]
         random.Random(repeat_seed).shuffle(block)
         for block_position, item in enumerate(block, 1):
@@ -716,8 +747,18 @@ def main() -> int:
             if len({model.reasoning for model in design.models}) == 1
             else "mixed"
         ),
-        "max_turns": design.max_turns,
-        "budget_warning_ratio": design.budget_warning_ratio,
+        "max_turns": (
+            design.max_turns_levels[0] if len(design.max_turns_levels) == 1 else None
+        ),
+        "budget_warning_ratio": (
+            design.budget_warning_ratio_levels[0]
+            if len(design.budget_warning_ratio_levels) == 1
+            else None
+        ),
+        "factor_levels": {
+            "max_turns": list(design.max_turns_levels),
+            "budget_warning_ratio": list(design.budget_warning_ratio_levels),
+        },
         "swebench_version": "4.1.0",
         "hermes_runtime": args.hermes_runtime,
         "hermes_image_ref": args.hermes_image if args.hermes_runtime == "docker" else None,
@@ -738,12 +779,14 @@ def main() -> int:
         "repeat_seeds": [],
         "randomization": (
             "full-factorial randomized complete blocks: each block contains "
-            "every model x treatment x selected-instance cell exactly once; "
-            "all cells are shuffled together with the block's recorded repeat_seed"
+            "every model x treatment x max_turns x budget_warning_ratio x "
+            "selected-instance cell exactly once; all cells are shuffled together "
+            "with the block's recorded repeat_seed"
         ),
         "confidence_interval": (
-            "two-sided 95% Student-t across selected task means; "
-            "repeats are averaged within model x treatment x task first"
+            "two-sided 95% Student-t across selected task means; repeats are "
+            "averaged within model x treatment x max_turns x "
+            "budget_warning_ratio x task first"
         ),
         "trace_capture": {
             "enabled": True,
@@ -784,6 +827,8 @@ def main() -> int:
             args.repeats,
             args.seed,
             models=list(design.models),
+            max_turns_levels=design.max_turns_levels,
+            budget_warning_ratio_levels=design.budget_warning_ratio_levels,
         )
         meta["repeat_seeds"] = preview_seeds
         (output / "metadata.json").write_text(
@@ -796,6 +841,8 @@ def main() -> int:
             print(
                 f"  {int(item['run_index']):02d}: "
                 f"{item['model_label']} / {LABEL[str(item['arm'])]} / "
+                f"turns={item['max_turns']} / "
+                f"reminder={item['budget_warning_ratio']} / "
                 f"{item['instance_id']} / block {item['repeat']}"
             )
         print(f"\nPlan: {len(preview_plan)} cells; no model calls were made.")
@@ -839,6 +886,8 @@ def main() -> int:
         args.repeats,
         args.seed,
         models=models,
+        max_turns_levels=design.max_turns_levels,
+        budget_warning_ratio_levels=design.budget_warning_ratio_levels,
     )
     meta["repeat_seeds"] = repeat_seeds
     (output / "metadata.json").write_text(
@@ -929,10 +978,18 @@ def main() -> int:
             instance = instance_by_id[instance_id]
             repeat = int(item["repeat"])
             run_index = int(item["run_index"])
+            max_turns = int(item["max_turns"])
+            budget_warning_ratio = item["budget_warning_ratio"]
+            reminder_label = (
+                "off"
+                if budget_warning_ratio is None
+                else f"{float(budget_warning_ratio):.0%}"
+            )
 
             print(
                 f"[{run_index:02d}/{len(plan):02d}] "
-                f"{model_spec.label} / {LABEL[arm]} / {instance_id} / b{repeat}"
+                f"{model_spec.label} / {LABEL[arm]} / turns={max_turns} / "
+                f"reminder={reminder_label} / {instance_id} / b{repeat}"
             )
 
             def report_run_progress(message: str) -> None:
@@ -941,6 +998,16 @@ def main() -> int:
             run_profile = root / "run-profiles" / f"{run_index:02d}__{model_key}__{arm}"
             run_profile.parent.mkdir(parents=True, exist_ok=True)
             shutil.copytree(templates[(model_key, arm)], run_profile, symlinks=True)
+            # Reassert the randomized per-run factor assignment after copying
+            # the treatment template. This also leaves the exact values in the
+            # preserved hermes-config.yaml evidence.
+            pin_profile_route(
+                run_profile,
+                model=model_spec.model,
+                upstream_provider=model_spec.upstream_provider,
+                max_turns=max_turns,
+                budget_warning_ratio=budget_warning_ratio,
+            )
 
             try:
                 result = run_one(
@@ -962,6 +1029,8 @@ def main() -> int:
                     upstream_provider=model_spec.upstream_provider,
                     reasoning=model_spec.reasoning,
                     model_key=model_spec.key,
+                    max_turns=max_turns,
+                    budget_warning_ratio=budget_warning_ratio,
                     progress=report_run_progress,
                 )
             except Exception as exc:
@@ -977,7 +1046,9 @@ def main() -> int:
                 )
                 print("    HARNESS ERROR:", str(exc).splitlines()[0])
                 result = failed_result(
-                    arm, instance, repeat, run_index, run_dir, exc, model_spec
+                    arm, instance, repeat, run_index, run_dir, exc, model_spec,
+                    max_turns=max_turns,
+                    budget_warning_ratio=budget_warning_ratio,
                 )
             finally:
                 shutil.rmtree(run_profile, ignore_errors=True)
@@ -1022,6 +1093,9 @@ def main() -> int:
         meta,
         analysis_mode=args.analysis_mode,
     )
+    factorial_is_active = write_factorial_analysis(output, results)
+    if factorial_is_active:
+        print("Factorial tables:", output / "factorial_*.csv")
 
     partial = output / "runs.partial.json"
     if partial.exists():

@@ -52,8 +52,13 @@ provider:
   require_same_upstream: true
 
 reasoning: none
-max_turns: 100
-budget_warning_ratio: null
+
+# Optional randomized agent-budget factors. Each list is crossed with every
+# model, treatment, and selected task inside every randomized block.
+factors:
+  max_turns: [50, 100]
+  budget_warning_ratio: [null, 0.75]
+
 analysis_mode: advanced
 
 models:
@@ -80,16 +85,23 @@ randomization:
   seed: 260920
 ```
 
-`budget_warning_ratio` may be `null` (no early budget-pressure warning) or a
-floating-point ratio strictly between 0 and 1. The V4/V4.1 experiment pins it to
-`null`.
+`factors.max_turns` accepts one or more positive integer levels.
+`factors.budget_warning_ratio` accepts one or more levels, where `null` means
+no model-visible iteration-budget reminder and a floating-point value strictly
+between 0 and 1 means Hermes injects its one-time checkpoint reminder at that
+fraction of the assigned iteration budget.
+
+The historical root-level `max_turns` and `budget_warning_ratio` fields remain
+supported as single-level shorthand, so existing experiment YAMLs are unchanged.
+When a `factors` entry is present it takes precedence over the corresponding
+root-level shorthand.
 
 ## Randomization
 
 A block is the complete Cartesian product:
 
 ```text
-models × treatments × selected tasks
+models × treatments × max_turns × budget_warning_ratio × selected tasks
 ```
 
 Every cell appears exactly once in each block. Forge Bench constructs the whole
@@ -101,15 +113,24 @@ Additional blocks receive independently derived seeds. The master seed,
 per-block seeds, global run index, and within-block position are all written to
 `run_plan.csv` and `metadata.json`.
 
-Repeated observations are averaged within model × treatment × task before
-across-task confidence intervals are calculated.
+Repeated observations are averaged within model × treatment × max_turns ×
+budget_warning_ratio × task before across-task confidence intervals are
+calculated. This preserves task as the independent experimental unit while
+keeping the two agent-budget factors separate.
 
 ## Analysis hierarchy
 
 For multi-model designs the primary inferential unit is the selected task, not
 an API call, tool event, or randomized run. If `blocks > 1`, Forge Bench first
-averages repeats within each task × model × treatment cell and then performs the
-across-task analysis.
+averages repeats within each task × model × treatment × max_turns ×
+budget_warning_ratio cell and then performs the across-task analysis.
+
+When either agent-budget factor has more than one level, Forge Bench additionally
+writes `factorial_task_summary.csv`, `factorial_condition_summary.csv`, and
+`factorial_paired_effects.csv`. The paired-effects table contains task-paired
+contrasts for reminder level, iteration budget, and their difference-in-
+differences interaction. Legacy treatment plots remain marginal summaries across
+factor levels and should not replace the factor-aware tables for inference.
 
 The root report uses a task-blocked model × treatment analysis and shared-scale
 model subpanels. Per-model reports preserve the original treatment analysis.

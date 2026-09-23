@@ -126,7 +126,9 @@ Distinguish outcome mechanisms:
 - `unresolved_other`: valid unresolved run that does not fit the preceding categories;
 - `invalid`: run failed Forge Bench validity checks.
 
-For repeated experiments, do not treat stochastic repeats as additional independent tasks. Aggregate repeats within task × model × treatment before across-task inference, matching the main Forge Bench reporting design.
+For repeated experiments, do not treat stochastic repeats as additional independent tasks. Aggregate repeats within the complete experimental cell before across-task inference, matching the main Forge Bench reporting design. When iteration-budget factors are active, the complete cell is task × model × treatment × max_turns × budget_warning_ratio.
+
+Do not collapse max_turns or budget_warning_ratio levels into stochastic repeats. They are randomized experimental factors. Use the factor-aware CSVs for their main effects and interactions; legacy treatment summaries are marginal across those factor levels.
 
 ## Normal experiment commands
 

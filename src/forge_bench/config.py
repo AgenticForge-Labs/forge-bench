@@ -132,6 +132,16 @@ class Result:
     diff_lines: int
     run_dir: str
     error: str = ""
+    # Experimental factors are stored per run so factorial analyses never need
+    # to infer the assigned condition from filenames or global metadata.
+    max_turns: int | None = None
+    budget_warning_ratio: float | None = None
+    # Keep main-loop and auxiliary API calls separate. api_calls remains the
+    # billable total including auxiliary calls for backward compatibility.
+    main_api_calls: int | None = None
+    auxiliary_api_calls: int | None = None
+    iterations_used: int | None = None
+    turn_exit_reason: str = ""
     # Direct timing decomposition from the Forge Bench native Hermes observer.
     # These stay optional so historical runs remain reanalyzable.
     api_wait_seconds: float | None = None

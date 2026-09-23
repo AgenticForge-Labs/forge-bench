@@ -238,8 +238,24 @@ def _percentile(values: list[float], fraction: float) -> float | None:
 
 def summarize_events(events: list[dict[str, Any]], wall_seconds: float) -> dict[str, Any]:
     api_events = [row for row in events if row.get("event") == "post_api_request"]
+    pre_llm_events = [row for row in events if row.get("event") == "pre_llm_call"]
+    session_end_events = [row for row in events if row.get("event") == "on_session_end"]
     tool_events = [row for row in events if row.get("event") == "post_tool_call"]
     skill_events = [row for row in events if row.get("event") == "on_skill_lifecycle"]
+
+    iteration_values = {
+        int(value)
+        for row in pre_llm_events
+        if (value := _finite_number(row.get("iteration"))) is not None
+    }
+    turn_exit_reason = next(
+        (
+            str(row.get("turn_exit_reason"))
+            for row in reversed(session_end_events)
+            if row.get("turn_exit_reason")
+        ),
+        "",
+    )
 
     api_durations = [
         value
@@ -297,6 +313,8 @@ def summarize_events(events: list[dict[str, Any]], wall_seconds: float) -> dict[
         "event_count": len(events),
         "session_ids": session_ids,
         "api_post_event_count": len(api_events),
+        "iterations_used": len(iteration_values) if iteration_values else None,
+        "turn_exit_reason": turn_exit_reason,
         "tool_post_event_count": len(tool_events),
         "skill_lifecycle_event_count": len(skill_events),
         "skill_names_observed": skill_names,
