@@ -1387,16 +1387,19 @@ def run_one(
         bool(usage.get("completed", proc.returncode == 0))
         and proc.returncode == 0
     )
+    budget_censored = turn_exit_reason.startswith("max_iterations_reached(")
 
-    # "valid" means the agent run is usable for efficiency analysis. An
-    # unresolved SWE-bench task is a legitimate outcome and stays in the data.
+    # "valid" means the assigned experimental run is usable for efficiency
+    # analysis. Reaching the randomized iteration ceiling is a designed,
+    # right-censored outcome rather than a harness failure.
+    usable_agent_outcome = completed or budget_censored
     eval_ok = (
         not evaluate
         or evaluation_completed
         or not patch_nonempty
     )
     valid = (
-        completed
+        usable_agent_outcome
         and observed_model == model
         and provider.lower() == "openrouter"
         and reasoning_ok
@@ -1404,8 +1407,10 @@ def run_one(
     )
 
     errors: list[str] = []
-    if not completed:
+    if not completed and not budget_censored:
         errors.append("Hermes incomplete")
+    if budget_censored:
+        errors.append("iteration budget reached")
     if observed_model != model:
         errors.append("wrong model: " + observed_model)
     if provider.lower() != "openrouter":
