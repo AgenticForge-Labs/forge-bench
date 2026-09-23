@@ -288,8 +288,26 @@ jobs:
           ]
           assert observed != unshuffled
 
+          factorial_plan, _ = build_run_plan(
+              ["baseline"],
+              ["task-a", "task-b"],
+              1,
+              260921,
+              models=[model_specs[0]],
+              max_turns_levels=(50, 100),
+              budget_warning_ratio_levels=(None, 0.75),
+          )
+          assert len(factorial_plan) == 8
+          assert {
+              (row["max_turns"], row["budget_warning_ratio"])
+              for row in factorial_plan
+          } == {(50, None), (50, 0.75), (100, None), (100, 0.75)}
+          assert all("max_turns" in row and "budget_warning_ratio" in row for row in factorial_plan)
+
           # Synthetic native-hook events produce an auditable direct timing budget.
           synthetic_events = [
+              {"event": "pre_llm_call", "iteration": 0, "session_id": "s1"},
+              {"event": "pre_llm_call", "iteration": 1, "session_id": "s1"},
               {"event": "post_api_request", "api_duration": 2.0,
                "started_at": 10.0, "first_chunk_at": 10.4, "session_id": "s1"},
               {"event": "post_api_request", "api_duration": 3.0,
@@ -300,6 +318,8 @@ jobs:
                "session_id": "s1"},
               {"event": "on_skill_lifecycle", "skill_name": "caveman", "action": "viewed",
                "session_id": "s1"},
+              {"event": "on_session_end", "turn_exit_reason": "max_iterations_reached(2/2)",
+               "session_id": "s1"},
           ]
           timing = summarize_events(synthetic_events, 10.0)
           assert timing["api_wait_seconds"] == 5.0
@@ -308,6 +328,8 @@ jobs:
           assert timing["unattributed_wall_seconds"] == 3.0
           assert timing["caveman_skill_observed"] is True
           assert timing["session_ids"] == ["s1"]
+          assert timing["iterations_used"] == 2
+          assert timing["turn_exit_reason"] == "max_iterations_reached(2/2)"
 
           # Patch capture must include both committed changes and untracked files.
           with tempfile.TemporaryDirectory() as td:
