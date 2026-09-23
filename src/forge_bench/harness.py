@@ -1113,7 +1113,8 @@ def run_one(
         if not hermes_image:
             raise RuntimeError("Docker Hermes image was not resolved")
         profile_usage = profile / "benchmark-usage.json"
-        hermes_args.extend(["--usage-file", "/opt/data/benchmark-usage.json"])
+        # chat --oneshot uses stream-json for usage recovery. --usage-file is a
+        # legacy top-level -z flag and is intentionally not passed here.
         extra_env = {"PONYTAIL_DEFAULT_MODE": "full"} if ponytail else {}
         argv = docker_hermes_argv(
             hermes_image,
@@ -1127,7 +1128,6 @@ def run_one(
         usage_file = profile_usage
     else:
         usage_file = run_dir / "usage.json"
-        hermes_args.extend(["--usage-file", str(usage_file)])
         argv = [hermes, *hermes_args]
         run_cwd = workspace
         run_env = profile_env(profile)
