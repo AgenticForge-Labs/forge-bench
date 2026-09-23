@@ -140,6 +140,7 @@ class Result:
     # billable total including auxiliary calls for backward compatibility.
     main_api_calls: int | None = None
     auxiliary_api_calls: int | None = None
+    iterations_used: int | None = None
     turn_exit_reason: str = ""
     # Direct timing decomposition from the Forge Bench native Hermes observer.
     # These stay optional so historical runs remain reanalyzable.
