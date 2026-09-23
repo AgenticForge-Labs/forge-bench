@@ -48,6 +48,7 @@ from .harness import (
     source_home,
 )
 from .reporting import reanalyze_output, write_csv, write_experiment_reports
+from .factorial_analysis import write_factorial_analysis
 from .trace_capture import install_trace_plugin
 
 from .swebench_backend import (
@@ -1092,6 +1093,9 @@ def main() -> int:
         meta,
         analysis_mode=args.analysis_mode,
     )
+    factorial_is_active = write_factorial_analysis(output, results)
+    if factorial_is_active:
+        print("Factorial tables:", output / "factorial_*.csv")
 
     partial = output / "runs.partial.json"
     if partial.exists():
