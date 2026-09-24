@@ -1,0 +1,114 @@
+{
+  "generated_at": "2026-09-23T17:35:24.368040+00:00",
+  "dataset": "SWE-bench/SWE-bench_Verified",
+  "dataset_revision": "78f471bf655a3137b2e8a75af1501690ec009ec3",
+  "split": "test",
+  "difficulty_filter": "medium",
+  "selected_instance_ids": [
+    "django__django-13516",
+    "pytest-dev__pytest-7571",
+    "django__django-15731",
+    "django__django-16662",
+    "django__django-7530"
+  ],
+  "sampler": {
+    "candidate_count": 5,
+    "difficulty_filter": null,
+    "historical_submissions": 135,
+    "experiments_commit": "40f164d5b8f1d249bf95a6df8b74b577fd8e519d",
+    "history_error": "",
+    "complexity_formula": "0.55*patch_scope + 0.45*historical_hardness when history exists; patch_scope otherwise. patch_scope = 0.60*changed_lines_percentile + 0.25*files_percentile + 0.15*hunks_percentile.",
+    "strategy": "explicit instance ids"
+  },
+  "experiments_source_pin": "40f164d5b8f1d249bf95a6df8b74b577fd8e519d",
+  "design_name": "deepseek-v4-v41-ponytail-500turns",
+  "design_source": "designs/deepseek-v4-v41-ponytail-500turns.yaml",
+  "design_description": "One randomized block comparing DeepSeek V4 Flash 0731 and V4.1 Flash with Ponytail off or on across the same five SWE-bench Verified tasks. Every run has a 500-turn cap. Warning ratios 0.05, 0.1, and null are randomized as a third factor within the same block.",
+  "model": null,
+  "models": [
+    {
+      "key": "v4-flash-0731",
+      "label": "DeepSeek V4 Flash 0731",
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "api_provider": "openrouter",
+      "upstream_provider": "relace",
+      "reasoning": "none"
+    },
+    {
+      "key": "v4-1-flash",
+      "label": "DeepSeek V4.1 Flash",
+      "model": "deepseek/deepseek-v4.1-flash-20260910",
+      "api_provider": "openrouter",
+      "upstream_provider": "relace",
+      "reasoning": "none"
+    }
+  ],
+  "api_provider": "openrouter",
+  "upstream_provider": "relace",
+  "reasoning": "none",
+  "max_turns": 500,
+  "budget_warning_ratio": null,
+  "budget_warning_ratios": [
+    0.05,
+    0.1,
+    null
+  ],
+  "budget_warning_ratio_scope": "per_run",
+  "swebench_version": "4.1.0",
+  "hermes_runtime": "docker",
+  "hermes_image_ref": "sha256:7f89653302afcce64d118a7a08072d7c29890c8bcc11336a6ac71e891537efdd",
+  "hermes_image_id": "sha256:7f89653302afcce64d118a7a08072d7c29890c8bcc11336a6ac71e891537efdd",
+  "ponytail_repo": "DietrichGebert/ponytail",
+  "ponytail_commit": "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
+  "caveman_commit": "542442bab314973709f95b85b1ac0b3f6f5b5dc6",
+  "arms": [
+    "baseline",
+    "ponytail"
+  ],
+  "condition_arms": [
+    "baseline__warning_0p05",
+    "baseline__warning_0p1",
+    "baseline",
+    "ponytail__warning_0p05",
+    "ponytail__warning_0p1",
+    "ponytail"
+  ],
+  "available_arms": [
+    "baseline",
+    "caveman",
+    "ponytail",
+    "caveman_ponytail",
+    "lean_tools",
+    "all_three"
+  ],
+  "treatment_design": "treatments crossed with per-run budget warning ratios on normal hermes-cli tools",
+  "default_toolsets": "hermes-cli",
+  "lean_toolsets": "file,terminal,skills,code_execution",
+  "repeats": 1,
+  "seed": 260920,
+  "repeat_seeds": [
+    260920
+  ],
+  "randomization": "full-factorial randomized complete blocks: each block contains every model x treatment x warning-ratio x selected-instance cell exactly once; all cells are shuffled together with the block's recorded repeat_seed",
+  "confidence_interval": "two-sided 95% Student-t across selected task means; repeats are averaged within model x treatment x warning-ratio x task first",
+  "trace_capture": {
+    "enabled": true,
+    "mechanism": "observer-only native Hermes plugin hooks",
+    "artifacts": [
+      "hermes-events.jsonl",
+      "api-events.jsonl",
+      "tool-events.jsonl",
+      "lifecycle-events.jsonl",
+      "timing-summary.json",
+      "hermes-session.json",
+      "hermes-session.jsonl",
+      "hermes-session.trace.jsonl",
+      "hermes-state.db",
+      "treatment-evidence.json"
+    ]
+  },
+  "official_evaluation": true,
+  "analysis_mode": "advanced",
+  "credential_source": "forge_bench_key_file",
+  "hermes_home_credentials_isolated": true
+}

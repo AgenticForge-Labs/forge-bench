@@ -1,0 +1,49 @@
+version: 1
+name: deepseek-v4-v41-ponytail-500turns
+description: >
+  One randomized block comparing DeepSeek V4 Flash 0731 and V4.1 Flash
+  with Ponytail off or on across the same five SWE-bench Verified tasks.
+  Every run has a 500-turn cap. Warning ratios 0.05, 0.1, and null
+  are randomized as a third factor within the same block.
+
+selection:
+  dataset: verified
+  split: test
+  difficulty: medium
+  sample_size: 5
+  instance_ids:
+    - django__django-13516
+    - pytest-dev__pytest-7571
+    - django__django-15731
+    - django__django-16662
+    - django__django-7530
+
+provider:
+  api: openrouter
+  upstream: relace
+  require_same_upstream: true
+
+reasoning: none
+max_turns: 500
+budget_warning_ratios:
+  - 0.05
+  - 0.1
+  - null
+analysis_mode: advanced
+
+models:
+  - key: v4-flash-0731
+    label: DeepSeek V4 Flash 0731
+    model: deepseek/deepseek-v4-flash-0731
+  - key: v4-1-flash
+    label: DeepSeek V4.1 Flash
+    model: deepseek/deepseek-v4.1-flash-20260910
+
+treatments:
+  - baseline
+  - ponytail
+
+randomization:
+  mode: full-factorial-within-block
+  blocks: 1
+  seed: 260920

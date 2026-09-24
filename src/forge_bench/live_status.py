@@ -12,7 +12,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .config import LABEL
+from .config import LABEL, budget_condition_label
 
 
 def find_latest_run(root: Path = Path("benchmark-results"), *, prefer_incomplete: bool = True) -> Path:
@@ -219,7 +219,7 @@ def _plot_model_treatment_bars(
                 fontsize=7,
             )
 
-    ax.set_xticks(x, [LABEL.get(arm, arm) for arm in treatments], rotation=20, ha="right")
+    ax.set_xticks(x, [budget_condition_label(arm) for arm in treatments], rotation=20, ha="right")
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.legend(fontsize=8)

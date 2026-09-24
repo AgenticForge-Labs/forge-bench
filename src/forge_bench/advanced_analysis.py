@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import numpy as np
 
-from .config import LABEL, T975
+from .config import LABEL, T975, condition_order_key
 
 ADVANCED_METRICS = ("total_tokens", "wall_seconds", "api_calls", "cost_usd")
 LATENCY_EFFICIENCY_METRICS = {
@@ -57,9 +57,7 @@ LIGHT_ACCENTS = {
 
 def _ordered_arms(arms: set[str] | list[str]) -> list[str]:
     values = list(dict.fromkeys(str(arm) for arm in arms))
-    return [arm for arm in TREATMENT_ORDER if arm in values] + sorted(
-        arm for arm in values if arm not in TREATMENT_ORDER
-    )
+    return sorted(values, key=condition_order_key)
 
 
 def treatment_colors(arms: set[str] | list[str], theme: str) -> dict[str, str]:
@@ -72,8 +70,9 @@ def treatment_colors(arms: set[str] | list[str], theme: str) -> dict[str, str]:
     colors: dict[str, str] = {}
     unknown = 0
     for arm in _ordered_arms(arms):
-        if arm in base:
-            colors[arm] = base[arm]
+        base_arm = arm.partition("__warning_")[0]
+        if base_arm in base:
+            colors[arm] = base[base_arm]
         else:
             colors[arm] = fallback[unknown % len(fallback)]
             unknown += 1

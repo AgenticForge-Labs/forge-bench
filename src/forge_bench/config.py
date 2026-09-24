@@ -58,6 +58,22 @@ ARMS = {
     "all_three": (True, True, True),
 }
 
+
+def condition_order_key(arm: str) -> tuple[int, int, float, str]:
+    """Group by treatment, then order its warning ratios null, 0.1, 0.05."""
+    base_arm, marker, raw_ratio = arm.partition("__warning_")
+    treatment_order = tuple(ARMS).index(base_arm) if base_arm in ARMS else len(ARMS)
+    if not marker:
+        return (treatment_order, 0, 0.0, base_arm)
+    if raw_ratio == "0p1":
+        return (treatment_order, 1, 0.0, base_arm)
+    if raw_ratio == "0p05":
+        return (treatment_order, 2, 0.0, base_arm)
+    try:
+        return (treatment_order, 3, -float(raw_ratio.replace("p", ".")), base_arm)
+    except ValueError:
+        return (treatment_order, 4, 0.0, raw_ratio)
+
 DEFAULT_ARMS = (
     "baseline",
     "caveman",
@@ -65,14 +81,39 @@ DEFAULT_ARMS = (
     "caveman_ponytail",
 )
 
-LABEL = {
+class ConditionLabels(dict[str, str]):
+    def __missing__(self, key: str) -> str:
+        if "__warning_" not in key:
+            raise KeyError(key)
+        base_arm, raw_ratio = key.rsplit("__warning_", 1)
+        return f"{dict.get(self, base_arm, base_arm)} · ratio {raw_ratio.replace('p', '.')}"
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+
+LABEL = ConditionLabels({
     "baseline": "Baseline Hermes",
     "caveman": "Caveman",
     "ponytail": "Ponytail",
     "caveman_ponytail": "Caveman + Ponytail",
     "lean_tools": "Lean tools",
     "all_three": "Caveman + Ponytail + Lean",
-}
+})
+
+
+def budget_condition_arm(arm: str, ratio: float | None, *, multiple: bool) -> str:
+    """Give each treatment × warning-ratio cell its own analysis category."""
+    if not multiple or ratio is None:
+        return arm
+    return f"{arm}__warning_{format(ratio, '.15g').replace('.', 'p')}"
+
+
+def budget_condition_label(arm: str) -> str:
+    return LABEL.get(arm, arm) or arm
 
 METRICS = {
     "total_tokens": ("Total tokens", "tokens"),
@@ -132,6 +173,8 @@ class Result:
     diff_lines: int
     run_dir: str
     error: str = ""
+    base_arm: str | None = None
+    budget_warning_ratio: float | None = None
     # Direct timing decomposition from the Forge Bench native Hermes observer.
     # These stay optional so historical runs remain reanalyzable.
     api_wait_seconds: float | None = None

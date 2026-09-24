@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
-from .advanced_analysis import TREATMENT_ORDER, treatment_colors
-from .config import LABEL, METRICS, T975, Result
+from .advanced_analysis import treatment_colors
+from .config import LABEL, METRICS, T975, Result, condition_order_key
 from .trace_timeseries import write_trace_timeseries
 
 
@@ -73,9 +73,16 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def _ordered_arms(rows: Iterable[dict[str, Any]]) -> list[str]:
     values = list(dict.fromkeys(str(row["arm"]) for row in rows))
-    return [arm for arm in TREATMENT_ORDER if arm in values] + sorted(
-        arm for arm in values if arm not in TREATMENT_ORDER
-    )
+    return sorted(values, key=condition_order_key)
+
+
+def _condition_labels(rows: Iterable[dict[str, Any]]) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    for row in rows:
+        arm = str(row.get("arm", ""))
+        if arm and row.get("label"):
+            labels.setdefault(arm, str(row["label"]))
+    return labels
 
 
 def _theme(theme: str) -> dict[str, str]:
@@ -169,6 +176,7 @@ def plot_faceted_metric(
     """True shared-scale model panels in both vertical- and horizontal-bar styles."""
     title, kind = _metric_title(metric)
     arms = _ordered_arms(summary_rows)
+    labels = _condition_labels(summary_rows)
     if not arms or len(descriptors) < 2:
         return
     values = [
@@ -215,6 +223,11 @@ def plot_faceted_metric(
             ]
             lower = [max(0.0, m - l) if _finite(m) and _finite(l) else 0.0 for m, l in zip(means, low)]
             upper = [max(0.0, h - m) if _finite(m) and _finite(h) else 0.0 for m, h in zip(means, high)]
+            if means and _finite(means[0]):
+                ax.axhline(
+                    means[0], color=palette["muted"], alpha=0.48,
+                    linestyle=(0, (4, 4)), linewidth=1.2, zorder=0,
+                )
             bars = ax.bar(
                 x, means, color=[colors[arm] for arm in arms],
                 yerr=[lower, upper], capsize=6, edgecolor=palette["edge"],
@@ -247,7 +260,7 @@ def plot_faceted_metric(
                         fontsize=9.5, color=palette["text"],
                     )
             ax.set_title(str(descriptor["label"]), fontsize=16, fontweight="bold")
-            ax.set_xticks(x, [LABEL.get(arm, arm) for arm in arms], rotation=18, ha="right")
+            ax.set_xticks(x, [labels.get(arm, LABEL.get(arm, arm)) for arm in arms], rotation=18, ha="right")
             ax.set_ylim(0, axis_max)
             if model_i == 0:
                 ax.set_ylabel(title, fontsize=13)
@@ -280,6 +293,11 @@ def plot_faceted_metric(
             high = [float(model_summary.get(arm, {}).get(f"ci95_high_{metric}", math.nan)) for arm in arms]
             lower = [max(0.0, m - l) if _finite(m) and _finite(l) else 0.0 for m, l in zip(means, low)]
             upper = [max(0.0, h - m) if _finite(m) and _finite(h) else 0.0 for m, h in zip(means, high)]
+            if means and _finite(means[0]):
+                ax.axvline(
+                    means[0], color=palette["muted"], alpha=0.48,
+                    linestyle=(0, (4, 4)), linewidth=1.2, zorder=0,
+                )
             bars = ax.barh(
                 y, means, color=[colors[arm] for arm in arms],
                 xerr=[lower, upper], capsize=5, edgecolor=palette["edge"],
@@ -312,7 +330,7 @@ def plot_faceted_metric(
                         fontsize=9.5, color=palette["text"],
                     )
             ax.set_title(str(descriptor["label"]), fontsize=16, fontweight="bold")
-            ax.set_yticks(y, [LABEL.get(arm, arm) for arm in arms])
+            ax.set_yticks(y, [labels.get(arm, LABEL.get(arm, arm)) for arm in arms])
             ax.set_xlim(0, axis_max)
             if model_i == len(descriptors) - 1:
                 ax.set_xlabel(title, fontsize=13)
@@ -624,6 +642,7 @@ def plot_interaction(
 ) -> None:
     title, _ = _metric_title(metric)
     arms = _ordered_arms(summary_rows)
+    labels = _condition_labels(summary_rows)
     if len(descriptors) != 2 or not arms:
         return
     for theme in ("light", "dark"):
@@ -653,7 +672,7 @@ def plot_interaction(
                         color=colors[arm], edgecolors=palette["text"],
                         linewidths=1.0, zorder=4,
                     )
-        ax.set_xticks(x, [LABEL.get(arm, arm) for arm in arms])
+        ax.set_xticks(x, [labels.get(arm, LABEL.get(arm, arm)) for arm in arms])
         ax.set_ylabel(title)
         ax.set_title(f"{title}: model × treatment interaction", fontsize=18, fontweight="bold")
         ax.legend(title="Model", frameon=True)

@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forge Bench multi-model report (light)</title>
+<style>
+body{font-family:Inter,system-ui,Arial,sans-serif;background:#f8fafc;color:#111827;max-width:1180px;margin:auto;padding:36px 24px 72px}
+p{color:#64748b;line-height:1.55} a{color:inherit;font-weight:650}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(500px,1fr));gap:18px;margin:18px 0 28px}
+.card{background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}
+.card h3{font-size:15px;margin:6px 8px 2px} .card img{width:100%;display:block}
+table{width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #e5e7eb}
+th,td{padding:12px;border-bottom:1px solid #e5e7eb;text-align:right} th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+code{font-size:.92em}
+</style>
+<h1>Forge Bench multi-model experiment</h1>
+<p>Design <code>deepseek-v4-v41-ponytail-500turns</code>.
+One execution plan is randomized across model × treatment × task cells; model-specific
+reports keep treatment inference separated by model.</p>
+<p>Model reports: <a href="models/v4-flash-0731/report-light.html">DeepSeek V4 Flash 0731</a> <a href="models/v4-1-flash/report-light.html">DeepSeek V4.1 Flash</a></p>
+<p>The primary inferential unit is the task. If multiple randomized blocks are
+run, repeated stochastic observations are averaged within task × model ×
+treatment before across-task confidence intervals and factorial analyses.</p>
+
+<h2>Primary model × treatment comparison</h2>
+<p>Each model is a true subpanel of the same figure and shares the same axis
+scale. Treatment colors are identical across models. Open circles are the
+independent task means.</p>
+<div class="grid"><div class="card"><h3>Total tokens</h3><img src="model_treatment_total_tokens.vertical.light.svg" alt="Total tokens"></div><div class="card"><h3>Cost</h3><img src="model_treatment_cost_usd.vertical.light.svg" alt="Cost"></div><div class="card"><h3>Wall time</h3><img src="model_treatment_wall_seconds.vertical.light.svg" alt="Wall time"></div><div class="card"><h3>API calls</h3><img src="model_treatment_api_calls.vertical.light.svg" alt="API calls"></div><div class="card"><h3>Resolve rate</h3><img src="model_treatment_resolve_rate.vertical.light.svg" alt="Resolve rate"></div></div>
+
+<h2>Horizontal versions</h2>
+<div class="grid"><div class="card"><h3>Total tokens — horizontal</h3><img src="model_treatment_total_tokens.horizontal.light.svg" alt="Total tokens — horizontal"></div><div class="card"><h3>Cost — horizontal</h3><img src="model_treatment_cost_usd.horizontal.light.svg" alt="Cost — horizontal"></div><div class="card"><h3>Wall time — horizontal</h3><img src="model_treatment_wall_seconds.horizontal.light.svg" alt="Wall time — horizontal"></div><div class="card"><h3>API calls — horizontal</h3><img src="model_treatment_api_calls.horizontal.light.svg" alt="API calls — horizontal"></div><div class="card"><h3>Resolve rate — horizontal</h3><img src="model_treatment_resolve_rate.horizontal.light.svg" alt="Resolve rate — horizontal"></div></div>
+
+<h2>Factorial effects and timing</h2>
+<p>The primary regression is <code>log(outcome) ~ task + model * treatment</code>.
+A secondary decomposition treats Caveman and Ponytail as separate binary
+factors and fits <code>model * caveman * ponytail</code>.</p>
+<div class="grid"><div class="card"><h3>Token interaction</h3><img src="model_treatment_interaction_total_tokens.light.svg" alt="Token interaction"></div><div class="card"><h3>Cost interaction</h3><img src="model_treatment_interaction_cost_usd.light.svg" alt="Cost interaction"></div><div class="card"><h3>Wall-time interaction</h3><img src="model_treatment_interaction_wall_seconds.light.svg" alt="Wall-time interaction"></div><div class="card"><h3>API-call interaction</h3><img src="model_treatment_interaction_api_calls.light.svg" alt="API-call interaction"></div><div class="card"><h3>Harness effect on tokens</h3><img src="model_harness_effect_total_tokens.light.svg" alt="Harness effect on tokens"></div><div class="card"><h3>V4.1 vs V4 token effect</h3><img src="model_effect_total_tokens.light.svg" alt="V4.1 vs V4 token effect"></div><div class="card"><h3>Combined cost-time frontier</h3><img src="model_treatment_cost_time.light.svg" alt="Combined cost-time frontier"></div><div class="card"><h3>Direct time budget</h3><img src="model_treatment_time_budget.light.svg" alt="Direct time budget"></div></div>
+
+<h2>Multivariate workflow phenotype</h2>
+<p>PCA uses task-level agent behavior rather than individual API/tool events as
+replicates. Treatment is encoded by color and model by marker; numbered tags
+identify the larger model × treatment centers, with a separate loading chart
+for PC1 and PC2. State-transition probabilities are normalized within task
+before across-task averaging.</p>
+<div class="grid"><div class="card"><h3>Multivariate agent-behavior PCA</h3><img src="model_treatment_multivariate_pca.light.svg" alt="Multivariate agent-behavior PCA"></div><div class="card"><h3>PCA feature loadings</h3><img src="model_treatment_multivariate_pca_loadings.light.svg" alt="PCA feature loadings"></div><div class="card"><h3>Workflow transition matrices</h3><img src="workflow_state_transitions.light.svg" alt="Workflow transition matrices"></div></div>
+
+<h2>Within-run trajectories</h2>
+<p>Trace events are aligned to 0–100% normalized elapsed run progress.
+Repeated blocks are averaged within task first; trajectory summaries are then
+averaged across tasks. Individual turns are observations along a run, not
+independent replicates.</p>
+<div class="grid"><div class="card"><h3>Cumulative token trajectory</h3><img src="trajectory_cumulative_tokens.light.svg" alt="Cumulative token trajectory"></div><div class="card"><h3>Context growth</h3><img src="trajectory_context_tokens.light.svg" alt="Context growth"></div><div class="card"><h3>Cumulative API wait</h3><img src="trajectory_api_wait_seconds.light.svg" alt="Cumulative API wait"></div><div class="card"><h3>Cumulative tool execution</h3><img src="trajectory_tool_execution_seconds.light.svg" alt="Cumulative tool execution"></div><div class="card"><h3>API-call trajectory</h3><img src="trajectory_api_calls.light.svg" alt="API-call trajectory"></div><div class="card"><h3>Tool-call trajectory</h3><img src="trajectory_tool_calls.light.svg" alt="Tool-call trajectory"></div><div class="card"><h3>First edit</h3><img src="workflow_first_edit_progress.light.svg" alt="First edit"></div><div class="card"><h3>First execution</h3><img src="workflow_first_execute_progress.light.svg" alt="First execution"></div><div class="card"><h3>Repeated-state fraction</h3><img src="workflow_consecutive_same_state_fraction.light.svg" alt="Repeated-state fraction"></div><div class="card"><h3>Edit-to-execute transitions</h3><img src="workflow_edit_to_execute_transitions.light.svg" alt="Edit-to-execute transitions"></div></div>
+
+<h2>Token pools versus computer work</h2>
+<p>Observer traces show cache-read input, other input, output, and reasoning
+tokens alongside tool calls and execution time. The response/tool scatter links
+each model response to the tool calls before its next request; it is descriptive,
+not a causal estimate. Trace-observed activity is retained even when a run's
+overall benchmark result is invalid; the trace CSVs mark result validity so
+those observations can be inspected separately.</p>
+<div class="grid"><div class="card"><h3>Token and tool timeline for high-usage runs</h3><img src="trace_example_timeline.png" alt="Token and tool timeline for high-usage runs"></div><div class="card"><h3>Token pools and computer activity over progress</h3><img src="trace_token_tool_trajectories.png" alt="Token pools and computer activity over progress"></div><div class="card"><h3>Per-response tokens and following tool work</h3><img src="trace_response_vs_tool_work.png" alt="Per-response tokens and following tool work"></div></div>
+
+<h2>Across-task summary</h2>
+<table><thead><tr><th>Model</th><th>Treatment</th><th>Tokens</th><th>Cost</th><th>Time</th><th>Resolve</th></tr></thead>
+<tbody><tr><td>DeepSeek V4 Flash 0731</td><td>Baseline Hermes · ratio null</td><td>855.2k</td><td>$0.0200</td><td>175.8s</td><td>100%</td></tr><tr><td>DeepSeek V4 Flash 0731</td><td>Baseline Hermes · ratio 0.1</td><td>783.2k</td><td>$0.0180</td><td>166.1s</td><td>100%</td></tr><tr><td>DeepSeek V4 Flash 0731</td><td>Baseline Hermes · ratio 0.05</td><td>1194.2k</td><td>$0.0281</td><td>245.6s</td><td>100%</td></tr><tr><td>DeepSeek V4 Flash 0731</td><td>Ponytail · ratio null</td><td>744.1k</td><td>$0.0176</td><td>142.4s</td><td>100%</td></tr><tr><td>DeepSeek V4 Flash 0731</td><td>Ponytail · ratio 0.1</td><td>623.0k</td><td>$0.0145</td><td>102.2s</td><td>100%</td></tr><tr><td>DeepSeek V4 Flash 0731</td><td>Ponytail · ratio 0.05</td><td>575.7k</td><td>$0.0134</td><td>133.7s</td><td>100%</td></tr><tr><td>DeepSeek V4.1 Flash</td><td>Baseline Hermes · ratio null</td><td>3252.2k</td><td>$0.0218</td><td>439.9s</td><td>100%</td></tr><tr><td>DeepSeek V4.1 Flash</td><td>Baseline Hermes · ratio 0.1</td><td>7160.7k</td><td>$0.0362</td><td>432.8s</td><td>100%</td></tr><tr><td>DeepSeek V4.1 Flash</td><td>Baseline Hermes · ratio 0.05</td><td>2629.9k</td><td>$0.0169</td><td>406.2s</td><td>100%</td></tr><tr><td>DeepSeek V4.1 Flash</td><td>Ponytail · ratio null</td><td>3053.0k</td><td>$0.0192</td><td>266.4s</td><td>100%</td></tr><tr><td>DeepSeek V4.1 Flash</td><td>Ponytail · ratio 0.1</td><td>2568.4k</td><td>$0.0201</td><td>493.3s</td><td>100%</td></tr><tr><td>DeepSeek V4.1 Flash</td><td>Ponytail · ratio 0.05</td><td>2113.7k</td><td>$0.0141</td><td>269.2s</td><td>80%</td></tr></tbody></table>
+<p>Analysis tables include <code>model_pairwise_effects.csv</code>,
+<code>model_harness_effects.csv</code>,
+<code>model_treatment_regression_2x4.csv</code>,
+<code>model_caveman_ponytail_regression_2x2x2.csv</code>,
+the <code>multivariate_*</code> tables, and the <code>trajectory_*</code> /
+<code>workflow_*</code>, and <code>trace_*</code> tables. Raw execution evidence remains in
+<code>runs/</code>, <code>runs.json</code>, and <code>run_plan.csv</code>.</p>

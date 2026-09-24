@@ -13,16 +13,14 @@ from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 
-from .advanced_analysis import TREATMENT_ORDER, treatment_colors, write_advanced_analysis
-from .config import LABEL, METRICS, T975, Result
+from .advanced_analysis import treatment_colors, write_advanced_analysis
+from .config import LABEL, METRICS, T975, Result, budget_condition_label, condition_order_key
 from .multi_model_analysis import write_multi_model_analysis
 
 
 def _ordered_arms(arms: Iterable[str]) -> list[str]:
     values = list(dict.fromkeys(str(arm) for arm in arms))
-    return [arm for arm in TREATMENT_ORDER if arm in values] + sorted(
-        arm for arm in values if arm not in TREATMENT_ORDER
-    )
+    return sorted(values, key=condition_order_key)
 
 
 def mean(values: Iterable[float]) -> float:
@@ -111,7 +109,18 @@ def task_summary(
             rows.append(
                 {
                     "arm": arm,
-                    "label": LABEL[arm],
+                    "label": (
+                        f"{budget_condition_label(arm)} · ratio null"
+                        if len({result.budget_warning_ratio for result in results}) > 1
+                        and raw and raw[0].budget_warning_ratio is None
+                        else budget_condition_label(arm)
+                    ),
+                    "base_arm": (raw[0].base_arm or arm) if raw else arm,
+                    "budget_warning_ratio": raw[0].budget_warning_ratio if raw else None,
+                    "budget_warning_ratio_label": (
+                        "null" if not raw or raw[0].budget_warning_ratio is None
+                        else str(raw[0].budget_warning_ratio)
+                    ),
                     "task": task,
                     "runs": len(raw),
                     "valid_runs": len(good),
@@ -253,7 +262,18 @@ def aggregate_summary(
 
         entry: dict[str, Any] = {
             "arm": arm,
-            "label": LABEL[arm],
+            "label": (
+                f"{budget_condition_label(arm)} · ratio null"
+                if len({result.budget_warning_ratio for result in results}) > 1
+                and raw and raw[0].budget_warning_ratio is None
+                else budget_condition_label(arm)
+            ),
+            "base_arm": (raw[0].base_arm or arm) if raw else arm,
+            "budget_warning_ratio": raw[0].budget_warning_ratio if raw else None,
+            "budget_warning_ratio_label": (
+                "null" if not raw or raw[0].budget_warning_ratio is None
+                else str(raw[0].budget_warning_ratio)
+            ),
             "runs": len(raw),
             "valid_runs": sum(result.valid for result in raw),
             "run_valid_rate": (
@@ -395,6 +415,11 @@ def plot_metric(
             [str(row["arm"]) for row in summary],
             theme,
         )
+        if values and math.isfinite(values[0]):
+            ax.axhline(
+                values[0], color=_plot_theme(theme)["muted"], alpha=0.48,
+                linestyle=(0, (4, 4)), linewidth=1.2, zorder=0,
+            )
         bars = ax.bar(
             x,
             values,
@@ -455,6 +480,11 @@ def plot_validity(
             [str(row["arm"]) for row in summary],
             theme,
         )
+        if values and math.isfinite(values[0]):
+            ax.axhline(
+                values[0], color=_plot_theme(theme)["muted"], alpha=0.48,
+                linestyle=(0, (4, 4)), linewidth=1.2, zorder=0,
+            )
         bars = ax.bar(
             x,
             values,
@@ -1141,6 +1171,8 @@ def reanalyze_output(
     defaults = {
         "evaluation_seconds": 0.0,
         "error": "",
+        "base_arm": None,
+        "budget_warning_ratio": None,
         "tool_calls": None,
         "api_wait_seconds": None,
         "tool_execution_seconds": None,

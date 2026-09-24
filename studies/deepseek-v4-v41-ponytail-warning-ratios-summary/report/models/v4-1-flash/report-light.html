@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forge Bench report (light)</title>
+<style>
+:root{--bg:#f8fafc;--fg:#111827;--muted:#64748b;--card:#ffffff;--border:#e5e7eb;--head:#f1f5f9;--note:#eef2ff;--note-border:#c7d2fe;--note-fg:#3730a3;--shadow:#0f172a0a}
+body{font-family:Inter,system-ui,Arial,sans-serif;background:var(--bg);color:var(--fg);max-width:1280px;margin:auto;padding:36px 24px 72px}
+h1{font-size:36px;margin-bottom:6px} h2{font-size:25px;margin-top:34px}
+p{color:var(--muted);line-height:1.55;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(500px,1fr));gap:20px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:8px;box-shadow:0 3px 12px var(--shadow)}
+.card img{width:100%;display:block}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--border)}
+th,td{padding:12px;border-bottom:1px solid var(--border);text-align:right;font-size:14px}
+th:first-child,td:first-child{text-align:left} th{background:var(--head);color:var(--muted)}
+.note{background:var(--note);border:1px solid var(--note-border);border-radius:12px;padding:14px 16px;color:var(--note-fg)}
+code{font-size:.92em}
+</style>
+<h1>Forge Bench</h1>
+<p><code>deepseek/deepseek-v4.1-flash-20260910</code> via OpenRouter, pinned to
+<code>relace</code>. Randomization seed:
+<code>260920</code>. Analysis mode:
+<code>advanced</code>. Report theme:
+<code>light</code>.</p>
+<p class="note">Primary efficiency bars are means across task-level means, not pooled agent calls.
+Unresolved tasks remain in token, cost, and time averages when the agent run itself is usable.
+Error bars are two-sided 95% Student-t confidence intervals across the selected SWE-bench tasks.
+Current task count: 5.</p>
+<div class="grid"><div class="card"><img src="total_tokens.light.svg" alt="Total tokens"></div><div class="card"><img src="input_tokens.light.svg" alt="Input tokens"></div><div class="card"><img src="output_tokens.light.svg" alt="Output tokens"></div><div class="card"><img src="cache_read_tokens.light.svg" alt="Cache-read tokens"></div><div class="card"><img src="cost_usd.light.svg" alt="OpenRouter cost"></div><div class="card"><img src="wall_seconds.light.svg" alt="Wall-clock time"></div><div class="card"><img src="api_calls.light.svg" alt="API calls"></div><div class="card"><img src="resolve_rate.light.svg" alt="SWE-bench resolve rate"></div></div>
+<h2>Advanced analysis</h2><p>Exploratory task-level analyses include direct API/tool/orchestration time budgets when native Hermes trace events are available, cost/time tradeoffs, token throughput, time and tokens per API call, tool-call intensity when available, paired baseline-normalized effects, task-fixed-effect regressions, Caveman×Ponytail factorial regression when available, PCA, deterministic clustering, and correlations. Legacy runs do not contain exact API-wait or tool-execution durations, so ratio diagnostics use the saved wall time and call counts.</p><div class="grid"><div class="card"><img src="advanced_cost_time.light.svg" alt="Cost-time efficiency frontier"></div><div class="card"><img src="advanced_time_budget.light.svg" alt="Direct wall-time budget by treatment"></div><div class="card"><img src="advanced_api_latency.light.svg" alt="API latency distribution by treatment"></div><div class="card"><img src="advanced_time_vs_api_calls.light.svg" alt="Wall time versus API-call count"></div><div class="card"><img src="advanced_tokens_per_second.light.svg" alt="Token throughput by treatment"></div><div class="card"><img src="advanced_seconds_per_api_call.light.svg" alt="Time per API call by treatment"></div><div class="card"><img src="advanced_tokens_per_api_call.light.svg" alt="Tokens per API call by treatment"></div><div class="card"><img src="advanced_cost_per_api_call.light.svg" alt="Cost per API call by treatment"></div><div class="card"><img src="advanced_tool_calls_per_api_call.light.svg" alt="Tool calls per API call"></div><div class="card"><img src="advanced_seconds_per_tool_call.light.svg" alt="Wall time per tool call"></div><div class="card"><img src="advanced_token_effects.light.svg" alt="Task-normalized token effects"></div><div class="card"><img src="advanced_pca_biplot.light.svg" alt="PCA biplot of efficiency profiles"></div><div class="card"><img src="advanced_pca_scree.light.svg" alt="PCA scree plot"></div><div class="card"><img src="advanced_pca_loadings.light.svg" alt="PC1 and PC2 feature loadings"></div><div class="card"><img src="advanced_clusters.light.svg" alt="Exploratory PCA-space clusters"></div><div class="card"><img src="advanced_correlations.light.svg" alt="Efficiency correlation matrix"></div></div>
+<h2>Across-task summary</h2>
+<table>
+<thead><tr>
+<th>Treatment</th><th>Valid tasks</th><th>Total tokens (95% CI)</th>
+<th>Cost (95% CI)</th><th>Time (95% CI)</th><th>Resolved runs</th><th>Usable runs</th>
+</tr></thead>
+<tbody><tr><td>Baseline Hermes · ratio null</td><td>4/5</td><td>3252.2k [0, 9826.2k]</td><td>$0.0218 [$0.0000, $0.0560]</td><td>439.9s [0.0s, 1036.4s]</td><td>100%</td><td>80%</td></tr><tr><td>Baseline Hermes · ratio 0.1</td><td>5/5</td><td>7160.7k [0, 24206.0k]</td><td>$0.0362 [$0.0000, $0.1119]</td><td>432.8s [0.0s, 1221.6s]</td><td>100%</td><td>100%</td></tr><tr><td>Baseline Hermes · ratio 0.05</td><td>5/5</td><td>2629.9k [0, 7556.8k]</td><td>$0.0169 [$0.0000, $0.0428]</td><td>406.2s [0.0s, 953.4s]</td><td>100%</td><td>100%</td></tr><tr><td>Ponytail · ratio null</td><td>5/5</td><td>3053.0k [0, 8234.9k]</td><td>$0.0192 [$0.0000, $0.0449]</td><td>266.4s [79.2s, 453.6s]</td><td>100%</td><td>100%</td></tr><tr><td>Ponytail · ratio 0.1</td><td>5/5</td><td>2568.4k [226.6k, 4910.2k]</td><td>$0.0201 [$0.0044, $0.0358]</td><td>493.3s [0.0s, 1098.9s]</td><td>100%</td><td>100%</td></tr><tr><td>Ponytail · ratio 0.05</td><td>5/5</td><td>2113.7k [0, 5686.7k]</td><td>$0.0141 [$0.0000, $0.0330]</td><td>269.2s [0.0s, 572.9s]</td><td>80%</td><td>100%</td></tr></tbody>
+</table>
+<p>This is a regenerated analysis. Original per-run evidence remains in <code>/home/larry/code/forge-bench/benchmark-results/deepseek-v4-v41-ponytail-warnings-</code>. This folder contains a snapshot of the run records plus regenerated summaries, figures, and report.</p>
+<p>Advanced mode also writes analysis tables prefixed with <code>advanced_</code>.</p>

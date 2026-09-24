@@ -1,0 +1,61 @@
+model_key,model_label,model,api_provider,upstream_provider,reasoning,arm,base_arm,budget_warning_ratio,budget_warning_ratio_label,instance_id,repeat,repeat_seed,block_position,run_index
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,django__django-15731,1,260920,1,1
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,django__django-16662,1,260920,2,2
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline,baseline,,null,django__django-15731,1,260920,3,3
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,django__django-16662,1,260920,4,4
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail,ponytail,,null,django__django-7530,1,260920,5,5
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,django__django-13516,1,260920,6,6
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline,baseline,,null,django__django-13516,1,260920,7,7
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,django__django-13516,1,260920,8,8
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail,ponytail,,null,pytest-dev__pytest-7571,1,260920,9,9
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline,baseline,,null,django__django-7530,1,260920,10,10
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline,baseline,,null,pytest-dev__pytest-7571,1,260920,11,11
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,pytest-dev__pytest-7571,1,260920,12,12
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,pytest-dev__pytest-7571,1,260920,13,13
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,django__django-15731,1,260920,14,14
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,django__django-7530,1,260920,15,15
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail,ponytail,,null,django__django-7530,1,260920,16,16
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,django__django-15731,1,260920,17,17
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,django__django-7530,1,260920,18,18
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,django__django-16662,1,260920,19,19
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail,ponytail,,null,django__django-16662,1,260920,20,20
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline,baseline,,null,django__django-15731,1,260920,21,21
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,django__django-13516,1,260920,22,22
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail,ponytail,,null,pytest-dev__pytest-7571,1,260920,23,23
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline,baseline,,null,django__django-13516,1,260920,24,24
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,django__django-7530,1,260920,25,25
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail,ponytail,,null,django__django-15731,1,260920,26,26
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline,baseline,,null,django__django-16662,1,260920,27,27
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,django__django-13516,1,260920,28,28
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,django__django-15731,1,260920,29,29
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail,ponytail,,null,django__django-13516,1,260920,30,30
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,django__django-15731,1,260920,31,31
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,django__django-16662,1,260920,32,32
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,django__django-7530,1,260920,33,33
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,django__django-15731,1,260920,34,34
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail,ponytail,,null,django__django-13516,1,260920,35,35
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,django__django-13516,1,260920,36,36
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline,baseline,,null,django__django-16662,1,260920,37,37
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,pytest-dev__pytest-7571,1,260920,38,38
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail,ponytail,,null,django__django-16662,1,260920,39,39
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,django__django-15731,1,260920,40,40
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,django__django-16662,1,260920,41,41
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,django__django-7530,1,260920,42,42
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,django__django-13516,1,260920,43,43
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline,baseline,,null,pytest-dev__pytest-7571,1,260920,44,44
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail,ponytail,,null,django__django-15731,1,260920,45,45
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,django__django-15731,1,260920,46,46
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline,baseline,,null,django__django-7530,1,260920,47,47
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,django__django-16662,1,260920,48,48
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,django__django-13516,1,260920,49,49
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,django__django-7530,1,260920,50,50
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,pytest-dev__pytest-7571,1,260920,51,51
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,django__django-7530,1,260920,52,52
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,django__django-16662,1,260920,53,53
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,django__django-7530,1,260920,54,54
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p05,ponytail,0.05,0.05,pytest-dev__pytest-7571,1,260920,55,55
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,ponytail__warning_0p1,ponytail,0.1,0.1,django__django-16662,1,260920,56,56
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,pytest-dev__pytest-7571,1,260920,57,57
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,pytest-dev__pytest-7571,1,260920,58,58
+v4-1-flash,DeepSeek V4.1 Flash,deepseek/deepseek-v4.1-flash-20260910,openrouter,relace,none,baseline__warning_0p1,baseline,0.1,0.1,django__django-13516,1,260920,59,59
+v4-flash-0731,DeepSeek V4 Flash 0731,deepseek/deepseek-v4-flash-0731,openrouter,relace,none,baseline__warning_0p05,baseline,0.05,0.05,pytest-dev__pytest-7571,1,260920,60,60

@@ -1007,6 +1007,8 @@ def run_one(
     upstream_provider: str = PINNED_OPENROUTER_UPSTREAM,
     reasoning: str = PINNED_REASONING,
     model_key: str | None = None,
+    result_arm: str | None = None,
+    budget_warning_ratio: float | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> Result:
     def report(message: str) -> None:
@@ -1117,7 +1119,7 @@ def run_one(
             upstream_provider=upstream_provider,
         )
         result = Result(
-            arm=arm,
+            arm=result_arm or arm,
             task=instance_id,
             repeat=repeat,
             run_index=run_index,
@@ -1159,6 +1161,8 @@ def run_one(
             diff_lines=0,
             run_dir=str(run_dir),
             error="Hermes timeout",
+            base_arm=arm,
+            budget_warning_ratio=budget_warning_ratio,
             api_wait_seconds=as_float(timing.get("api_wait_seconds")),
             tool_execution_seconds=as_float(timing.get("tool_execution_seconds")),
             terminal_execution_seconds=as_float(timing.get("terminal_execution_seconds")),
@@ -1306,7 +1310,7 @@ def run_one(
         errors.append(eval_error)
 
     result = Result(
-        arm=arm,
+        arm=result_arm or arm,
         task=instance_id,
         repeat=repeat,
         run_index=run_index,
@@ -1350,6 +1354,8 @@ def run_one(
         diff_lines=diff_lines,
         run_dir=str(run_dir),
         error="; ".join(errors),
+        base_arm=arm,
+        budget_warning_ratio=budget_warning_ratio,
         api_wait_seconds=as_float(timing.get("api_wait_seconds")),
         tool_execution_seconds=as_float(timing.get("tool_execution_seconds")),
         terminal_execution_seconds=as_float(timing.get("terminal_execution_seconds")),

@@ -32,6 +32,7 @@ from .config import (
     PONY_REPO,
     PONY_SHA,
     Result,
+    budget_condition_arm,
 )
 from .designs import ModelSpec, default_design, load_design
 from .credentials import (
@@ -246,6 +247,9 @@ def failed_result(
     run_dir: Path,
     error: Exception,
     model_spec: ModelSpec | None = None,
+    *,
+    base_arm: str | None = None,
+    budget_warning_ratio: float | None = None,
 ) -> Result:
     model_spec = model_spec or default_design().models[0]
     return Result(
@@ -283,6 +287,8 @@ def failed_result(
         diff_lines=0,
         run_dir=str(run_dir),
         error=str(error),
+        base_arm=base_arm or arm,
+        budget_warning_ratio=budget_warning_ratio,
     )
 
 
@@ -353,11 +359,14 @@ def _preflight(args: argparse.Namespace) -> str | None:
 
     image_id: str | None = None
     if args.hermes_runtime == "docker":
-        pull = sh(["docker", "pull", args.hermes_image], timeout=900)
-        if pull.returncode:
-            raise SystemExit(
-                f"Could not pull Hermes image {args.hermes_image}:\n{pull.stderr}"
-            )
+        # An immutable local image ID can be reused for a comparable follow-up
+        # experiment. Docker cannot pull an image by its local ID.
+        if not args.hermes_image.startswith("sha256:"):
+            pull = sh(["docker", "pull", args.hermes_image], timeout=900)
+            if pull.returncode:
+                raise SystemExit(
+                    f"Could not pull Hermes image {args.hermes_image}:\n{pull.stderr}"
+                )
         inspect = sh(
             ["docker", "image", "inspect", "--format", "{{.Id}}", args.hermes_image],
             timeout=30,
@@ -450,8 +459,9 @@ def build_run_plan(
     repeats: int,
     master_seed: int,
     models: list[ModelSpec] | None = None,
+    budget_warning_ratios: tuple[float | None, ...] = (None,),
 ) -> tuple[list[dict[str, Any]], list[int]]:
-    """Build complete model×treatment×task blocks and shuffle each block once."""
+    """Build complete model×treatment×warning×task blocks and shuffle once."""
     seed_rng = random.Random(master_seed)
     repeat_seeds = [master_seed]
     while len(repeat_seeds) < repeats:
@@ -460,6 +470,7 @@ def build_run_plan(
             repeat_seeds.append(candidate)
 
     model_specs = models or list(default_design().models)
+    multiple_ratios = len(budget_warning_ratios) > 1
     plan: list[dict[str, Any]] = []
     for repeat in range(1, repeats + 1):
         repeat_seed = repeat_seeds[repeat - 1]
@@ -471,7 +482,10 @@ def build_run_plan(
                 "api_provider": model_spec.api_provider,
                 "upstream_provider": model_spec.upstream_provider,
                 "reasoning": model_spec.reasoning,
-                "arm": arm,
+                "arm": budget_condition_arm(arm, ratio, multiple=multiple_ratios),
+                "base_arm": arm,
+                "budget_warning_ratio": ratio,
+                "budget_warning_ratio_label": "null" if ratio is None else str(ratio),
                 "instance_id": instance_id,
                 "repeat": repeat,
                 "repeat_seed": repeat_seed,
@@ -479,6 +493,7 @@ def build_run_plan(
             for model_spec in model_specs
             for instance_id in task_ids
             for arm in arms
+            for ratio in budget_warning_ratios
         ]
         random.Random(repeat_seed).shuffle(block)
         for block_position, item in enumerate(block, 1):
@@ -718,6 +733,10 @@ def main() -> int:
         ),
         "max_turns": design.max_turns,
         "budget_warning_ratio": design.budget_warning_ratio,
+        "budget_warning_ratios": list(design.budget_warning_ratios),
+        "budget_warning_ratio_scope": (
+            "per_run" if len(design.budget_warning_ratios) > 1 else "experiment"
+        ),
         "swebench_version": "4.1.0",
         "hermes_runtime": args.hermes_runtime,
         "hermes_image_ref": args.hermes_image if args.hermes_runtime == "docker" else None,
@@ -726,9 +745,16 @@ def main() -> int:
         "ponytail_commit": PONY_SHA,
         "caveman_commit": CAVE_SHA,
         "arms": list(args.arms),
+        "condition_arms": [
+            budget_condition_arm(arm, ratio, multiple=len(design.budget_warning_ratios) > 1)
+            for arm in args.arms
+            for ratio in design.budget_warning_ratios
+        ],
         "available_arms": list(ARMS),
         "treatment_design": (
-            "default Caveman x Ponytail 2x2 on normal hermes-cli tools; "
+            "treatments crossed with per-run budget warning ratios on normal hermes-cli tools"
+            if len(design.budget_warning_ratios) > 1
+            else "default Caveman x Ponytail 2x2 on normal hermes-cli tools; "
             "lean-tool variants remain optional"
         ),
         "default_toolsets": DEFAULT_TOOLSETS,
@@ -738,12 +764,12 @@ def main() -> int:
         "repeat_seeds": [],
         "randomization": (
             "full-factorial randomized complete blocks: each block contains "
-            "every model x treatment x selected-instance cell exactly once; "
+            "every model x treatment x warning-ratio x selected-instance cell exactly once; "
             "all cells are shuffled together with the block's recorded repeat_seed"
         ),
         "confidence_interval": (
             "two-sided 95% Student-t across selected task means; "
-            "repeats are averaged within model x treatment x task first"
+            "repeats are averaged within model x treatment x warning-ratio x task first"
         ),
         "trace_capture": {
             "enabled": True,
@@ -784,6 +810,7 @@ def main() -> int:
             args.repeats,
             args.seed,
             models=list(design.models),
+            budget_warning_ratios=design.budget_warning_ratios,
         )
         meta["repeat_seeds"] = preview_seeds
         (output / "metadata.json").write_text(
@@ -795,7 +822,8 @@ def main() -> int:
         for item in preview_plan:
             print(
                 f"  {int(item['run_index']):02d}: "
-                f"{item['model_label']} / {LABEL[str(item['arm'])]} / "
+                f"{item['model_label']} / {LABEL[str(item['base_arm'])]} / "
+                f"ratio={item['budget_warning_ratio']} / "
                 f"{item['instance_id']} / block {item['repeat']}"
             )
         print(f"\nPlan: {len(preview_plan)} cells; no model calls were made.")
@@ -839,6 +867,7 @@ def main() -> int:
         args.repeats,
         args.seed,
         models=models,
+        budget_warning_ratios=design.budget_warning_ratios,
     )
     meta["repeat_seeds"] = repeat_seeds
     (output / "metadata.json").write_text(
@@ -873,19 +902,26 @@ def main() -> int:
         root = Path(tempdir)
         templates: dict[tuple[str, str], Path] = {}
 
-        # Build one pristine template per model x treatment so provider routing
+        # Build one pristine template per model x treatment x warning ratio so provider routing
         # is pinned before the run begins. Individual observations still receive
         # a fresh copy, preventing session/state leakage across randomized cells.
         for model_spec in models:
-            for arm in arms:
-                template = root / "templates" / model_spec.key / arm
+            for arm, ratio in (
+                (arm, ratio)
+                for arm in arms
+                for ratio in design.budget_warning_ratios
+            ):
+                condition_arm = budget_condition_arm(
+                    arm, ratio, multiple=len(design.budget_warning_ratios) > 1
+                )
+                template = root / "templates" / model_spec.key / condition_arm
                 make_profile(
                     home,
                     template,
                     model=model_spec.model,
                     upstream_provider=model_spec.upstream_provider,
                     max_turns=design.max_turns,
-                    budget_warning_ratio=design.budget_warning_ratio,
+                    budget_warning_ratio=ratio,
                     copy_source_credentials=not bool(credential.value),
                 )
                 install_arm(
@@ -900,7 +936,7 @@ def main() -> int:
                     model=model_spec.model,
                     upstream_provider=model_spec.upstream_provider,
                     max_turns=design.max_turns,
-                    budget_warning_ratio=design.budget_warning_ratio,
+                    budget_warning_ratio=ratio,
                 )
                 # Treatment installers may edit plugins.enabled. Reassert the
                 # observer after installation so every arm is instrumented equally.
@@ -919,12 +955,14 @@ def main() -> int:
                     artifact = template / artifact_name
                     if artifact.exists():
                         artifact.unlink()
-                templates[(model_spec.key, arm)] = template
+                templates[(model_spec.key, condition_arm)] = template
 
         for item in plan:
             model_key = str(item["model_key"])
             model_spec = model_by_key[model_key]
             arm = str(item["arm"])
+            base_arm = str(item["base_arm"])
+            warning_ratio = item["budget_warning_ratio"]
             instance_id = str(item["instance_id"])
             instance = instance_by_id[instance_id]
             repeat = int(item["repeat"])
@@ -932,7 +970,8 @@ def main() -> int:
 
             print(
                 f"[{run_index:02d}/{len(plan):02d}] "
-                f"{model_spec.label} / {LABEL[arm]} / {instance_id} / b{repeat}"
+                f"{model_spec.label} / {LABEL[base_arm]} / "
+                f"ratio={warning_ratio} / {instance_id} / b{repeat}"
             )
 
             def report_run_progress(message: str) -> None:
@@ -948,7 +987,7 @@ def main() -> int:
                     run_profile,
                     instance,
                     resolved_dataset,
-                    arm,
+                    base_arm,
                     repeat,
                     run_index,
                     cache_root,
@@ -962,6 +1001,8 @@ def main() -> int:
                     upstream_provider=model_spec.upstream_provider,
                     reasoning=model_spec.reasoning,
                     model_key=model_spec.key,
+                    result_arm=arm,
+                    budget_warning_ratio=warning_ratio,
                     progress=report_run_progress,
                 )
             except Exception as exc:
@@ -977,7 +1018,9 @@ def main() -> int:
                 )
                 print("    HARNESS ERROR:", str(exc).splitlines()[0])
                 result = failed_result(
-                    arm, instance, repeat, run_index, run_dir, exc, model_spec
+                    arm, instance, repeat, run_index, run_dir, exc, model_spec,
+                    base_arm=base_arm,
+                    budget_warning_ratio=warning_ratio,
                 )
             finally:
                 shutil.rmtree(run_profile, ignore_errors=True)
@@ -1017,7 +1060,8 @@ def main() -> int:
     write_experiment_reports(
         output,
         results,
-        arms,
+        [budget_condition_arm(arm, ratio, multiple=len(design.budget_warning_ratios) > 1)
+         for arm in arms for ratio in design.budget_warning_ratios],
         task_ids,
         meta,
         analysis_mode=args.analysis_mode,

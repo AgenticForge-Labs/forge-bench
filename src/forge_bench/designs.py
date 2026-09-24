@@ -49,6 +49,7 @@ class ExperimentDesign:
     seed: int
     max_turns: int
     budget_warning_ratio: float | None
+    budget_warning_ratios: tuple[float | None, ...]
     analysis_mode: str
     require_same_upstream: bool
     source_path: str | None = None
@@ -58,6 +59,7 @@ class ExperimentDesign:
         payload["arms"] = list(self.arms)
         payload["models"] = [model.as_dict() for model in self.models]
         payload["instance_ids"] = list(self.instance_ids) if self.instance_ids else None
+        payload["budget_warning_ratios"] = list(self.budget_warning_ratios)
         return payload
 
 
@@ -82,6 +84,7 @@ def default_design() -> ExperimentDesign:
         seed=DEFAULT_SEED,
         max_turns=PINNED_MAX_TURNS,
         budget_warning_ratio=None,
+        budget_warning_ratios=(None,),
         analysis_mode="basic",
         require_same_upstream=True,
     )
@@ -200,12 +203,22 @@ def load_design(path: Path) -> ExperimentDesign:
     max_turns = int(root.get("max_turns", PINNED_MAX_TURNS))
     if max_turns < 1:
         raise ValueError("max_turns must be >= 1")
-    budget_warning_raw = root.get("budget_warning_ratio")
-    budget_warning_ratio = (
-        None if budget_warning_raw is None else float(budget_warning_raw)
+    if "budget_warning_ratios" in root:
+        if "budget_warning_ratio" in root:
+            raise ValueError("Use budget_warning_ratio or budget_warning_ratios, not both")
+        raw_ratios = root["budget_warning_ratios"]
+        if not isinstance(raw_ratios, list) or not raw_ratios:
+            raise ValueError("budget_warning_ratios must be a non-empty list")
+    else:
+        raw_ratios = [root.get("budget_warning_ratio")]
+    budget_warning_ratios = tuple(
+        None if value is None else float(value) for value in raw_ratios
     )
-    if budget_warning_ratio is not None and not (0.0 < budget_warning_ratio < 1.0):
-        raise ValueError("budget_warning_ratio must be null or strictly between 0 and 1")
+    if any(value is not None and not (0.0 < value < 1.0) for value in budget_warning_ratios):
+        raise ValueError("budget warning ratios must be null or strictly between 0 and 1")
+    if len(set(budget_warning_ratios)) != len(budget_warning_ratios):
+        raise ValueError("budget_warning_ratios must not contain duplicates")
+    budget_warning_ratio = budget_warning_ratios[0] if len(budget_warning_ratios) == 1 else None
     analysis_mode = str(root.get("analysis_mode") or "advanced")
     if analysis_mode not in {"basic", "advanced"}:
         raise ValueError("analysis_mode must be basic or advanced")
@@ -224,6 +237,7 @@ def load_design(path: Path) -> ExperimentDesign:
         seed=seed,
         max_turns=max_turns,
         budget_warning_ratio=budget_warning_ratio,
+        budget_warning_ratios=budget_warning_ratios,
         analysis_mode=analysis_mode,
         require_same_upstream=require_same_upstream,
         source_path=str(path),
