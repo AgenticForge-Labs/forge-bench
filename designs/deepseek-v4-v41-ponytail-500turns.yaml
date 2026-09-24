@@ -24,11 +24,13 @@ provider:
   require_same_upstream: true
 
 reasoning: none
-max_turns: 500
-budget_warning_ratios:
-  - 0.05
-  - 0.1
-  - null
+factors:
+  max_turns:
+    - 500
+  budget_warning_ratio:
+    - 0.05
+    - 0.1
+    - null
 analysis_mode: advanced
 
 models:
