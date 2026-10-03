@@ -97,7 +97,7 @@ class RobotBenchmarkConfig:
     skill_source: Path
     broker_command: str = "soarm101-broker"
     broker_port: int = DEFAULT_BROKER_PORT
-    sandbox_name: str = "forge-bench-robot"
+    sandbox_name: str | None = None
     hermes_command: str = "hermes"
     hermes_provider: str = "openrouter"
     toolsets: str = DEFAULT_TOOLSETS
@@ -111,6 +111,10 @@ class RobotBenchmarkConfig:
     )
 
     def validated(self) -> "RobotBenchmarkConfig":
+        if self.output.exists() and any(self.output.iterdir()):
+            raise FileExistsError(
+                f"robot benchmark output directory must be new or empty: {self.output}"
+            )
         if not self.robotctl_source.is_file():
             raise FileNotFoundError(f"robotctl source not found: {self.robotctl_source}")
         if not self.task_source.is_file():
@@ -562,6 +566,7 @@ def run_robot_benchmark(
     input_hashes = _copy_inputs(config)
     broker_events = config.output / "broker-events.jsonl"
     token = secrets.token_urlsafe(32)
+    sandbox_name = config.sandbox_name or f"forge-bench-robot-{secrets.token_hex(4)}"
     broker = BrokerProcess(
         command=config.broker_command,
         port=config.broker_port,
@@ -581,7 +586,7 @@ def run_robot_benchmark(
             python_binaries=config.robot_network_binaries,
         )
         spec = OpenShellSandboxSpec(
-            name=config.sandbox_name,
+            name=sandbox_name,
             image=config.image,
             policy=policy,
             providers=(config.provider,),
@@ -595,15 +600,15 @@ def run_robot_benchmark(
 
         inputs = config.output / "inputs"
         for name in ("robotctl.py", "TASK.md", "SKILL.md"):
-            runtime.upload(config.sandbox_name, inputs / name)
+            runtime.upload(sandbox_name, inputs / name)
 
         runtime.effective_policy(
-            config.sandbox_name,
+            sandbox_name,
             config.output / "openshell-effective-policy.yaml",
         )
 
         proc = runtime.exec(
-            config.sandbox_name,
+            sandbox_name,
             [
                 config.hermes_command,
                 "chat",
@@ -647,7 +652,7 @@ def run_robot_benchmark(
             ("observations", config.output),
         ):
             try:
-                runtime.download(config.sandbox_name, source, destination)
+                runtime.download(sandbox_name, source, destination)
             except Exception as exc:
                 with (config.output / "download-errors.txt").open(
                     "a", encoding="utf-8"
@@ -655,7 +660,7 @@ def run_robot_benchmark(
                     handle.write(f"{source}: {exc}\n")
 
         runtime.logs(
-            config.sandbox_name,
+            sandbox_name,
             config.output / "openshell-logs.txt",
             level="info",
             since="2h",
@@ -664,13 +669,13 @@ def run_robot_benchmark(
         if sandbox_created:
             try:
                 runtime.effective_policy(
-                    config.sandbox_name,
+                    sandbox_name,
                     config.output / "openshell-effective-policy-final.yaml",
                 )
             except Exception:
                 pass
             try:
-                runtime.delete(config.sandbox_name)
+                runtime.delete(sandbox_name)
             except Exception:
                 pass
         broker_stdout, broker_stderr = broker.stop()
@@ -691,6 +696,7 @@ def run_robot_benchmark(
         "provider": config.provider,
         "hermes_provider": config.hermes_provider,
         "image": config.image,
+        "sandbox_name": sandbox_name,
         "broker_port": config.broker_port,
         "input_sha256": input_hashes,
         "capabilities": capabilities,
@@ -734,7 +740,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--broker-command", default="soarm101-broker")
     parser.add_argument("--broker-port", type=int, default=DEFAULT_BROKER_PORT)
-    parser.add_argument("--sandbox-name", default="forge-bench-robot")
+    parser.add_argument("--sandbox-name")
     parser.add_argument("--hermes-command", default="hermes")
     parser.add_argument("--hermes-provider", default="openrouter")
     parser.add_argument("--toolsets", default=DEFAULT_TOOLSETS)
