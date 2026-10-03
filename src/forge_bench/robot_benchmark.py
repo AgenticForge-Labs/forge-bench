@@ -491,6 +491,17 @@ class BrokerProcess:
                 "robot agent authority is not active; a human must run "
                 "'soarm101 agent arm' before the benchmark"
             )
+        cameras = result.get("cameras")
+        configured = {
+            str(name)
+            for name in cameras
+            if isinstance(name, str)
+        } if isinstance(cameras, list) else set()
+        if "overhead" not in configured:
+            raise RuntimeError(
+                "the physical benchmark requires a configured 'overhead' camera "
+                "for authoritative completion evidence"
+            )
         return result
 
     def stop(self) -> None:
