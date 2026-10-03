@@ -140,6 +140,7 @@ def main() -> int:
         )
         assert isinstance(score, RobotBenchmarkScore)
         assert score.fresh_overhead_evidence is True
+        assert score.valid is True
         assert score.success is True
         assert score.semantic_judgment is not None
         assert judge.calls == [final_path]
@@ -162,6 +163,7 @@ def main() -> int:
             broker_events_path=events,
             judge=stale_judge,
         )
+        assert stale.valid is True
         assert stale.fresh_overhead_evidence is False
         assert stale.success is False
         assert stale_judge.calls == []
@@ -183,8 +185,23 @@ def main() -> int:
             broker_events_path=events,
             judge=None,
         )
+        assert evidence_only.valid is True
         assert evidence_only.fresh_overhead_evidence is True
         assert evidence_only.success is None
+
+        class BrokenJudge:
+            def judge(self, image_path: Path) -> VisionJudgment:
+                raise RuntimeError("synthetic judge outage")
+
+        judge_failure = score_robot_completion(
+            run_dir=run,
+            result_path=result,
+            broker_events_path=events,
+            judge=BrokenJudge(),
+        )
+        assert judge_failure.valid is False
+        assert judge_failure.success is None
+        assert "judge failed" in judge_failure.reason
 
     dockerfile = Path("robot_tasks/openshell/Dockerfile.hermes").read_text(
         encoding="utf-8"
