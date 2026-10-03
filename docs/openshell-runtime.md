@@ -76,8 +76,10 @@ command at sandbox creation.
 For automated commands, `--no-login-shell` is used by default to avoid user shell startup
 files changing output or side effects.
 
-Every caller should use `delete()` in cleanup paths. Deleting a sandbox stops its
-processes and releases its OpenShell-managed state/credentials.
+Every caller should use `delete()` in cleanup paths. OpenShell's delete request is
+asynchronous, so the runtime does not treat "deletion accepted" as completion: it polls
+`sandbox get --output json` until the sandbox is actually absent and fails on unexpected
+probe errors or timeout.
 
 ## Validation
 
