@@ -8,6 +8,7 @@ SWE-bench, robots, or any benchmark-specific scoring.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -48,13 +49,16 @@ class NetworkEndpoint:
             raise ValueError("OpenShell network endpoint port must be within 1..65535")
         if not self.binaries or any(not item.startswith("/") for item in self.binaries):
             raise ValueError("OpenShell network binaries must be non-empty absolute paths")
-        if self.protocol not in {"rest", "tcp", "websocket", "graphql", "mcp", "json-rpc"}:
-            raise ValueError(f"unsupported OpenShell protocol: {self.protocol}")
+        if self.protocol not in {"rest", "websocket", "tcp"}:
+            raise ValueError(
+                "this Forge Bench policy helper supports only rest, websocket, or tcp; "
+                "GraphQL/MCP/JSON-RPC require protocol-specific rule schemas"
+            )
         if self.enforcement not in {"enforce", "audit"}:
             raise ValueError("OpenShell enforcement must be 'enforce' or 'audit'")
         if self.protocol == "tcp" and self.rules:
             raise ValueError("TCP endpoints cannot use request rules")
-        if self.protocol in {"rest", "websocket", "graphql"} and not self.rules:
+        if self.protocol in {"rest", "websocket"} and not self.rules:
             raise ValueError(f"{self.protocol} endpoints require explicit request rules")
         return self
 
@@ -101,8 +105,10 @@ class OpenShellPolicy:
                 )
             },
             "process": {
-                "run_as_user": self.user,
-                "run_as_group": self.group,
+                # OpenShell's policy schema represents both named identities and
+                # numeric UID/GID values as strings in YAML.
+                "run_as_user": str(self.user),
+                "run_as_group": str(self.group),
             },
         }
         if self.endpoints:
@@ -163,10 +169,11 @@ class OpenShellRuntime:
         cwd: Path | None = None,
         env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        process_env = None if env is None else {**os.environ, **dict(env)}
         completed = self.runner(
             [self.executable, *argv],
             cwd=cwd,
-            env=None if env is None else dict(env),
+            env=process_env,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
