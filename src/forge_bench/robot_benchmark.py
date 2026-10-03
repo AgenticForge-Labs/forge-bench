@@ -398,6 +398,8 @@ def robot_broker_policy(
     python_binaries: Sequence[str],
 ) -> OpenShellPolicy:
     return OpenShellPolicy(
+        read_only=("/opt/hermes",),
+        read_write=("/tmp",),
         user=10000,
         group=10000,
         endpoints=(
