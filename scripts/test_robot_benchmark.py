@@ -184,6 +184,33 @@ def main() -> int:
         assert evidence_only.fresh_overhead_evidence is True
         assert evidence_only.success is None
 
+    dockerfile = Path("robot_tasks/openshell/Dockerfile.hermes").read_text(
+        encoding="utf-8"
+    )
+    assert "WORKDIR /sandbox" in dockerfile
+    assert "ENTRYPOINT []" in dockerfile
+    assert "USER 10000:10000" in dockerfile
+
+    import yaml
+
+    provider = yaml.safe_load(
+        Path("robot_tasks/openshell/hermes-openrouter-provider.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert provider["id"] == "hermes-openrouter"
+    assert provider["credentials"][0]["env_vars"] == ["OPENROUTER_API_KEY"]
+    assert provider["endpoints"] == [
+        {
+            "host": "openrouter.ai",
+            "port": 443,
+            "protocol": "rest",
+            "access": "read-write",
+            "enforcement": "enforce",
+        }
+    ]
+    assert all(str(path).startswith("/opt/hermes/") for path in provider["binaries"])
+
     skill = Path("robot_tasks/skills/soarm101-robot-camera/SKILL.md").read_text(
         encoding="utf-8"
     )
