@@ -11,7 +11,7 @@ runs are unchanged. The module in `src/forge_bench/openshell_runtime.py` owns on
 - sandbox creation/deletion;
 - upload/download;
 - non-interactive command execution;
-- effective-policy capture; and
+- effective-policy capture;
 - OpenShell log capture; and
 - explicit provider attachment at sandbox creation.
 
@@ -52,8 +52,15 @@ adds the provider-derived credential and network rules to the effective policy f
 started sandbox processes. Forge Bench never copies provider secret values into the task
 bundle.
 
-Network endpoints require absolute executable paths. Inspected REST/WebSocket/GraphQL
-entries require explicit request rules and default to `enforcement: enforce`.
+Network endpoints require absolute executable paths. The current Forge Bench helper
+intentionally supports only REST, WebSocket, and raw TCP endpoints. REST/WebSocket entries
+require explicit method/path rules and default to `enforcement: enforce`; GraphQL, MCP, and
+JSON-RPC are rejected until Forge Bench has protocol-specific rule types instead of silently
+emitting invalid REST-shaped policy.
+
+OpenShell's policy schema represents process identities as strings, including numeric IDs
+(for example `"10000"`). `OpenShellPolicy` accepts integers for convenience but serializes
+them to the schema-required string form.
 
 The robot benchmark adapter will later use this to grant only its standalone broker client
 access to the host-side robot broker, while the robot SDK, serial device, cameras, and
@@ -84,6 +91,8 @@ The contract test does not require an OpenShell installation. It verifies the ge
 policy structure and exact CLI lifecycle commands with a fake command runner.
 
 A real local OpenShell installation is still required before this runtime is promoted into
-the default or selectable paid benchmark execution path. That hardware/runtime validation
-should verify the active gateway, compute driver, sandbox image, effective policy, network
-denials, upload/exec/download behavior, and cleanup.
+the default or selectable paid benchmark execution path. The CLI adapter has been checked
+against the current OpenShell command surface (`sandbox create`, `upload`, `exec`,
+`download`, `sandbox get --policy-only`, `logs`, and `sandbox delete`), but local
+validation must still verify the installed CLI/gateway version, compute driver, sandbox image,
+effective policy, network denials, upload/exec/download behavior, and cleanup.
