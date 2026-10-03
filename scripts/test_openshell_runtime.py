@@ -27,16 +27,29 @@ class FakeRunner:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
         self.kwargs: list[dict[str, object]] = []
+        self.deleted: set[str] = set()
 
     def __call__(self, argv, **kwargs):
         self.calls.append(list(argv))
         self.kwargs.append(dict(kwargs))
         stdout = ""
+        stderr = ""
+        returncode = 0
         if argv[1:4] == ["sandbox", "create", "--name"]:
             stdout = json.dumps({"name": argv[4], "phase": "Ready"})
         elif "--policy-only" in argv:
             stdout = "version: 1\n"
-        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+        elif argv[1:3] == ["sandbox", "delete"]:
+            self.deleted.add(argv[3])
+        elif argv[1:3] == ["sandbox", "get"] and argv[3] in self.deleted:
+            returncode = 1
+            stderr = "sandbox not found"
+        return subprocess.CompletedProcess(
+            argv,
+            returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
 
 
 def main() -> int:
@@ -103,6 +116,18 @@ def main() -> int:
         raise AssertionError("GraphQL must not use the REST-style policy helper")
 
 
+    for bad_name in ("UpperCase", "bad_name", "-leading", "trailing-", "x" * 64):
+        try:
+            OpenShellSandboxSpec(
+                name=bad_name,
+                image="example/hermes:test",
+                policy=policy,
+            ).validated()
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"invalid sandbox name should fail: {bad_name!r}")
+
     fake = FakeRunner()
     runtime = OpenShellRuntime(executable="openshell", runner=fake)
     with tempfile.TemporaryDirectory() as td:
@@ -134,7 +159,7 @@ def main() -> int:
         runtime.download("forge-test", "output", root / "download")
         runtime.effective_policy("forge-test", root / "effective.yaml")
         runtime.logs("forge-test", root / "logs.txt")
-        runtime.delete("forge-test")
+        runtime.delete("forge-test", poll_interval=0.01)
 
     create = fake.calls[0]
     assert create[:4] == ["openshell", "sandbox", "create", "--name"]
@@ -165,6 +190,7 @@ def main() -> int:
     assert "PATH" in host_env
 
     assert ["openshell", "sandbox", "delete", "forge-test"] in fake.calls
+    assert ["openshell", "sandbox", "get", "forge-test", "--output", "json"] in fake.calls
     print("OpenShell runtime contract OK")
     return 0
 
