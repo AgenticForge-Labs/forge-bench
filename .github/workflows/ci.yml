@@ -14,6 +14,7 @@ jobs:
       - run: uv sync
       - run: uv run python -m compileall -q src
       - run: uv run python scripts/test_openshell_runtime.py
+      - run: uv run python scripts/test_robot_benchmark.py
       - run: |
           uv run python - <<'PY'
           import json
