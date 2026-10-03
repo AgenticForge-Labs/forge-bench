@@ -13,6 +13,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync
       - run: uv run python -m compileall -q src
+      - run: uv run python scripts/test_openshell_runtime.py
       - run: |
           uv run python - <<'PY'
           import json
@@ -622,7 +623,6 @@ jobs:
               assert (analysis_dir / "advanced_latency_efficiency.csv").is_file()
               assert (analysis_dir / "advanced_timing_evidence.csv").is_file()
           PY
-      - run: uv run python scripts/test_openshell_runtime.py
       - run: uv run forge-bench --help
       - name: Verify reanalysis CLI accepts existing output
         run: |
