@@ -151,17 +151,20 @@ def main() -> int:
     exec_call = next(call for call in fake.calls if call[1:3] == ["sandbox", "exec"])
     assert "--no-login-shell" in exec_call
     exec_index = fake.calls.index(exec_call)
-    exec_env = fake.kwargs[exec_index]["env"]
-    assert isinstance(exec_env, dict)
-    assert exec_env["EXAMPLE"] == "1"
-    assert "PATH" in exec_env
-
+    assert fake.kwargs[exec_index]["env"] is None
     assert "--workdir" in exec_call
     assert "/workspace" in exec_call
     assert "--env" in exec_call
     assert "EXAMPLE=1" in exec_call
 
-    assert fake.calls[-1] == ["openshell", "sandbox", "delete", "forge-test"]
+    # Host-side CLI environment overrides preserve PATH and the caller environment.
+    runtime._run(["status"], env={"FORGE_BENCH_TEST_ENV": "1"})
+    host_env = fake.kwargs[-1]["env"]
+    assert isinstance(host_env, dict)
+    assert host_env["FORGE_BENCH_TEST_ENV"] == "1"
+    assert "PATH" in host_env
+
+    assert ["openshell", "sandbox", "delete", "forge-test"] in fake.calls
     print("OpenShell runtime contract OK")
     return 0
 
