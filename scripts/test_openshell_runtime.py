@@ -1,19 +1,26 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 import yaml
 
-from forge_bench.openshell_runtime import (
-    NetworkEndpoint,
-    OpenShellPolicy,
-    OpenShellRuntime,
-    OpenShellSandboxSpec,
-    RestRule,
-)
+MODULE_PATH = Path(__file__).resolve().parents[1] / "src" / "forge_bench" / "openshell_runtime.py"
+SPEC = importlib.util.spec_from_file_location("forge_bench_openshell_runtime_contract", MODULE_PATH)
+assert SPEC is not None and SPEC.loader is not None
+RUNTIME = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = RUNTIME
+SPEC.loader.exec_module(RUNTIME)
+
+NetworkEndpoint = RUNTIME.NetworkEndpoint
+OpenShellPolicy = RUNTIME.OpenShellPolicy
+OpenShellRuntime = RUNTIME.OpenShellRuntime
+OpenShellSandboxSpec = RUNTIME.OpenShellSandboxSpec
+RestRule = RUNTIME.RestRule
 
 
 class FakeRunner:
