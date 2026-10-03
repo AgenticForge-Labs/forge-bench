@@ -41,7 +41,7 @@ DEFAULT_BROKER_PORT = 8765
 DEFAULT_SANDBOX_IMAGE = "agenticforge/forge-bench-hermes-openshell:local"
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash-20260910"
 DEFAULT_JUDGE_MODEL = "deepseek/deepseek-v4.1-flash-20260910"
-DEFAULT_TOOLSETS = "hermes-cli,vision"
+DEFAULT_TOOLSETS = "hermes-cli"
 BROKER_ROUTES = (
     RestRule("GET", "/v1/health"),
     RestRule("GET", "/v1/capabilities"),
