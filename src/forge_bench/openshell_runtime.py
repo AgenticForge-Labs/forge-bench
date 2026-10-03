@@ -129,6 +129,7 @@ class OpenShellSandboxSpec:
     cpu: str | None = None
     memory: str | None = None
     labels: Mapping[str, str] = field(default_factory=dict)
+    providers: tuple[str, ...] = ()
 
     def validated(self) -> "OpenShellSandboxSpec":
         if not self.name.strip():
@@ -210,6 +211,10 @@ class OpenShellRuntime:
             argv.extend(["--memory", spec.memory])
         for key, value in sorted(spec.labels.items()):
             argv.extend(["--label", f"{key}={value}"])
+        for provider in spec.providers:
+            if not str(provider).strip():
+                raise ValueError("OpenShell provider names cannot be empty")
+            argv.extend(["--provider", str(provider).strip()])
         # Keep a scratch sandbox alive while Forge Bench uploads task files and
         # executes one or more managed commands.
         argv.extend(["--", "/bin/sh", "-lc", "while :; do sleep 3600; done"])
