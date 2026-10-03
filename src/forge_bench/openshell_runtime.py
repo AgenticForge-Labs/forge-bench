@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -138,8 +140,14 @@ class OpenShellSandboxSpec:
     providers: tuple[str, ...] = ()
 
     def validated(self) -> "OpenShellSandboxSpec":
-        if not self.name.strip():
+        name = self.name.strip()
+        if not name:
             raise ValueError("OpenShell sandbox name cannot be empty")
+        if len(name) > 63 or re.fullmatch(r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?", name) is None:
+            raise ValueError(
+                "OpenShell sandbox name must be a portable DNS-1123 label "
+                "(lowercase alphanumeric/hyphen, 1..63 characters)"
+            )
         if not self.image.strip():
             raise ValueError("OpenShell sandbox image cannot be empty")
         return self
@@ -319,5 +327,40 @@ class OpenShellRuntime:
         )
         return destination
 
-    def delete(self, sandbox: str, *, timeout: int = 120) -> None:
-        self._run(["sandbox", "delete", sandbox], timeout=timeout, check=False)
+    def delete(
+        self,
+        sandbox: str,
+        *,
+        timeout: int = 120,
+        poll_interval: float = 0.5,
+    ) -> None:
+        completed = self._run(["sandbox", "delete", sandbox], timeout=timeout, check=False)
+        if completed.returncode != 0:
+            combined = (completed.stdout + "\n" + completed.stderr).lower()
+            if "not found" in combined or "not_found" in combined:
+                return
+            raise RuntimeError(
+                "OpenShell sandbox delete failed: "
+                + (completed.stderr or completed.stdout or f"exit {completed.returncode}")
+            )
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            probe = self._run(
+                ["sandbox", "get", sandbox, "--output", "json"],
+                timeout=min(30, timeout),
+                check=False,
+            )
+            if probe.returncode != 0:
+                combined = (probe.stdout + "\n" + probe.stderr).lower()
+                if "not found" in combined or "not_found" in combined:
+                    return
+                raise RuntimeError(
+                    "OpenShell sandbox deletion probe failed: "
+                    + (probe.stderr or probe.stdout or f"exit {probe.returncode}")
+                )
+            time.sleep(max(0.05, poll_interval))
+
+        raise TimeoutError(
+            f"OpenShell sandbox {sandbox!r} was still present after {timeout} seconds"
+        )
