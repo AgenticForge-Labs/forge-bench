@@ -83,6 +83,17 @@ effective-policy capture, logs, and cleanup without making OpenShell a hard pack
 See [docs/openshell-runtime.md](docs/openshell-runtime.md). Promotion into a paid benchmark
 execution path is intentionally gated on local OpenShell gateway/image validation.
 
+## Physical robot benchmark
+
+Forge Bench also has a separate, opt-in physical manipulation path for isolated SO-ARM101
+experiments. It composes the generic OpenShell runtime with the bounded Motion SDK broker,
+uploads only the task/skill/client into the sandbox, keeps robot/camera devices on the trusted
+host, and scores completion from trusted final-overhead-image provenance plus an independent
+host-side vision judgment.
+
+This path does not alter the existing SWE-bench experimental design or runtime. See
+[docs/robot-manipulation-benchmark.md](docs/robot-manipulation-benchmark.md).
+
 ## Data and reproducibility
 
 The [study package](studies/last-generation-current-generation-tool-interactions/) contains both pinned YAML designs, 80 joined run records, raw merged JSONL traces, source checksums, derived CSV tables, the analysis script, and only the five PNGs shown in this README. It excludes the original 2.6 GB execution workspace, Hermes state databases, evaluation logs, duplicate reports, SVG versions, and unused figures.
