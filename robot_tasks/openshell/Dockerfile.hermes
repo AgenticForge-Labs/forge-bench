@@ -1,6 +1,20 @@
 FROM nousresearch/hermes-agent:latest
 
-# OpenShell's Docker driver uses the image WORKDIR as the sandbox workspace.
-# The upstream image intentionally keeps /opt/hermes immutable, so use the
-# OpenShell-managed compatibility workspace instead.
+# The published Hermes image normally starts as root and enters s6-overlay so
+# it can prepare /opt/data and then drop privileges. OpenShell already owns
+# process isolation/identity for this benchmark, so bypass that container
+# supervisor and run the sealed Hermes installation directly as its baked
+# runtime UID.
+USER root
+RUN mkdir -p /sandbox && chown 10000:10000 /sandbox
+
+# Mutable Hermes state is redirected into this OpenShell-managed writable
+# workdir by the benchmark runner. /opt/hermes stays immutable/read-only.
 WORKDIR /sandbox
+
+# Clear the inherited s6 dispatcher. OpenShell's canonical process and later
+# sandbox exec commands must be the actual commands supplied by Forge Bench.
+ENTRYPOINT []
+CMD []
+
+USER 10000:10000
