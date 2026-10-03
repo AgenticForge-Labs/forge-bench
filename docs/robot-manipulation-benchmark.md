@@ -57,6 +57,14 @@ The benchmark runner never arms, disarms, or relaxes the robot. It starts the tr
 checks `/v1/capabilities`, and refuses to create the sandbox when the human authority lease
 is absent or expired.
 
+For Docker-backed local OpenShell sandboxes, host-local services must listen on an interface
+reachable from the sandbox. The runner therefore binds the broker temporarily to
+`0.0.0.0:<port>` and addresses it from the sandbox as `host.openshell.internal`. This is
+not a persistent LAN service: a cryptographically random bearer token is generated per run,
+every broker route requires it, the broker exposes only the bounded action allowlist, and the
+runner terminates the broker during cleanup. Do not manually expose or port-forward the broker
+outside the workstation.
+
 The completion contract requires an `overhead` named camera. The `wrist` camera is useful
 but optional for fine manipulation.
 
