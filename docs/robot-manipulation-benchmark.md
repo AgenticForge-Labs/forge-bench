@@ -87,7 +87,8 @@ docker build \
 The derived image clears the upstream s6 entrypoint. The runner sets `HOME`,
 `HERMES_HOME`, `HERMES_WRITE_SAFE_ROOT`, and `XDG_CONFIG_HOME` under `/sandbox`
 for the Hermes execution, so mutable state stays inside the OpenShell-managed writable
-workspace while `/opt/hermes` remains immutable.
+workspace while `/opt/hermes` remains immutable. The base OpenShell policy explicitly
+grants `/opt/hermes` read-only access; it is never a repair or output target.
 
 For a reproducible study, replace the upstream `:latest` base in the wrapper Dockerfile
 with a validated immutable Hermes image digest and use a correspondingly pinned local tag.
@@ -103,6 +104,12 @@ image:
 
 ```text
 robot_tasks/openshell/hermes-openrouter-provider.yaml
+```
+
+Enable profile-backed provider policy composition on the active gateway once:
+
+```bash
+openshell settings set --global --key providers_v2_enabled --value true
 ```
 
 With `OPENROUTER_API_KEY` already set in your host shell, lint/import the profile and
