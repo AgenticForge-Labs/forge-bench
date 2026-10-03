@@ -44,6 +44,8 @@ def main() -> int:
         "run_as_user": 10000,
         "run_as_group": 10000,
     }
+    assert policy["filesystem_policy"]["read_only"] == ["/opt/hermes"]
+    assert policy["filesystem_policy"]["read_write"] == ["/tmp"]
     network = policy["network_policies"]["soarm101_robot_broker"]
     endpoint = network["endpoints"][0]
     assert endpoint["host"] == "host.openshell.internal"
