@@ -181,6 +181,8 @@ openshell-effective-policy-final.yaml
 openshell-logs.txt
 
 broker-events.jsonl
+broker-stdout.txt
+broker-stderr.txt
 hermes-stdout.jsonl
 hermes-stderr.txt
 
