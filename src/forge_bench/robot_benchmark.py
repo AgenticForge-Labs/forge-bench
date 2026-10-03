@@ -20,7 +20,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Callable, Mapping, Protocol, Sequence
 
@@ -80,6 +80,7 @@ class RobotBenchmarkScore:
     semantic_judgment: VisionJudgment | None
     success: bool | None
     reason: str
+    valid: bool = True
 
     def as_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -375,7 +376,19 @@ def score_robot_completion(
             reason="fresh trusted evidence verified; semantic visual judgment not run",
         )
 
-    judgment = judge.judge(evidence_path)
+    try:
+        judgment = judge.judge(evidence_path)
+    except Exception as exc:
+        return RobotBenchmarkScore(
+            agent_status=status,
+            fresh_overhead_evidence=True,
+            final_evidence_sha256=evidence_sha,
+            latest_overhead_sha256=latest_sha,
+            semantic_judgment=None,
+            success=None,
+            reason=f"independent visual judge failed: {exc}",
+            valid=False,
+        )
     success = bool(judgment.clear and judgment.object_inside_container)
     return RobotBenchmarkScore(
         agent_status=status,
@@ -614,6 +627,8 @@ def run_robot_benchmark(
     sandbox_created = False
     started_at = time.time()
     capabilities: dict[str, object] | None = None
+    run_error: str | None = None
+    hermes_exit_code: int | None = None
     try:
         broker.start()
         capabilities = broker.require_armed()
@@ -707,6 +722,7 @@ def run_robot_benchmark(
             },
             timeout=config.timeout,
         )
+        hermes_exit_code = int(proc.returncode)
         (config.output / "hermes-stdout.jsonl").write_text(
             proc.stdout or "",
             encoding="utf-8",
@@ -733,6 +749,12 @@ def run_robot_benchmark(
             config.output / "openshell-logs.txt",
             level="info",
             since="2h",
+        )
+    except Exception as exc:
+        run_error = f"{type(exc).__name__}: {exc}"
+        (config.output / "run-error.txt").write_text(
+            run_error + "\n",
+            encoding="utf-8",
         )
     finally:
         if sandbox_created:
@@ -769,6 +791,8 @@ def run_robot_benchmark(
         "broker_port": config.broker_port,
         "input_sha256": input_hashes,
         "capabilities": capabilities,
+        "hermes_exit_code": hermes_exit_code,
+        "run_error": run_error,
     }
     (config.output / "metadata.json").write_text(
         json.dumps(metadata, indent=2) + "\n",
@@ -781,6 +805,13 @@ def run_robot_benchmark(
         broker_events_path=broker_events,
         judge=judge,
     )
+    if run_error is not None:
+        score = replace(
+            score,
+            valid=False,
+            success=False,
+            reason=f"benchmark orchestration failed: {run_error}; {score.reason}",
+        )
     (config.output / "score.json").write_text(
         json.dumps(score.as_dict(), indent=2) + "\n",
         encoding="utf-8",
@@ -863,6 +894,8 @@ def main(argv: list[str] | None = None) -> int:
         judge = OpenRouterVisionJudge(model=args.judge_model)
     score = run_robot_benchmark(config, judge=judge)
     print(json.dumps(score.as_dict(), indent=2))
+    if not score.valid:
+        return 3
     return 0 if score.success is not False else 2
 
 
