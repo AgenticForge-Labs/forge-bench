@@ -635,18 +635,30 @@ def run_robot_benchmark(
         )
         sandbox_created = True
 
+        prepare = runtime.exec(
+            sandbox_name,
+            ["/bin/mkdir", "-p", "/sandbox/.hermes"],
+            workdir="/sandbox",
+            timeout=30,
+        )
+        if prepare.returncode != 0:
+            raise RuntimeError(
+                "could not prepare sandbox Hermes home: "
+                + (prepare.stderr or prepare.stdout or f"exit {prepare.returncode}")
+            )
+
         inputs = config.output / "inputs"
         for name in ("robotctl.py", "TASK.md", "SKILL.md"):
             runtime.upload(sandbox_name, inputs / name)
         runtime.upload(
             sandbox_name,
             inputs / "hermes-home" / "config.yaml",
-            ".hermes/config.yaml",
+            "/sandbox/.hermes/config.yaml",
         )
         runtime.upload(
             sandbox_name,
             inputs / "hermes-home" / ".no-bundled-skills",
-            ".hermes/.no-bundled-skills",
+            "/sandbox/.hermes/.no-bundled-skills",
         )
 
         runtime.effective_policy(
