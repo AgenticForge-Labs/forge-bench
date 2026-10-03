@@ -504,9 +504,9 @@ class BrokerProcess:
             )
         return result
 
-    def stop(self) -> None:
+    def stop(self) -> tuple[str, str]:
         if self.process is None:
-            return
+            return "", ""
         if self.process.poll() is None:
             self.process.terminate()
             try:
@@ -514,6 +514,8 @@ class BrokerProcess:
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait(timeout=5)
+        stdout, stderr = self.process.communicate(timeout=1)
+        return stdout or "", stderr or ""
 
 
 def _copy_inputs(config: RobotBenchmarkConfig) -> dict[str, str]:
@@ -671,7 +673,15 @@ def run_robot_benchmark(
                 runtime.delete(config.sandbox_name)
             except Exception:
                 pass
-        broker.stop()
+        broker_stdout, broker_stderr = broker.stop()
+        (config.output / "broker-stdout.txt").write_text(
+            broker_stdout,
+            encoding="utf-8",
+        )
+        (config.output / "broker-stderr.txt").write_text(
+            broker_stderr,
+            encoding="utf-8",
+        )
 
     metadata = {
         "schema_version": 1,
