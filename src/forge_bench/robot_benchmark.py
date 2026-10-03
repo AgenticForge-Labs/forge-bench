@@ -36,6 +36,7 @@ from .openshell_runtime import (
 DEFAULT_BROKER_HOST = "0.0.0.0"
 DEFAULT_BROKER_CLIENT_HOST = "host.openshell.internal"
 DEFAULT_BROKER_PORT = 8765
+DEFAULT_SANDBOX_IMAGE = "nousresearch/hermes-agent:latest"
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash-20260910"
 DEFAULT_JUDGE_MODEL = "deepseek/deepseek-v4.1-flash-20260910"
 DEFAULT_TOOLSETS = "hermes-cli,vision"
@@ -392,6 +393,8 @@ def robot_broker_policy(
     python_binaries: Sequence[str],
 ) -> OpenShellPolicy:
     return OpenShellPolicy(
+        user=1000,
+        group=1000,
         endpoints=(
             NetworkEndpoint(
                 name="soarm101_robot_broker",
@@ -633,9 +636,10 @@ def run_robot_benchmark(
             try:
                 runtime.download(config.sandbox_name, source, destination)
             except Exception as exc:
-                (config.output / "download-errors.txt").open("a", encoding="utf-8").write(
-                    f"{source}: {exc}\n"
-                )
+                with (config.output / "download-errors.txt").open(
+                    "a", encoding="utf-8"
+                ) as handle:
+                    handle.write(f"{source}: {exc}\n")
 
         runtime.logs(
             config.sandbox_name,
@@ -693,12 +697,20 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run one isolated SO-ARM101 manipulation benchmark."
     )
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--image", required=True)
+    parser.add_argument("--image", default=DEFAULT_SANDBOX_IMAGE)
     parser.add_argument("--provider", default="openrouter")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--robotctl", type=Path, required=True)
-    parser.add_argument("--task", type=Path, required=True)
-    parser.add_argument("--skill", type=Path, required=True)
+    parser.add_argument(
+        "--task",
+        type=Path,
+        default=Path("robot_tasks/object-to-container/TASK.md"),
+    )
+    parser.add_argument(
+        "--skill",
+        type=Path,
+        default=Path("robot_tasks/skills/soarm101-robot-camera/SKILL.md"),
+    )
     parser.add_argument("--broker-command", default="soarm101-broker")
     parser.add_argument("--broker-port", type=int, default=DEFAULT_BROKER_PORT)
     parser.add_argument("--sandbox-name", default="forge-bench-robot")
