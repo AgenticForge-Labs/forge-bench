@@ -93,6 +93,7 @@ def main() -> int:
             cpu="2",
             memory="4Gi",
             labels={"purpose": "test"},
+            providers=("openrouter",),
         )
         created = runtime.create(spec, policy_path=policy_path)
         assert created["name"] == "forge-test"
@@ -120,6 +121,7 @@ def main() -> int:
     assert "--detach" in create
     assert "--cpu" in create and "2" in create
     assert "--memory" in create and "4Gi" in create
+    assert "--provider" in create and "openrouter" in create
     assert ["--label", "purpose=test"] == create[
         create.index("--label") : create.index("--label") + 2
     ]
