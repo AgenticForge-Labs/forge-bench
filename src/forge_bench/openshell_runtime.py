@@ -101,8 +101,8 @@ class OpenShellPolicy:
                 )
             },
             "process": {
-                "user": self.user,
-                "group": self.group,
+                "run_as_user": str(self.user),
+                "run_as_group": str(self.group),
             },
         }
         if self.endpoints:
