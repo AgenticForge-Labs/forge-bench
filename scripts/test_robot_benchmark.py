@@ -41,8 +41,8 @@ def main() -> int:
         python_binaries=("/usr/bin/python3.12",),
     ).as_dict()
     assert policy["process"] == {
-        "run_as_user": "1000",
-        "run_as_group": "1000",
+        "run_as_user": 1000,
+        "run_as_group": 1000,
     }
     network = policy["network_policies"]["soarm101_robot_broker"]
     endpoint = network["endpoints"][0]
