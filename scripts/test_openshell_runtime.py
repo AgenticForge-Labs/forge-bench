@@ -26,9 +26,11 @@ RestRule = RUNTIME.RestRule
 class FakeRunner:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
+        self.kwargs: list[dict[str, object]] = []
 
     def __call__(self, argv, **kwargs):
         self.calls.append(list(argv))
+        self.kwargs.append(dict(kwargs))
         stdout = ""
         if argv[1:4] == ["sandbox", "create", "--name"]:
             stdout = json.dumps({"name": argv[4], "phase": "Ready"})
@@ -57,6 +59,11 @@ def main() -> int:
         "run_as_user": "sandbox",
         "run_as_group": "sandbox",
     }
+    numeric = OpenShellPolicy(user=10000, group=10000).as_dict()
+    assert numeric["process"] == {
+        "run_as_user": "10000",
+        "run_as_group": "10000",
+    }
     network = payload["network_policies"]["robot_broker"]
     assert network["binaries"] == [{"path": "/usr/bin/python3"}]
     endpoint = network["endpoints"][0]
@@ -80,6 +87,21 @@ def main() -> int:
         pass
     else:
         raise AssertionError("relative binary path should be rejected")
+
+    try:
+        NetworkEndpoint(
+            name="unsupported",
+            host="example.com",
+            port=443,
+            binaries=("/usr/bin/python3",),
+            protocol="graphql",
+            rules=(RestRule("GET", "/"),),
+        ).validated()
+    except ValueError as exc:
+        assert "protocol-specific rule schemas" in str(exc)
+    else:
+        raise AssertionError("GraphQL must not use the REST-style policy helper")
+
 
     fake = FakeRunner()
     runtime = OpenShellRuntime(executable="openshell", runner=fake)
@@ -128,6 +150,12 @@ def main() -> int:
 
     exec_call = next(call for call in fake.calls if call[1:3] == ["sandbox", "exec"])
     assert "--no-login-shell" in exec_call
+    exec_index = fake.calls.index(exec_call)
+    exec_env = fake.kwargs[exec_index]["env"]
+    assert isinstance(exec_env, dict)
+    assert exec_env["EXAMPLE"] == "1"
+    assert "PATH" in exec_env
+
     assert "--workdir" in exec_call
     assert "/workspace" in exec_call
     assert "--env" in exec_call
