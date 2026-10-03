@@ -73,6 +73,16 @@ uv run forge-bench --design designs/your-study.yaml --plan-only
 uv run forge-bench --design designs/your-study.yaml --output benchmark-results/my-study
 ```
 
+## OpenShell execution foundation
+
+Forge Bench includes a task-agnostic OpenShell runtime foundation for future isolated-agent
+benchmarks. Existing SWE-bench studies still use the established Docker/local paths; the
+OpenShell module currently provides policy generation plus sandbox create/upload/exec/download,
+effective-policy capture, logs, and cleanup without making OpenShell a hard package dependency.
+
+See [docs/openshell-runtime.md](docs/openshell-runtime.md). Promotion into a paid benchmark
+execution path is intentionally gated on local OpenShell gateway/image validation.
+
 ## Data and reproducibility
 
 The [study package](studies/last-generation-current-generation-tool-interactions/) contains both pinned YAML designs, 80 joined run records, raw merged JSONL traces, source checksums, derived CSV tables, the analysis script, and only the five PNGs shown in this README. It excludes the original 2.6 GB execution workspace, Hermes state databases, evaluation logs, duplicate reports, SVG versions, and unused figures.
