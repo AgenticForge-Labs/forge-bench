@@ -12,7 +12,8 @@ runs are unchanged. The module in `src/forge_bench/openshell_runtime.py` owns on
 - upload/download;
 - non-interactive command execution;
 - effective-policy capture; and
-- OpenShell log capture.
+- OpenShell log capture; and
+- explicit provider attachment at sandbox creation.
 
 Robot task semantics, credentials, model-provider policy, and scoring belong to later
 benchmark adapters.
@@ -45,6 +46,11 @@ optional execution dependency.
 - Landlock as a hard requirement;
 - workload user/group `sandbox`; and
 - no outbound network access unless a caller supplies explicit `NetworkEndpoint` entries.
+
+Provider names can be attached through `OpenShellSandboxSpec.providers`; OpenShell then
+adds the provider-derived credential and network rules to the effective policy for newly
+started sandbox processes. Forge Bench never copies provider secret values into the task
+bundle.
 
 Network endpoints require absolute executable paths. Inspected REST/WebSocket/GraphQL
 entries require explicit request rules and default to `enforcement: enforce`.
