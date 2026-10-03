@@ -60,18 +60,68 @@ is absent or expired.
 The completion contract requires an `overhead` named camera. The `wrist` camera is useful
 but optional for fine manipulation.
 
+## Build the OpenShell Hermes image
+
+The published Hermes image normally starts as root and uses s6-overlay to prepare
+`/opt/data` before dropping to UID 10000. OpenShell already owns process identity and
+sandbox lifecycle, so the benchmark uses a tiny derived image that bypasses that bootstrap,
+runs as Hermes UID/GID 10000, and makes `/sandbox` the writable workdir.
+
+Build it once on the workstation:
+
+```bash
+docker build \
+  -f robot_tasks/openshell/Dockerfile.hermes \
+  -t agenticforge/forge-bench-hermes-openshell:local \
+  .
+```
+
+The derived image clears the upstream s6 entrypoint. The runner sets `HOME`,
+`HERMES_HOME`, `HERMES_WRITE_SAFE_ROOT`, and `XDG_CONFIG_HOME` under `/sandbox`
+for the Hermes execution, so mutable state stays inside the OpenShell-managed writable
+workspace while `/opt/hermes` remains immutable.
+
+For a reproducible study, replace the upstream `:latest` base in the wrapper Dockerfile
+with a validated immutable Hermes image digest and use a correspondingly pinned local tag.
+
 ## OpenShell provider setup
 
 The sandbox needs model-provider access and robot-broker access for different reasons.
 
-Model-provider credentials should be supplied by an OpenShell provider attachment. Do not
-copy an OpenRouter API key into the task directory. The provider profile must name the **real
-executable** that Hermes uses to make its provider request. If Hermes is implemented by a
-Python interpreter in your image, use the interpreter's real path rather than a wrapper or
-symlink.
+Model-provider credentials are supplied by an OpenShell provider attachment. Do not copy an
+OpenRouter API key into the task directory. This repository includes a Hermes-specific
+OpenRouter profile whose binary grants target the Python runtimes in the official Hermes
+image:
 
-The runner passes the selected provider name to `openshell sandbox create --provider ...`.
-Inspect the resulting effective policy before physical use:
+```text
+robot_tasks/openshell/hermes-openrouter-provider.yaml
+```
+
+With `OPENROUTER_API_KEY` already set in your host shell, lint/import the profile and
+create the provider instance once:
+
+```bash
+openshell profile lint \
+  -f robot_tasks/openshell/hermes-openrouter-provider.yaml
+
+openshell profile import \
+  -f robot_tasks/openshell/hermes-openrouter-provider.yaml \
+  --global
+
+openshell provider create \
+  --name hermes-openrouter \
+  --type hermes-openrouter \
+  --from-existing
+```
+
+The runner defaults to attaching the provider instance named `hermes-openrouter`. If you
+choose another provider instance name, pass `--provider NAME`.
+
+The provider profile must name the **real executable** that makes the network request.
+OpenShell resolves executable identity from the running process, not a wrapper name. The
+checked profile grants the sealed Hermes venv/tool-store Python paths.
+
+Inspect the resulting effective sandbox policy before physical use:
 
 ```bash
 openshell sandbox get <sandbox-name> --policy-only
@@ -119,8 +169,9 @@ robot_tasks/object-to-container/TASK.md
 robot_tasks/skills/soarm101-robot-camera/SKILL.md
 ```
 
-The default sandbox image is `nousresearch/hermes-agent:latest`. For reproducible benchmark
-runs, pin an immutable image digest after local validation instead of relying on `latest`.
+The default sandbox image is the locally built
+`agenticforge/forge-bench-hermes-openshell:local` wrapper described above. For reproducible
+benchmark runs, pin its upstream Hermes base to an immutable digest after local validation.
 
 If the Python interpreter in the image differs from the common defaults, repeat
 `--robot-network-binary` with the actual path reported inside the sandbox, for example:
