@@ -633,6 +633,10 @@ def run_robot_benchmark(
                     f"http://{DEFAULT_BROKER_CLIENT_HOST}:{config.broker_port}"
                 ),
                 "SOARM101_BROKER_TOKEN": token,
+                "HOME": "/sandbox/.home",
+                "HERMES_HOME": "/sandbox/.hermes",
+                "HERMES_WRITE_SAFE_ROOT": "/sandbox",
+                "XDG_CONFIG_HOME": "/sandbox/.xdg-config",
                 "HERMES_ENABLE_PROJECT_PLUGINS": "0",
             },
             timeout=config.timeout,
