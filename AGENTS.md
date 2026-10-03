@@ -130,6 +130,23 @@ For repeated experiments, do not treat stochastic repeats as additional independ
 
 Do not collapse max_turns or budget_warning_ratio levels into stochastic repeats. They are randomized experimental factors. Use the factor-aware CSVs for their main effects and interactions; legacy treatment summaries are marginal across those factor levels.
 
+## Physical robot benchmark
+
+The SO-ARM101 benchmark is a separate opt-in execution path. Do not mix its task semantics,
+hardware state, or scoring into SWE-bench runs.
+
+- Never arm, disarm, relax, recalibrate, or bypass Motion SDK safety from Forge Bench.
+- Human authorization must already be active before a physical run.
+- The trusted Motion SDK broker is the only robot/camera authority exposed to the sandbox.
+- OpenShell isolation owns host filesystem/process/network boundaries; do not mount the Motion
+  SDK checkout, serial devices, cameras, Docker socket, SSH material, or unrelated host files
+  into the sandbox.
+- A robot success requires trusted latest-overhead capture provenance plus the independent
+  visual completion judgment described in `docs/robot-manipulation-benchmark.md`.
+- CI and synthetic tests must never move physical hardware.
+- Physical validation is supervised and staged; do not describe unvalidated hardware behavior
+  as benchmark-ready.
+
 ## Normal experiment commands
 
 Preview a YAML design without paid model calls:
