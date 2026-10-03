@@ -637,7 +637,13 @@ def run_robot_benchmark(
 
         prepare = runtime.exec(
             sandbox_name,
-            ["/bin/mkdir", "-p", "/sandbox/.hermes"],
+            [
+                "/bin/mkdir",
+                "-p",
+                "/sandbox/.hermes",
+                "/sandbox/.home",
+                "/sandbox/.xdg-config",
+            ],
             workdir="/sandbox",
             timeout=30,
         )
