@@ -36,7 +36,7 @@ from .openshell_runtime import (
 DEFAULT_BROKER_HOST = "0.0.0.0"
 DEFAULT_BROKER_CLIENT_HOST = "host.openshell.internal"
 DEFAULT_BROKER_PORT = 8765
-DEFAULT_SANDBOX_IMAGE = "nousresearch/hermes-agent:latest"
+DEFAULT_SANDBOX_IMAGE = "agenticforge/forge-bench-hermes-openshell:local"
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash-20260910"
 DEFAULT_JUDGE_MODEL = "deepseek/deepseek-v4.1-flash-20260910"
 DEFAULT_TOOLSETS = "hermes-cli,vision"
@@ -105,9 +105,8 @@ class RobotBenchmarkConfig:
     reasoning: str = "none"
     timeout: int = 1800
     robot_network_binaries: tuple[str, ...] = (
-        "/usr/bin/python3.12",
-        "/usr/local/bin/python3.12",
-        "/usr/local/bin/python",
+        "/opt/hermes/.venv/bin/python*",
+        "/opt/hermes/tools/**/python*",
     )
 
     def validated(self) -> "RobotBenchmarkConfig":
@@ -397,8 +396,8 @@ def robot_broker_policy(
     python_binaries: Sequence[str],
 ) -> OpenShellPolicy:
     return OpenShellPolicy(
-        user=1000,
-        group=1000,
+        user=10000,
+        group=10000,
         endpoints=(
             NetworkEndpoint(
                 name="soarm101_robot_broker",
@@ -725,7 +724,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--image", default=DEFAULT_SANDBOX_IMAGE)
-    parser.add_argument("--provider", default="openrouter")
+    parser.add_argument("--provider", default="hermes-openrouter")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--robotctl", type=Path, required=True)
     parser.add_argument(
@@ -753,7 +752,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="robot_network_binaries",
         help=(
             "Real Python interpreter path inside the sandbox allowed to call the robot "
-            "broker; repeat as needed. Defaults cover common Python 3.12 image paths."
+            "broker; repeat as needed. Defaults cover the official Hermes image's Python runtime paths."
         ),
     )
     parser.add_argument(
