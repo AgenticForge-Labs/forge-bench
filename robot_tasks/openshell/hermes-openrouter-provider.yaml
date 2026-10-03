@@ -1,0 +1,30 @@
+id: hermes-openrouter
+display_name: Hermes OpenRouter
+description: OpenRouter access for Hermes Agent in the Forge Bench OpenShell sandbox
+category: inference
+inference_capable: true
+
+credentials:
+  - name: api_key
+    description: OpenRouter API key
+    env_vars:
+      - OPENROUTER_API_KEY
+    required: true
+    auth_style: bearer
+    header_name: authorization
+
+discovery:
+  credentials:
+    - api_key
+
+endpoints:
+  - host: openrouter.ai
+    port: 443
+    path: /api/v1/**
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+
+binaries:
+  - /opt/hermes/.venv/bin/python*
+  - /opt/hermes/tools/**/python*
