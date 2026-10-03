@@ -24,6 +24,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Protocol, Sequence
 
+import yaml
+
 from .openshell_runtime import (
     NetworkEndpoint,
     OpenShellPolicy,
@@ -533,10 +535,44 @@ def _copy_inputs(config: RobotBenchmarkConfig) -> dict[str, str]:
     shutil.copy2(config.robotctl_source, destinations["robotctl"])
     shutil.copy2(config.task_source, destinations["task"])
     shutil.copy2(config.skill_source, destinations["skill"])
-    return {
+
+    hermes_home = inputs / "hermes-home"
+    hermes_home.mkdir(parents=True, exist_ok=True)
+    hermes_config = {
+        "_config_version": 45,
+        "plugins": {"enabled": [], "disabled": []},
+        "agent": {
+            "max_turns": int(config.max_turns),
+            "budget_warning_ratio": None,
+        },
+        "compression": {"enabled": False},
+        "auxiliary": {
+            "title_generation": {
+                "enabled": False,
+                "model_upgrade_enabled": False,
+                "provider": "auto",
+                "model": "",
+            }
+        },
+    }
+    (hermes_home / "config.yaml").write_text(
+        yaml.safe_dump(hermes_config, sort_keys=False),
+        encoding="utf-8",
+    )
+    (hermes_home / ".no-bundled-skills").write_text(
+        "Forge Bench isolated physical robot profile\n",
+        encoding="utf-8",
+    )
+
+    hashes = {
         key: _sha256(path)
         for key, path in destinations.items()
     }
+    hashes["hermes_config"] = _sha256(hermes_home / "config.yaml")
+    hashes["hermes_no_bundled_skills"] = _sha256(
+        hermes_home / ".no-bundled-skills"
+    )
+    return hashes
 
 
 def _hermes_prompt() -> str:
@@ -600,6 +636,16 @@ def run_robot_benchmark(
         inputs = config.output / "inputs"
         for name in ("robotctl.py", "TASK.md", "SKILL.md"):
             runtime.upload(sandbox_name, inputs / name)
+        runtime.upload(
+            sandbox_name,
+            inputs / "hermes-home" / "config.yaml",
+            ".hermes/config.yaml",
+        )
+        runtime.upload(
+            sandbox_name,
+            inputs / "hermes-home" / ".no-bundled-skills",
+            ".hermes/.no-bundled-skills",
+        )
 
         runtime.effective_policy(
             sandbox_name,
