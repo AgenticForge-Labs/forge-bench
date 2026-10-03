@@ -20,7 +20,6 @@ discovery:
 endpoints:
   - host: openrouter.ai
     port: 443
-    path: /api/v1/**
     protocol: rest
     access: read-write
     enforcement: enforce
