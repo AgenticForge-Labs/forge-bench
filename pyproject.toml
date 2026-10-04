@@ -16,10 +16,6 @@ dependencies = [
   "swebench==4.1.0",
 ]
 
-[project.optional-dependencies]
-harbor = ["harbor==0.23.0"]
-harbor-modal = ["harbor[modal]==0.23.0"]
-
 [project.scripts]
 forge-bench = "forge_bench.cli:main"
 forge-bench-live = "forge_bench.live_status:main"
