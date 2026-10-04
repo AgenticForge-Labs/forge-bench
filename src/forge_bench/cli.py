@@ -750,8 +750,8 @@ def main() -> int:
         },
         "official_evaluation": not args.skip_evaluation,
         "analysis_mode": args.analysis_mode,
-        "credential_source": credential.source or "hermes_home_files",
-        "hermes_home_credentials_isolated": bool(credential.value),
+        "credential_source": "not_resolved_for_planning",
+        "hermes_home_credentials_isolated": False,
     }
     (output / "metadata.json").write_text(
         json.dumps(meta, indent=2) + "\n",
