@@ -132,7 +132,7 @@ Harbor environment integration; it is not a second Forge execution architecture.
 A Forge design is randomized *before* execution. Each cell couples:
 
 ```text
-block x model x treatment x max_turns x budget_warning_ratio x task
+block x agent x model x treatment x max_turns x budget_warning_ratio x task
 ```
 
 Harbor's normal JobConfig is excellent for generating Cartesian trials, but
