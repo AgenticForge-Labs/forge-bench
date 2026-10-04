@@ -83,6 +83,7 @@ def build_harbor_trial_config(
     agent_kwargs.update(
         {
             "treatment": treatment,
+            "api_provider": str(cell["api_provider"]),
             "upstream_provider": str(cell["upstream_provider"]),
             "reasoning": str(cell["reasoning"]),
             "max_turns": int(cell["max_turns"]),
@@ -91,6 +92,8 @@ def build_harbor_trial_config(
             "version": PINNED_HERMES_VERSION,
         }
     )
+    if treatment in {"ponytail", "caveman_ponytail", "all_three"}:
+        agent_kwargs["extra_env"] = {"PONYTAIL_DEFAULT_MODE": "full"}
 
     try:
         environment_type = EnvironmentType(environment)
