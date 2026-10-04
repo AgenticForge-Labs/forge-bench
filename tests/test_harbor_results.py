@@ -93,6 +93,34 @@ class HarborResultNormalizationTests(unittest.TestCase):
         self.assertEqual(result.session_id, "session-1")
         self.assertTrue(result.trace_exported)
 
+    def test_exact_hermes_usage_metadata_wins_over_harbor_aggregate(self):
+        result = normalize_harbor_trial_result(
+            _trial_result(
+                metadata={
+                    "forge_uncached_input_tokens": 111,
+                    "forge_cache_read_tokens": 222,
+                    "forge_cache_write_tokens": 33,
+                    "forge_output_tokens": 44,
+                    "forge_reasoning_tokens": 5,
+                    "forge_total_tokens": 410,
+                    "forge_estimated_cost_usd": 0.02,
+                    "forge_actual_cost_usd": 0.015,
+                    "forge_cost_source": "openrouter",
+                }
+            ),
+            _intent(),
+        )
+        self.assertEqual(result.input_tokens, 111)
+        self.assertEqual(result.cache_read_tokens, 222)
+        self.assertEqual(result.cache_write_tokens, 33)
+        self.assertEqual(result.output_tokens, 44)
+        self.assertEqual(result.reasoning_tokens, 5)
+        self.assertEqual(result.total_tokens, 410)
+        self.assertEqual(result.estimated_cost_usd, 0.02)
+        self.assertEqual(result.actual_cost_usd, 0.015)
+        self.assertEqual(result.cost_usd, 0.015)
+        self.assertEqual(result.cost_source, "openrouter_actual")
+
     def test_patch_capture_failure_invalidates_scientific_observation(self):
         result = normalize_harbor_trial_result(
             _trial_result(metadata={"forge_patch_capture_error": "git failure"}),
