@@ -48,6 +48,9 @@ class HarborPlanCompilerTests(unittest.TestCase):
             projection["harbor_dataset"],
             "swe-bench/swe-bench-verified",
         )
+        self.assertTrue(projection["executable"])
+        self.assertEqual(projection["harbor_api_baseline"], "0.23.0")
+        self.assertEqual(projection["hermes_version"], "v2026.9.14")
         for source, trial in zip(run_plan, projection["trials"], strict=True):
             self.assertEqual(trial["forge_run_index"], source["run_index"])
             self.assertEqual(trial["forge"], source)
@@ -56,6 +59,14 @@ class HarborPlanCompilerTests(unittest.TestCase):
                 [source["instance_id"]],
             )
             self.assertEqual(trial["agent"]["model_name"], source["model"])
+            self.assertEqual(
+                trial["agent"]["import_path"],
+                "forge_bench.harbor_hermes:ForgeBenchHermes",
+            )
+            self.assertEqual(
+                trial["agent"]["kwargs"]["version"],
+                "v2026.9.14",
+            )
             self.assertEqual(
                 trial["agent"]["kwargs"]["treatment"],
                 source["arm"],
@@ -98,6 +109,7 @@ class HarborPlanCompilerTests(unittest.TestCase):
             forge_dataset="SWE-bench/SWE-bench_Lite",
         )
         self.assertFalse(projection["dataset_mapped"])
+        self.assertFalse(projection["executable"])
         self.assertIsNone(projection["harbor_dataset"])
         self.assertTrue(
             all(trial["dataset"]["name"] is None for trial in projection["trials"])
