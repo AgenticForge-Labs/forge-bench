@@ -1,0 +1,49 @@
+version: 1
+name: harbor-agent-model-smoke
+description: >
+  Materialization-only smoke design proving that agent and model are independent
+  Forge factors on the Harbor path. Baseline treatment only; native agents keep
+  their own default iteration controls in this migration stage.
+
+selection:
+  dataset: verified
+  split: test
+  difficulty: medium
+  sample_size: 1
+  instance_ids:
+    - django__django-13516
+
+provider:
+  api: openrouter
+  upstream: relace
+  require_same_upstream: true
+
+reasoning: none
+max_turns: 100
+budget_warning_ratio: null
+analysis_mode: basic
+
+agents:
+  - key: hermes
+    label: Hermes
+    agent: hermes
+    version: v2026.9.14
+  - key: pi
+    label: Pi
+    agent: pi
+
+models:
+  - key: v4-flash-0731
+    label: DeepSeek V4 Flash 0731
+    model: deepseek/deepseek-v4-flash-0731
+  - key: v4-1-flash
+    label: DeepSeek V4.1 Flash
+    model: deepseek/deepseek-v4.1-flash-20260910
+
+treatments:
+  - baseline
+
+randomization:
+  mode: full-factorial-within-block
+  blocks: 1
+  seed: 260924
