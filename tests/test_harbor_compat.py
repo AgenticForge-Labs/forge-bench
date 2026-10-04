@@ -73,6 +73,64 @@ class HarborCompatibilityTests(unittest.TestCase):
         )
         self.assertEqual(str(config.environment.type.value), "docker")
 
+    def test_modal_materialization_applies_resource_overrides(self):
+        from harbor.models.trial.config import TaskConfig
+
+        from forge_bench.harbor_execution import HarborExecutionConfig
+        from forge_bench.harbor_runtime import build_harbor_trial_config
+
+        intent = {
+            "forge_cell_id": "forge-0001-modal",
+            "supported": True,
+            "agent": {
+                "mode": "harbor-native",
+                "name": "pi",
+                "model_name": "provider/model-one",
+                "kwargs": {},
+                "supported": True,
+                "control_semantics": {
+                    "treatment": "baseline",
+                    "max_turns": "agent-default",
+                    "budget_warning_ratio": "agent-default",
+                },
+            },
+            "forge": {
+                "agent": "pi",
+                "arm": "baseline",
+                "instance_id": "django__django-13516",
+                "repeat": 1,
+                "run_index": 1,
+                "model": "provider/model-one",
+                "api_provider": "openrouter",
+                "upstream_provider": "relace",
+                "reasoning": "none",
+                "max_turns": 100,
+                "budget_warning_ratio": None,
+            },
+        }
+        task = TaskConfig(name="swe-bench/django__django-13516", ref="latest")
+        execution = HarborExecutionConfig(
+            environment="modal",
+            n_concurrent=8,
+            cpus=4,
+            memory_mb=8192,
+            storage_mb=16384,
+            gpus=1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            config = build_harbor_trial_config(
+                intent,
+                task,
+                trials_dir=Path(tmp),
+                execution=execution,
+            )
+
+        self.assertEqual(str(config.environment.type.value), "modal")
+        self.assertEqual(config.environment.override_cpus, 4)
+        self.assertEqual(config.environment.override_memory_mb, 8192)
+        self.assertEqual(config.environment.override_storage_mb, 16384)
+        self.assertEqual(config.environment.override_gpus, 1)
+
     def test_forge_hermes_compatibility_path_preserves_exact_controls(self):
         from harbor.models.trial.config import TaskConfig
 
