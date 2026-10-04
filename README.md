@@ -8,7 +8,9 @@ The project is intended to grow beyond this first study. Future work can add mod
 
 Forge Bench owns the scientific experiment: task selection, factor definitions, randomized complete blocks, reproducibility metadata, and statistical analysis. The execution layer is being migrated to [Harbor](https://www.harborframework.com/) so Harbor can own commodity task/trial execution, sandbox environments, verification, retries, and artifacts.
 
-The migration is staged. Current `main` still executes through the legacy Forge Bench Hermes/Docker harness. The Harbor-plan foundation adds a deterministic `harbor_plan.json` projection beside `run_plan.csv`; it preserves the exact randomized Forge cells and is deliberately marked non-executable until the Harbor Hermes adapter lands.
+The migration is staged. The normal `forge-bench` command still executes through the legacy Forge Bench Hermes/Docker harness, but Harbor-mapped plans now have an opt-in execution path through `forge-bench-harbor`. Forge subclasses Harbor's first-party Hermes adapter only to apply the experimental treatment, provider-route, turn-budget, and reminder factors plus patch evidence; Harbor retains task-environment execution, Hermes installation/session export, ATIF trajectory handling, and verification.
+
+`harbor_plan.json` remains a deterministic projection beside `run_plan.csv`, preserving the exact randomized Forge cells. SWE-bench Verified projections are executable through the Harbor path; unmapped datasets remain projection-only.
 
 The target layering is:
 
@@ -27,6 +29,17 @@ operational spans -> OpenTelemetry
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the ownership boundary and migration state.
+
+To materialize or execute the Harbor path during the migration, use the pinned Harbor version without adding it to the core Forge Bench environment:
+
+```bash
+uv run --with harbor==0.23.0 forge-bench-harbor \
+  --plan benchmark-results/my-study/harbor_plan.json \
+  --trials-dir benchmark-results/my-study/harbor-trials \
+  --materialize-only
+```
+
+Remove `--materialize-only` only when you intend to run the model calls and Harbor verification.
 
 ## Why test token-saving tools?
 
