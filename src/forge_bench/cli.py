@@ -669,6 +669,8 @@ def main() -> int:
         "design_name": design.name,
         "design_source": design.source_path,
         "design_description": design.description,
+        "agent": design.agents[0].agent if len(design.agents) == 1 else None,
+        "agents": [agent.as_dict() for agent in design.agents],
         "model": design.models[0].model if len(design.models) == 1 else None,
         "models": [model.as_dict() for model in design.models],
         "api_provider": (
@@ -718,7 +720,7 @@ def main() -> int:
         "repeat_seeds": [],
         "randomization": (
             "full-factorial randomized complete blocks: each block contains "
-            "every model x treatment x max_turns x budget_warning_ratio x "
+            "every agent x model x treatment x max_turns x budget_warning_ratio x "
             "selected-instance cell exactly once; all cells are shuffled together "
             "with the block's recorded repeat_seed"
         ),
@@ -772,6 +774,7 @@ def main() -> int:
             args.repeats,
             args.seed,
             models=list(design.models),
+            agents=list(design.agents),
             max_turns_levels=design.max_turns_levels,
             budget_warning_ratio_levels=design.budget_warning_ratio_levels,
         )
@@ -790,7 +793,8 @@ def main() -> int:
         for item in preview_plan:
             print(
                 f"  {int(item['run_index']):02d}: "
-                f"{item['model_label']} / {LABEL[str(item['arm'])]} / "
+                f"{item['agent_label']} / {item['model_label']} / "
+                f"{LABEL[str(item['arm'])]} / "
                 f"turns={item['max_turns']} / "
                 f"reminder={item['budget_warning_ratio']} / "
                 f"{item['instance_id']} / block {item['repeat']}"
@@ -799,6 +803,16 @@ def main() -> int:
         print("Run plan:", output / "run_plan.csv")
         print("Harbor projection:", output / "harbor_plan.json")
         return 0
+
+    if (
+        len(design.agents) != 1
+        or design.agents[0].agent != "hermes"
+    ):
+        raise SystemExit(
+            "The legacy forge-bench runtime only executes Hermes. "
+            "Use --plan-only followed by forge-bench-harbor for multi-agent "
+            "or non-Hermes designs."
+        )
 
     hermes_image = _preflight(args)
     if hermes_image:
@@ -837,6 +851,7 @@ def main() -> int:
         args.repeats,
         args.seed,
         models=models,
+        agents=list(design.agents),
         max_turns_levels=design.max_turns_levels,
         budget_warning_ratio_levels=design.budget_warning_ratio_levels,
     )
