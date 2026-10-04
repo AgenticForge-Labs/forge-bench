@@ -5,7 +5,7 @@
 Forge Bench owns the **scientific benchmark design**:
 
 - task selection and pinned task identity;
-- model/provider/treatment factors;
+- agent/model/provider/treatment factors;
 - iteration-budget factors;
 - randomized complete blocks and seeds;
 - reproducibility metadata;
@@ -45,36 +45,64 @@ complete.
 
 The migration is intentionally staged.
 
-### Implemented in the Harbor-plan foundation
+### Implemented
 
-Forge Bench can project its already-randomized `run_plan.csv` cells into
-`harbor_plan.json`. The projection:
+Forge Bench projects its already-randomized `run_plan.csv` cells into
+`harbor_plan.json`. Agent and model are independent cell dimensions. Baseline
+cells use Harbor's native installed-agent registry, so Forge can compare
+different Harbor agents against different models without maintaining parallel
+agent runtimes.
 
-- preserves one Harbor trial intent per Forge cell;
+The projection:
+
 - preserves exact run order and block assignment;
-- preserves model, provider, treatment, max-turns, reminder ratio, and task;
+- preserves agent, model, treatment, task, and provenance identity;
 - assigns a stable content-derived `forge_cell_id`;
 - maps the pinned Forge SWE-bench Verified source to Harbor's
   `swe-bench/swe-bench-verified` dataset;
-- records the Harbor API baseline used when the projection was designed.
+- pins the current compatibility contract to Harbor 0.23.0;
+- records whether each cell uses Harbor-native control semantics or the legacy
+  Forge Hermes compatibility path;
+- marks unsupported agent/treatment/budget combinations non-executable before
+  launch.
 
-The projection is deliberately marked `executable: false`.
+The opt-in `forge-bench-harbor` runner materializes explicit Harbor
+`TrialConfig` objects and normalizes Harbor `TrialResult` objects into the
+Forge `Result` contract. Normalized Harbor observations now retain agent,
+agent version, environment, and Harbor trial identity in addition to model and
+task outcome.
+
+Existing Hermes Caveman/Ponytail, provider-route pinning, and Forge turn/reminder
+budget behavior remain available through `ForgeBenchHermes`. That subclass is
+not the general agent architecture; it is selected only when a Hermes experiment
+needs those Forge-specific controls. No plugin behavior is ported to Pi,
+OpenCode, Codex, or other agents in this stage.
+
+For baseline heterogeneous-agent comparisons, iteration limits currently follow
+the selected agent's own defaults. The plan labels those semantics
+`agent-default`. Forge budget factors cannot be varied across heterogeneous
+agents until a later capability-negotiation layer provides equivalent validated
+controls.
 
 ### Not implemented yet
 
-The current `main` execution path still uses the legacy Forge Bench
-Hermes/subprocess/Docker machinery. Follow-up PRs will add:
+The normal `forge-bench` command still uses the legacy Forge
+Hermes/subprocess/Docker machinery. Follow-up PRs will proceed linearly:
 
-1. a Harbor Hermes agent adapter and Harbor-result -> Forge observation
-   normalization;
-2. real SWE-bench execution/grading through Harbor;
-3. OpenTelemetry correlation and Modal selection through Harbor;
-4. retirement of the legacy execution harness;
-5. optional OpenShell support as a Harbor environment rather than a competing
-   Forge runtime.
+1. validate local Harbor/Docker execution parity for multi-agent designs,
+   including concurrency and agent-aware reporting;
+2. add Harbor/Modal parity so the same Forge cell identities run locally or on
+   burst cloud compute;
+3. add a direct LLM/VLM trial kind for model-only experiments without a coding
+   harness confound;
+4. add optional self-hosted local/Modal model inference for open LLMs/VLMs;
+5. add secure external capability attachments such as the bounded SO-ARM101
+   broker without exposing hardware devices to agent containers;
+6. add OpenTelemetry correlation and then retire the legacy execution harness
+   after parity is demonstrated.
 
-Until those PRs merge, `harbor_plan.json` is a checked migration contract and
-provenance artifact, not a runnable benchmark configuration.
+OpenShell remains optional hardening around a capability boundary or future
+Harbor environment integration; it is not a second Forge execution architecture.
 
 ## Why Forge does not use Harbor's normal Cartesian expansion directly
 

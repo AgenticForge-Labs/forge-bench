@@ -6,13 +6,38 @@ This repository is Forge Bench, a reproducible benchmark harness for comparing A
 
 ## Harbor migration boundary
 
-Forge Bench owns experimental design, randomized cells, reproducibility metadata, scientific result normalization, and analysis. Harbor is the target owner for commodity task/trial execution, environments, verification, retries, and artifacts.
+Forge Bench owns experimental design, randomized cells, reproducibility
+metadata, scientific result normalization, and analysis. Harbor is the target
+owner for commodity task/trial execution, agent installation, environments,
+verification, retries, trajectories, and artifacts.
 
-The authoritative scientific order is `run_plan.csv`. `harbor_plan.json` is a deterministic projection of those exact cells and must preserve every model, treatment, budget factor, task, block, and run index.
+The authoritative scientific order is `run_plan.csv`.
+`harbor_plan.json` is a deterministic projection of those exact cells and
+must preserve every agent, model, treatment, budget factor, task, block, and run
+index.
 
-As of the Harbor-plan foundation, the projection is intentionally marked non-executable. The existing Hermes/Docker harness remains the current runtime until the Harbor Hermes adapter and result normalization land in a follow-up PR. Do not describe Harbor execution as implemented before that merge.
+Agent and model are independent Forge factors on the Harbor path. Baseline cells
+use Harbor-native agents by name; Forge must not duplicate an installed agent
+when Harbor already owns it. The existing `ForgeBenchHermes` subclass is a
+compatibility path only for legacy Hermes treatment/provider/budget behavior.
+Do not port Caveman/Ponytail or Hermes-specific budget controls to other agents
+without a separately validated implementation.
 
-OpenShell is optional future Harbor environment infrastructure, not a Forge Bench foundation. Modal is likewise an environment choice beneath Harbor; changing Docker vs Modal must not redefine the scientific design.
+For heterogeneous Harbor-native agents, a single-level legacy `max_turns`
+field is not treated as an enforced cross-agent control. The plan records
+agent-default budget semantics. A design that varies Forge budget factors, or
+uses non-baseline treatments with a non-Hermes agent, must fail closed as
+non-executable rather than silently changing the experimental meaning.
+
+The normal `forge-bench` command still uses the legacy Hermes/Docker runtime.
+Multi-agent/non-Hermes execution belongs to `forge-bench-harbor` until the
+later cutover. Harbor execution should use the pinned Harbor 0.23.0
+compatibility contract.
+
+Modal is an execution environment beneath Harbor, not a scientific redesign.
+Direct LLM/VLM inference, secure broker capability attachments, OpenTelemetry,
+and legacy-runtime retirement are planned follow-up layers and must not be
+described as implemented before they merge.
 
 See `docs/architecture.md`.
 

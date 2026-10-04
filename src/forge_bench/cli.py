@@ -36,6 +36,7 @@ from .designs import ModelSpec, default_design, load_design
 from .harbor_plan import write_harbor_plan
 from .planning import build_run_plan
 from .credentials import (
+    CredentialSelection,
     available_hermes_credential_files,
     select_openrouter_credential,
 )
@@ -67,14 +68,14 @@ from .swebench_backend import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Benchmark Hermes token-saving strategies on SWE-bench tasks."
+        description="Benchmark AI coding-agent and model strategies on SWE-bench tasks."
     )
     parser.add_argument(
         "--design",
         type=Path,
         help=(
             "YAML experiment design. When supplied, it pins dataset selection, "
-            "models, upstream provider(s), treatments, randomization blocks, "
+            "agents, models, provider metadata, treatments, randomization blocks, "
             "seed, reasoning, max turns, and analysis mode. Runtime/output "
             "controls remain CLI options."
         ),
@@ -502,14 +503,10 @@ def main() -> int:
         )
         return 1
 
-    try:
-        credential = select_openrouter_credential()
-    except (OSError, ValueError) as exc:
-        raise SystemExit(f"Invalid Forge Bench OpenRouter credential file: {exc}")
-    if credential.value:
-        # Use the resolved key for every fresh Docker profile. Keeping the
-        # value in the subprocess environment avoids putting it in command args.
-        os.environ["OPENROUTER_API_KEY"] = credential.value
+    # Planning, selection and reanalysis do not require a model credential.
+    # The legacy Hermes runtime resolves its OpenRouter credential only after
+    # the plan-only and multi-agent guards below.
+    credential = CredentialSelection(None, None)
 
     design = load_design(args.design) if args.design is not None else default_design()
     if args.design is not None:
@@ -669,6 +666,8 @@ def main() -> int:
         "design_name": design.name,
         "design_source": design.source_path,
         "design_description": design.description,
+        "agent": design.agents[0].agent if len(design.agents) == 1 else None,
+        "agents": [agent.as_dict() for agent in design.agents],
         "model": design.models[0].model if len(design.models) == 1 else None,
         "models": [model.as_dict() for model in design.models],
         "api_provider": (
@@ -718,13 +717,13 @@ def main() -> int:
         "repeat_seeds": [],
         "randomization": (
             "full-factorial randomized complete blocks: each block contains "
-            "every model x treatment x max_turns x budget_warning_ratio x "
+            "every agent x model x treatment x max_turns x budget_warning_ratio x "
             "selected-instance cell exactly once; all cells are shuffled together "
             "with the block's recorded repeat_seed"
         ),
         "confidence_interval": (
             "two-sided 95% Student-t across selected task means; repeats are "
-            "averaged within model x treatment x max_turns x "
+            "averaged within agent x model x treatment x max_turns x "
             "budget_warning_ratio x task first"
         ),
         "trace_capture": {
@@ -751,8 +750,8 @@ def main() -> int:
         },
         "official_evaluation": not args.skip_evaluation,
         "analysis_mode": args.analysis_mode,
-        "credential_source": credential.source or "hermes_home_files",
-        "hermes_home_credentials_isolated": bool(credential.value),
+        "credential_source": "not_resolved_for_planning",
+        "hermes_home_credentials_isolated": False,
     }
     (output / "metadata.json").write_text(
         json.dumps(meta, indent=2) + "\n",
@@ -772,6 +771,7 @@ def main() -> int:
             args.repeats,
             args.seed,
             models=list(design.models),
+            agents=list(design.agents),
             max_turns_levels=design.max_turns_levels,
             budget_warning_ratio_levels=design.budget_warning_ratio_levels,
         )
@@ -790,7 +790,8 @@ def main() -> int:
         for item in preview_plan:
             print(
                 f"  {int(item['run_index']):02d}: "
-                f"{item['model_label']} / {LABEL[str(item['arm'])]} / "
+                f"{item['agent_label']} / {item['model_label']} / "
+                f"{LABEL[str(item['arm'])]} / "
                 f"turns={item['max_turns']} / "
                 f"reminder={item['budget_warning_ratio']} / "
                 f"{item['instance_id']} / block {item['repeat']}"
@@ -799,6 +800,36 @@ def main() -> int:
         print("Run plan:", output / "run_plan.csv")
         print("Harbor projection:", output / "harbor_plan.json")
         return 0
+
+    if (
+        len(design.agents) != 1
+        or design.agents[0].agent != "hermes"
+    ):
+        raise SystemExit(
+            "The legacy forge-bench runtime only executes Hermes. "
+            "Use --plan-only followed by forge-bench-harbor for multi-agent "
+            "or non-Hermes designs."
+        )
+    if any(model.api_provider != "openrouter" for model in design.models):
+        raise SystemExit(
+            "The legacy forge-bench Hermes runtime only supports api_provider=openrouter. "
+            "Use the Harbor path for other provider/model routes."
+        )
+
+    try:
+        credential = select_openrouter_credential()
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Invalid Forge Bench OpenRouter credential file: {exc}")
+    if credential.value:
+        # Use the resolved key for every fresh Docker profile. Keeping the
+        # value in the subprocess environment avoids putting it in command args.
+        os.environ["OPENROUTER_API_KEY"] = credential.value
+    meta["credential_source"] = credential.source or "hermes_home_files"
+    meta["hermes_home_credentials_isolated"] = bool(credential.value)
+    (output / "metadata.json").write_text(
+        json.dumps(meta, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     hermes_image = _preflight(args)
     if hermes_image:
@@ -837,6 +868,7 @@ def main() -> int:
         args.repeats,
         args.seed,
         models=models,
+        agents=list(design.agents),
         max_turns_levels=design.max_turns_levels,
         budget_warning_ratio_levels=design.budget_warning_ratio_levels,
     )

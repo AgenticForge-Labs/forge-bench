@@ -624,6 +624,10 @@ jobs:
           PY
       - name: Run focused unit tests
         run: uv run python -m unittest discover -s tests -v
+      - name: Verify Harbor 0.23 compatibility
+        run: |
+          uv run --with harbor==0.23.0 python tests/test_harbor_compat.py
+          uv run --with harbor==0.23.0 forge-bench-harbor --help
       - run: uv run forge-bench --help
       - name: Verify reanalysis CLI accepts existing output
         run: |
@@ -646,7 +650,7 @@ jobs:
           root = Path("/tmp/forge-bench-design-plan")
           plan = json.loads((root / "harbor_plan.json").read_text())
           assert plan["kind"] == "forge-bench-harbor-plan"
-          assert plan["executable"] is False
+          assert plan["executable"] is True
           assert plan["trial_count"] == 40
           assert [row["forge_run_index"] for row in plan["trials"]] == list(range(1, 41))
           assert {row["dataset"]["name"] for row in plan["trials"]} == {"swe-bench/swe-bench-verified"}
@@ -655,6 +659,30 @@ jobs:
           grep -q 'deepseek/deepseek-v4-flash-0731' /tmp/forge-bench-design-plan/run_plan.csv
           grep -q 'deepseek/deepseek-v4.1-flash' /tmp/forge-bench-design-plan/run_plan.csv
           test "$(grep -c ',relace,' /tmp/forge-bench-design-plan/run_plan.csv)" -eq 40
+
+      - name: Verify Harbor agent x model design plan without model calls
+        run: |
+          rm -rf /tmp/forge-bench-agent-model-plan
+          uv run forge-bench \
+            --design designs/harbor-agent-model-smoke.yaml \
+            --plan-only \
+            --output /tmp/forge-bench-agent-model-plan
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("/tmp/forge-bench-agent-model-plan")
+          plan = json.loads((root / "harbor_plan.json").read_text())
+          assert plan["schema_version"] == 2
+          assert plan["executable"] is True
+          assert plan["trial_count"] == 4
+          assert {row["forge"]["agent"] for row in plan["trials"]} == {"hermes", "pi"}
+          assert {row["forge"]["model_key"] for row in plan["trials"]} == {
+              "v4-flash-0731",
+              "v4-1-flash",
+          }
+          assert {row["agent"]["mode"] for row in plan["trials"]} == {"harbor-native"}
+          assert all(row["agent"]["control_semantics"]["max_turns"] == "agent-default" for row in plan["trials"])
+          PY
 
       - name: Verify homogeneous default SWE-bench suite
         run: |

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,18 @@ from .config import (
     PINNED_OPENROUTER_UPSTREAM,
     PINNED_REASONING,
 )
+
+
+@dataclass(frozen=True)
+class AgentSpec:
+    key: str
+    label: str
+    agent: str
+    version: str | None = None
+    kwargs: dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -44,6 +56,7 @@ class ExperimentDesign:
     sample_size: int
     instance_ids: tuple[str, ...] | None
     arms: tuple[str, ...]
+    agents: tuple[AgentSpec, ...]
     models: tuple[ModelSpec, ...]
     blocks: int
     seed: int
@@ -58,6 +71,7 @@ class ExperimentDesign:
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["arms"] = list(self.arms)
+        payload["agents"] = [agent.as_dict() for agent in self.agents]
         payload["models"] = [model.as_dict() for model in self.models]
         payload["instance_ids"] = list(self.instance_ids) if self.instance_ids else None
         return payload
@@ -73,6 +87,7 @@ def default_design() -> ExperimentDesign:
         sample_size=DEFAULT_SAMPLE_SIZE,
         instance_ids=None,
         arms=tuple(DEFAULT_ARMS),
+        agents=(AgentSpec(key="hermes", label="Hermes", agent="hermes"),),
         models=(
             ModelSpec(
                 key="deepseek-v4-flash-0731",
@@ -145,12 +160,49 @@ def load_design(path: Path) -> ExperimentDesign:
     if len(set(arms)) != len(arms):
         raise ValueError("treatments must not contain duplicates")
 
+    agent_values = root.get("agents", ["hermes"])
+    if not isinstance(agent_values, list) or not agent_values:
+        raise ValueError("agents must be a non-empty list")
+
+    agents: list[AgentSpec] = []
+    for index, item in enumerate(agent_values):
+        if isinstance(item, str):
+            agent_name = item.strip()
+            if not agent_name:
+                raise ValueError(f"agents[{index}] must be non-empty")
+            key = _clean_key(agent_name, f"agents[{index}]")
+            agents.append(AgentSpec(key=key, label=agent_name, agent=agent_name))
+            continue
+
+        entry = _require_mapping(item, f"agents[{index}]")
+        agent_name = str(entry.get("agent") or entry.get("name") or "").strip()
+        if not agent_name:
+            raise ValueError(f"agents[{index}].agent must be non-empty")
+        key = _clean_key(entry.get("key") or agent_name, f"agents[{index}].key")
+        label = str(entry.get("label") or key).strip()
+        version_value = entry.get("version")
+        version = None if version_value in (None, "") else str(version_value).strip()
+        kwargs_value = entry.get("kwargs") or {}
+        kwargs = _require_mapping(kwargs_value, f"agents[{index}].kwargs")
+        agents.append(
+            AgentSpec(
+                key=key,
+                label=label,
+                agent=agent_name,
+                version=version,
+                kwargs=dict(kwargs),
+            )
+        )
+
+    if len({agent.key for agent in agents}) != len(agents):
+        raise ValueError("agent keys must be unique")
+
     provider = _require_mapping(root.get("provider") or {}, "provider")
     api_provider = str(provider.get("api") or "openrouter").strip().lower()
     upstream = str(provider.get("upstream") or PINNED_OPENROUTER_UPSTREAM).strip()
     require_same_upstream = bool(provider.get("require_same_upstream", True))
-    if api_provider != "openrouter":
-        raise ValueError("Forge Bench experiment designs currently support api: openrouter only")
+    if not api_provider:
+        raise ValueError("provider.api must be non-empty")
     if not upstream:
         raise ValueError("provider.upstream must be non-empty")
 
@@ -169,8 +221,8 @@ def load_design(path: Path) -> ExperimentDesign:
         model_api = str(entry.get("api_provider") or api_provider).strip().lower()
         model_upstream = str(entry.get("upstream_provider") or upstream).strip()
         reasoning = str(entry.get("reasoning") or root.get("reasoning") or PINNED_REASONING).strip()
-        if model_api != "openrouter":
-            raise ValueError(f"models[{index}] uses unsupported api_provider {model_api!r}")
+        if not model_api:
+            raise ValueError(f"models[{index}].api_provider must be non-empty")
         models.append(
             ModelSpec(
                 key=key,
@@ -198,7 +250,7 @@ def load_design(path: Path) -> ExperimentDesign:
     if mode != "full-factorial-within-block":
         raise ValueError(
             "randomization.mode must be 'full-factorial-within-block'; "
-            "each block contains every model x treatment x task cell exactly once"
+            "each block contains every agent x model x treatment x task cell exactly once"
         )
 
     factors = _require_mapping(root.get("factors") or {}, "factors")
@@ -257,6 +309,7 @@ def load_design(path: Path) -> ExperimentDesign:
         sample_size=sample_size,
         instance_ids=instance_ids,
         arms=arms,
+        agents=tuple(agents),
         models=tuple(models),
         blocks=blocks,
         seed=seed,
