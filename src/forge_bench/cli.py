@@ -68,14 +68,14 @@ from .swebench_backend import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Benchmark Hermes token-saving strategies on SWE-bench tasks."
+        description="Benchmark AI coding-agent and model strategies on SWE-bench tasks."
     )
     parser.add_argument(
         "--design",
         type=Path,
         help=(
             "YAML experiment design. When supplied, it pins dataset selection, "
-            "models, upstream provider(s), treatments, randomization blocks, "
+            "agents, models, provider metadata, treatments, randomization blocks, "
             "seed, reasoning, max turns, and analysis mode. Runtime/output "
             "controls remain CLI options."
         ),
@@ -723,7 +723,7 @@ def main() -> int:
         ),
         "confidence_interval": (
             "two-sided 95% Student-t across selected task means; repeats are "
-            "averaged within model x treatment x max_turns x "
+            "averaged within agent x model x treatment x max_turns x "
             "budget_warning_ratio x task first"
         ),
         "trace_capture": {
