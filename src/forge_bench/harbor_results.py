@@ -51,8 +51,32 @@ def normalize_harbor_trial_result(
     budget_censored = turn_exit_reason.startswith("max_iterations_reached(")
 
     patch_nonempty = bool(metadata.get("forge_patch_nonempty", False))
+    patch_capture_error = str(metadata.get("forge_patch_capture_error") or "")
     eval_ok = evaluation_completed or not patch_nonempty
-    valid = (completed or budget_censored) and eval_ok
+
+    cost = getattr(context, "cost_usd", None) if context is not None else None
+    model_info = getattr(getattr(trial_result, "agent_info", None), "model_info", None)
+    observed_model = str(getattr(model_info, "name", None) or cell["model"])
+    model_ok = observed_model == str(cell["model"])
+    provider_ok = str(metadata.get("forge_api_provider") or cell["api_provider"]).lower() == str(
+        cell["api_provider"]
+    ).lower()
+    upstream_ok = str(
+        metadata.get("forge_upstream_provider") or cell["upstream_provider"]
+    ) == str(cell["upstream_provider"])
+    reasoning_ok = str(metadata.get("forge_reasoning") or cell["reasoning"]) == str(
+        cell["reasoning"]
+    )
+
+    valid = (
+        (completed or budget_censored)
+        and eval_ok
+        and not patch_capture_error
+        and model_ok
+        and provider_ok
+        and upstream_ok
+        and reasoning_ok
+    )
 
     errors: list[str] = []
     if exception is not None:
@@ -65,15 +89,26 @@ def normalize_harbor_trial_result(
         errors.append("iteration budget reached")
     if patch_nonempty and not evaluation_completed:
         errors.append("Harbor verification did not produce a reward")
-    if metadata.get("forge_patch_capture_error"):
-        errors.append("patch capture: " + str(metadata["forge_patch_capture_error"]))
+    if patch_capture_error:
+        errors.append("patch capture: " + patch_capture_error)
+    if not model_ok:
+        errors.append("wrong model: " + observed_model)
+    if not provider_ok:
+        errors.append(
+            "wrong API provider: " + str(metadata.get("forge_api_provider") or "")
+        )
+    if not upstream_ok:
+        errors.append(
+            "wrong upstream provider: "
+            + str(metadata.get("forge_upstream_provider") or "")
+        )
+    if not reasoning_ok:
+        errors.append(
+            "wrong reasoning mode: " + str(metadata.get("forge_reasoning") or "")
+        )
 
-    cost = getattr(context, "cost_usd", None) if context is not None else None
-    model_info = getattr(getattr(trial_result, "agent_info", None), "model_info", None)
-    observed_model = str(getattr(model_info, "name", None) or cell["model"])
-
-    repo = ""
-    difficulty = ""
+    repo = str(cell.get("repo") or "")
+    difficulty = str(cell.get("difficulty") or "")
     config = getattr(trial_result, "config", None)
     task = getattr(config, "task", None)
     source = getattr(task, "source", None)
@@ -131,5 +166,5 @@ def normalize_harbor_trial_result(
             else None
         ),
         turn_exit_reason=turn_exit_reason,
-        trace_exported=True,
+        trace_exported=bool(metadata.get("forge_trace_exported", False)),
     )
