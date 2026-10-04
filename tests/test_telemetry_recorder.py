@@ -289,6 +289,76 @@ class HarborLifecycleRecorderTests(unittest.IsolatedAsyncioTestCase):
                     list(range(1, len(expected) + 1)),
                 )
 
+    async def test_sibling_trial_finishes_before_failure_is_propagated(self):
+        completed: list[int] = []
+
+        class MixedTrial:
+            def __init__(self, config):
+                self.config = config
+                self.id = f"trial-{config.index}"
+
+            @classmethod
+            async def create(cls, config):
+                return cls(config)
+
+            async def run(self):
+                if self.config.index == 1:
+                    await asyncio.sleep(0.01)
+                    raise RuntimeError("first failed")
+                await asyncio.sleep(0.03)
+                completed.append(self.config.index)
+                return SimpleNamespace(
+                    id=self.id,
+                    exception_info=None,
+                    index=self.config.index,
+                )
+
+        materialized = [
+            (
+                {
+                    "forge_cell_id": f"forge-{index:04d}-mixed",
+                    "forge_run_index": index,
+                    "forge": {
+                        "repeat": 1,
+                        "agent": "pi",
+                        "model": "provider/model",
+                        "instance_id": f"task-{index}",
+                        "arm": "baseline",
+                    },
+                },
+                SimpleNamespace(
+                    index=index,
+                    environment=SimpleNamespace(
+                        type=SimpleNamespace(value="docker")
+                    ),
+                ),
+            )
+            for index in (1, 2)
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder = ExperimentTelemetryRecorder(
+                Path(tmp) / "telemetry",
+                experiment_id="experiment-1",
+            )
+            with patch(
+                "forge_bench.harbor_runtime.normalize_harbor_trial_result",
+                side_effect=lambda result, intent: SimpleNamespace(
+                    valid=True,
+                    resolved=True,
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "first failed"):
+                    with recorder:
+                        await run_materialized_trials(
+                            materialized,
+                            n_concurrent=2,
+                            trial_class=MixedTrial,
+                            telemetry=recorder,
+                        )
+
+        self.assertEqual(completed, [2])
+
     async def test_trial_exception_is_recorded_before_propagation(self):
         class BrokenTrial:
             id = "trial-broken"
