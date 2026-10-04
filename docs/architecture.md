@@ -45,9 +45,9 @@ complete.
 
 The migration is intentionally staged.
 
-### Implemented in the Harbor-plan foundation
+### Implemented
 
-Forge Bench can project its already-randomized `run_plan.csv` cells into
+Forge Bench projects its already-randomized `run_plan.csv` cells into
 `harbor_plan.json`. The projection:
 
 - preserves one Harbor trial intent per Forge cell;
@@ -56,25 +56,37 @@ Forge Bench can project its already-randomized `run_plan.csv` cells into
 - assigns a stable content-derived `forge_cell_id`;
 - maps the pinned Forge SWE-bench Verified source to Harbor's
   `swe-bench/swe-bench-verified` dataset;
-- records the Harbor API baseline used when the projection was designed.
+- pins the compatibility contract to Harbor 0.23.0 and Hermes v2026.9.14;
+- is executable only when an explicit Harbor dataset mapping exists.
 
-The projection is deliberately marked `executable: false`.
+The opt-in `forge-bench-harbor` runner materializes those intents as explicit
+Harbor `TrialConfig` objects in Forge's randomized order and executes them
+sequentially while this boundary is being validated.
+
+Forge does **not** maintain a competing Hermes integration. `ForgeBenchHermes`
+subclasses Harbor's first-party Hermes adapter. Harbor owns Hermes installation,
+task-environment execution, session export, ATIF conversion, and verification.
+The Forge specialization owns only experimental treatment installation
+(Caveman/Ponytail), pinned provider routing, turn/reminder factors, and patch
+evidence needed to create a Forge observation.
+
+Harbor `TrialResult` objects are normalized into the existing Forge `Result`
+contract so the scientific reporting layer does not depend on which execution
+backend produced the observation.
 
 ### Not implemented yet
 
-The current `main` execution path still uses the legacy Forge Bench
-Hermes/subprocess/Docker machinery. Follow-up PRs will add:
+The normal `forge-bench` command still uses the legacy Forge Bench
+Hermes/subprocess/Docker machinery. Follow-up PRs will:
 
-1. a Harbor Hermes agent adapter and Harbor-result -> Forge observation
-   normalization;
-2. real SWE-bench execution/grading through Harbor;
-3. OpenTelemetry correlation and Modal selection through Harbor;
-4. retirement of the legacy execution harness;
-5. optional OpenShell support as a Harbor environment rather than a competing
-   Forge runtime.
+1. cut SWE-bench execution/grading over to Harbor as the normal runtime;
+2. add OpenTelemetry correlation and Modal selection through Harbor;
+3. retire the legacy execution harness;
+4. optionally reintroduce useful OpenShell hardening as a Harbor environment
+   rather than a competing Forge runtime.
 
-Until those PRs merge, `harbor_plan.json` is a checked migration contract and
-provenance artifact, not a runnable benchmark configuration.
+The opt-in Harbor path is therefore real but is not yet the default Forge Bench
+execution architecture.
 
 ## Why Forge does not use Harbor's normal Cartesian expansion directly
 
