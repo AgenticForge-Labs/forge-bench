@@ -172,6 +172,18 @@ Use `--telemetry-dir` or `--experiment-id` to control archive identity,
 `--telemetry-profile` to record the intended capture profile, or
 `--no-telemetry` when lifecycle recording is explicitly undesired.
 
+Local Docker Harbor runs also record host CPU/RAM and the local
+Forge/Harbor process tree by default. Maximal capture samples at 1 Hz; standard
+at 0.5 Hz; minimal remains lifecycle-only. Use `--resource-sample-interval`
+to override maximal/standard cadence.
+
+These local process samples include cumulative CPU time, RSS/VMS and (in maximal
+mode when available) USS/PSS/swap, process I/O, context switches, Linux page
+faults, plus host CPU/load/RAM/swap/frequency. They deliberately do **not** claim
+Docker container workload attribution yet; container/cgroup/disk/network
+telemetry is the next layer. Modal likewise does not reuse local-orchestrator
+resource numbers as remote sandbox measurements.
+
 See [docs/telemetry.md](docs/telemetry.md) for the contract, journal format, and
 staged collector roadmap.
 

@@ -80,10 +80,16 @@ per-journal sequence numbers and fsync-per-record durability; interrupted Python
 execution seals available evidence partial. Telemetry failures must not invalidate
 an otherwise valid benchmark run.
 
-The recorder does **not** yet collect CPU/RAM/GPU/container data and does not yet
-install or export OpenTelemetry. Environment/agent/verifier internals,
-model/tool events, and high-frequency resource streams are dependent follow-up
-layers and must not be described as implemented on `main` until they merge.
+Local Docker Harbor execution now records host CPU/RAM and the
+Forge/Harbor host-process ancestry as high-frequency raw streams. Do not describe
+those streams as Docker workload measurements: container/cgroup attribution,
+container network/block I/O, and container PIDs remain a later layer. Modal
+execution must not reuse local-orchestrator resource measurements as if they
+described the remote sandbox.
+
+The recorder does **not** yet collect GPU/container telemetry and does not yet
+install or export OpenTelemetry. Environment/agent/verifier internals and
+model/tool events remain dependent follow-up layers.
 
 ## Live-run inspection helpers
 

@@ -110,6 +110,12 @@ class AppendOnlyJsonlJournal:
             self._next_sequence += 1
             return sequence
 
+    def sync(self) -> None:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("telemetry journal is closed")
+            os.fsync(self._fd)
+
     def close(self) -> None:
         with self._lock:
             if self._closed:

@@ -193,6 +193,9 @@ class ProcessSample:
     cpu_system_seconds: float | None = None
     rss_bytes: int | None = None
     vms_bytes: int | None = None
+    uss_bytes: int | None = None
+    pss_bytes: int | None = None
+    swap_bytes: int | None = None
     read_bytes: int | None = None
     write_bytes: int | None = None
     voluntary_context_switches: int | None = None
@@ -220,6 +223,11 @@ class SystemSample:
     source: str
     cpu_total_percent: float | None = None
     cpu_per_core_percent: tuple[float, ...] = ()
+    cpu_user_seconds: float | None = None
+    cpu_system_seconds: float | None = None
+    cpu_idle_seconds: float | None = None
+    cpu_iowait_seconds: float | None = None
+    cpu_frequency_mhz: float | None = None
     load_1m: float | None = None
     load_5m: float | None = None
     load_15m: float | None = None

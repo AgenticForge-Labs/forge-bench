@@ -216,6 +216,68 @@ The CLI supports `--telemetry-dir`, `--experiment-id`,
 `--telemetry-profile`, and `--no-telemetry`. Materialization-only runs do not
 create a telemetry archive because no trial executes.
 
+## Local process and CPU/RAM sampling
+
+Harbor executions using the local Docker environment now start a separate
+high-resolution local resource sampler unless telemetry is disabled or the
+`minimal` capture profile is selected.
+
+The sampler writes two experiment-level raw streams:
+
+```text
+raw/system.jsonl
+raw/processes.jsonl
+```
+
+and a durable capability declaration:
+
+```text
+raw/resource-capabilities.jsonl
+```
+
+The system stream records host CPU utilization, per-core utilization,
+cumulative user/system/idle/iowait CPU time, CPU frequency when exposed,
+load averages, total/available/used RAM, swap use, and host identity/provenance.
+
+The process stream follows the Forge Bench process as its root plus descendants
+visible through the host process table. Records include PID/parent PID,
+process-create time, status, thread count, derived CPU utilization, cumulative
+user/system CPU time, RSS/VMS, USS/PSS/swap in maximal mode when available,
+process read/write bytes, context switches, and Linux minor/major page faults
+when `/proc` exposes them.
+
+Process identity is PID plus process-create time; PID reuse therefore does not
+merge separate longitudinal processes.
+
+Default sampling cadence is:
+
+- `maximal`: 1 second;
+- `standard`: 2 seconds;
+- `minimal`: resource sampling disabled.
+
+`--resource-sample-interval` can override the cadence for maximal/standard
+capture.
+
+The high-frequency resource journals use immediate append writes but periodic
+fsync rather than fsync for every process row. Lifecycle events retain the
+stronger fsync-per-record policy. This reduces measurement perturbation while
+keeping a bounded hard-crash persistence window for resource samples.
+
+### Important local Docker boundary
+
+Host process ancestry is **not** equivalent to Docker workload ancestry.
+Containerized agent/verifier processes may be launched through the Docker daemon
+and therefore may not appear as descendants of the Forge Bench process.
+
+This layer consequently labels its scope
+`local_host_and_forge_process_tree` and explicitly marks
+`container.workload` as not yet captured. Container/cgroup CPU, memory, block
+I/O, network, and PID attribution belong to the next telemetry PR.
+
+For Modal execution, local host/process sampling is recorded as not applicable:
+the local orchestrator machine would not represent the remote Modal sandbox.
+Modal-side resource telemetry is a later parity layer.
+
 ## Planned layers
 
 This foundation deliberately does not collect resource telemetry yet. Dependent

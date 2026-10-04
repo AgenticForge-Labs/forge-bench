@@ -166,8 +166,12 @@ The archive preserves stable experiment/cell identity, wall-clock and monotonic
 time, explicit telemetry-capability availability, and an integrity manifest over
 sealed raw evidence. See `docs/telemetry.md`.
 
-Concrete resource collectors are intentionally layered on top of this contract.
-Planned sources include local process/CPU/RAM, container/disk/network, NVIDIA
+The first concrete resource collector records local host CPU/RAM plus the
+Forge/Harbor process ancestry for local Docker execution. It uses experiment-
+level raw streams because concurrent cells share the orchestrator process tree.
+It does not infer Docker workload ownership from host ancestry.
+
+Still-planned sources include container/cgroup/disk/network attribution, NVIDIA
 GPU, model/tool/ATIF events, and equivalent available signals from Modal.
 
 OpenTelemetry is still planned for distributed operational correlation and
