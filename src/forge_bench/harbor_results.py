@@ -111,15 +111,22 @@ def normalize_harbor_trial_result(
     observed_agent = str(getattr(agent_info, "name", None) or cell.get("agent") or "")
     observed_agent_version = str(getattr(agent_info, "version", None) or "") or None
     model_info = getattr(agent_info, "model_info", None)
-    observed_model = str(getattr(model_info, "name", None) or cell["model"])
+    expected_model = str(cell["model"])
+    expected_model_name = expected_model.split("/", 1)[-1]
+    observed_model_name = str(
+        getattr(model_info, "name", None) or expected_model_name
+    )
     model_provider = getattr(model_info, "provider", None)
+    # Harbor records model namespace/provider separately from model name. Keep
+    # Forge's canonical configured model ID while validating the actual name.
+    observed_model = expected_model if observed_model_name == expected_model_name else observed_model_name
 
     expected_agent = str(cell.get("agent") or "")
     if compatibility_mode:
         agent_ok = expected_agent == "hermes"
     else:
         agent_ok = observed_agent == expected_agent
-    model_ok = observed_model == str(cell["model"])
+    model_ok = observed_model_name == expected_model_name
 
     provider_ok = True
     upstream_ok = True
@@ -162,7 +169,7 @@ def normalize_harbor_trial_result(
     if not agent_ok:
         errors.append("wrong agent: " + observed_agent)
     if not model_ok:
-        errors.append("wrong model: " + observed_model)
+        errors.append("wrong model: " + observed_model_name)
     if compatibility_mode and not provider_ok:
         errors.append(
             "wrong API provider: " + str(metadata.get("forge_api_provider") or "")
