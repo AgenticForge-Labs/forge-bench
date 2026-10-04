@@ -4,6 +4,30 @@ Forge Bench is a basic, reproducible tool for comparing AI coding-agent harnesse
 
 The project is intended to grow beyond this first study. Future work can add models, providers, tasks, harnesses, and broader execution environments such as Harbor. The goal is to test community assumptions with pinned configurations, raw traces, and analysis code that researchers can inspect, reproduce, and challenge.
 
+## Execution architecture migration
+
+Forge Bench owns the scientific experiment: task selection, factor definitions, randomized complete blocks, reproducibility metadata, and statistical analysis. The execution layer is being migrated to [Harbor](https://www.harborframework.com/) so Harbor can own commodity task/trial execution, sandbox environments, verification, retries, and artifacts.
+
+The migration is staged. Current `main` still executes through the legacy Forge Bench Hermes/Docker harness. The Harbor-plan foundation adds a deterministic `harbor_plan.json` projection beside `run_plan.csv`; it preserves the exact randomized Forge cells and is deliberately marked non-executable until the Harbor Hermes adapter lands.
+
+The target layering is:
+
+```text
+Forge Bench design / randomization / analysis
+                 |
+                 v
+              Harbor
+       trials / grading / artifacts
+          |             |
+        Docker         Modal
+          |
+   optional OpenShell later
+
+operational spans -> OpenTelemetry
+```
+
+See [docs/architecture.md](docs/architecture.md) for the ownership boundary and migration state.
+
 ## Why test token-saving tools?
 
 People want coding agents to finish useful work with fewer tokens, lower cost, and less waiting. [Caveman](https://github.com/JuliusBrussee/caveman/tree/542442bab314973709f95b85b1ac0b3f6f5b5dc6/skills/caveman) asks agents to communicate more directly and avoid unnecessary response tokens. [Ponytail](https://github.com/DietrichGebert/ponytail/tree/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156) encourages reuse, native features, and the smallest solution that meets the task.
