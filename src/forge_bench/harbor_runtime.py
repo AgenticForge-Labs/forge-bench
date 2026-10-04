@@ -146,8 +146,14 @@ async def materialize_harbor_trial_configs(
 
     task_by_instance: dict[str, Any] = {}
     for task_config in resolved:
-        task_id = task_config.get_task_id().get_name()
-        short_name = str(task_id).rsplit("/", 1)[-1]
+        task_name = getattr(task_config, "name", None)
+        task_path = getattr(task_config, "path", None)
+        if isinstance(task_name, str) and task_name:
+            short_name = task_name.rsplit("/", 1)[-1]
+        elif task_path is not None:
+            short_name = Path(task_path).name
+        else:
+            raise ValueError("Harbor returned a task config without name or path")
         task_by_instance[short_name] = task_config
 
     missing = [task for task in unique_task_ids if task not in task_by_instance]
