@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from forge_bench.designs import AgentSpec, ModelSpec
+from forge_bench.designs import AgentSpec, ModelSpec, load_design
 from forge_bench.harbor_plan import compile_harbor_plan, write_harbor_plan
 from forge_bench.planning import build_run_plan
 
@@ -170,6 +170,39 @@ class HarborPlanCompilerTests(unittest.TestCase):
         self.assertTrue(
             all(trial["dataset"]["name"] is None for trial in projection["trials"])
         )
+
+    def test_design_loader_allows_non_openrouter_provider_for_harbor_planning(self):
+        text = """version: 1
+name: provider-neutral
+description: Harbor planning should not require the legacy Hermes provider.
+selection:
+  dataset: verified
+  split: test
+  difficulty: medium
+  instance_ids: [django__django-13516]
+provider:
+  api: openai
+  upstream: openai
+  require_same_upstream: true
+agents:
+  - codex
+models:
+  - key: gpt
+    label: GPT
+    model: openai/gpt-test
+treatments: [baseline]
+randomization:
+  mode: full-factorial-within-block
+  blocks: 1
+  seed: 1
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "design.yaml"
+            path.write_text(text, encoding="utf-8")
+            design = load_design(path)
+        self.assertEqual(design.agents[0].agent, "codex")
+        self.assertEqual(design.models[0].api_provider, "openai")
+        self.assertEqual(design.models[0].model, "openai/gpt-test")
 
     def test_write_harbor_plan_round_trips_json(self):
         run_plan = self._generic_plan()
