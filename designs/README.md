@@ -8,6 +8,14 @@ randomization seed, and analysis mode.
 Runtime concerns such as Docker-vs-local Hermes, timeouts, output paths, and
 whether SWE-bench grading is skipped remain CLI options.
 
+## Harbor projection
+
+The Forge design remains the source of truth for the scientific experiment. Forge Bench first constructs and randomizes the complete factorial `run_plan.csv`; runtime infrastructure must consume that plan rather than independently recrossing the factors.
+
+During the Harbor migration, `--plan-only` also writes `harbor_plan.json`. It contains one Harbor-oriented trial intent per Forge cell, in the same order, with stable cell IDs and the exact model/provider/treatment/budget/task assignment.
+
+The current projection is a migration contract, not yet an executable Harbor job. The Hermes Harbor adapter and result normalization are follow-up work.
+
 ## Run a design
 
 Preview the exact randomized order without making model calls:
