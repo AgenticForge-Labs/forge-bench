@@ -146,6 +146,9 @@ def compile_harbor_plan(
     harbor_dataset = HARBOR_DATASET_BY_FORGE_DATASET.get(forge_dataset)
     dataset_mapped = harbor_dataset is not None
     budget_factors_active = _budget_factors_active(run_plan)
+    treatment_experiment_active = any(
+        str(item.get("arm")) != "baseline" for item in run_plan
+    )
 
     trials: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
@@ -172,7 +175,7 @@ def compile_harbor_plan(
 
         treatment = str(item["arm"])
         agent_name = str(item["agent"])
-        needs_forge_controls = treatment != "baseline" or budget_factors_active
+        needs_forge_controls = treatment_experiment_active or budget_factors_active
         if not needs_forge_controls:
             agent_intent = _native_agent_intent(item)
         elif agent_name == "hermes":
