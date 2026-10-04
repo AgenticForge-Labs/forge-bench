@@ -16,6 +16,7 @@ from .config import ARMS, CAVE_URL, PONY_REPO, PONY_SHA
 
 class ForgeBenchHermesOptions(HermesOptions):
     treatment: str = Field(default="baseline")
+    api_provider: str = Field(default="openrouter")
     upstream_provider: str = Field(default="relace", min_length=1)
     reasoning: str = Field(default="none", min_length=1)
     budget_warning_ratio: float | None = Field(default=None, gt=0.0, lt=1.0)
@@ -26,6 +27,14 @@ class ForgeBenchHermesOptions(HermesOptions):
         if value not in ARMS:
             raise ValueError(f"unknown Forge Bench treatment: {value}")
         return value
+
+    @field_validator("api_provider")
+    @classmethod
+    def validate_api_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized != "openrouter":
+            raise ValueError("Forge Bench Harbor execution currently requires openrouter")
+        return normalized
 
 
 class ForgeBenchHermes(Hermes):
@@ -151,6 +160,7 @@ class ForgeBenchHermes(Hermes):
             metadata.update(
                 {
                     "forge_treatment": self.options.treatment,
+                    "forge_api_provider": self.options.api_provider,
                     "forge_upstream_provider": self.options.upstream_provider,
                     "forge_reasoning": self.options.reasoning,
                     "forge_max_turns": self.options.max_turns,
@@ -219,6 +229,7 @@ class ForgeBenchHermes(Hermes):
         session_path = self.logs_dir / "hermes-session.jsonl"
         if session_path.is_file():
             text = session_path.read_text(encoding="utf-8")
+            metadata["forge_trace_exported"] = (self.logs_dir / "trajectory.json").is_file()
             metadata["forge_session_id"] = self._extract_native_session_id(text) or ""
             api_calls = 0
             tool_calls = 0
