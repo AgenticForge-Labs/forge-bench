@@ -12,9 +12,21 @@ whether SWE-bench grading is skipped remain CLI options.
 
 The Forge design remains the source of truth for the scientific experiment. Forge Bench first constructs and randomizes the complete factorial `run_plan.csv`; runtime infrastructure must consume that plan rather than independently recrossing the factors.
 
-During the Harbor migration, `--plan-only` also writes `harbor_plan.json`. It contains one Harbor-oriented trial intent per Forge cell, in the same order, with stable cell IDs and the exact model/provider/treatment/budget/task assignment.
+During the Harbor migration, `--plan-only` also writes `harbor_plan.json`. It contains one Harbor-oriented trial intent per Forge cell, in the same order, with stable cell IDs and the exact agent/model/provider/treatment/budget/task assignment.
 
 For explicitly mapped datasets, the projection is now executable through the opt-in `forge-bench-harbor` runner. The runner materializes one Harbor `TrialConfig` per Forge cell in the exact randomized order and normalizes Harbor results back into Forge's existing observation model. Unmapped datasets remain projection-only. The normal `forge-bench` runtime is still legacy until the later cutover PR.
+
+For baseline Harbor-native comparisons, agent and model are independent factors.
+For example, `designs/harbor-agent-model-smoke.yaml` crosses Hermes and Pi with
+two models without making either harness part of model identity. A single-level
+legacy `max_turns` value remains present for backward-compatible design files,
+but native heterogeneous-agent plans label budget behavior as `agent-default`
+and do not claim that Forge enforced the same turn cap across agents.
+
+Existing non-baseline Caveman/Ponytail and Forge-controlled budget experiments
+remain Hermes-only on the Harbor migration path. Selecting a non-Hermes agent
+with those controls makes the Harbor plan non-executable rather than emulating
+the plugin or silently dropping the factor.
 
 ## Run a design
 
@@ -61,13 +73,25 @@ provider:
 
 reasoning: none
 
-# Optional randomized agent-budget factors. Each list is crossed with every
-# model, treatment, and selected task inside every randomized block.
+# Optional randomized Hermes budget factors. Each list is crossed with every
+# agent, model, treatment, and selected task inside every randomized block.
+# Heterogeneous Harbor-native agents currently use agent-default budgeting;
+# varying these factors across non-Hermes agents is rejected before execution.
 factors:
   max_turns: [50, 100]
   budget_warning_ratio: [null, 0.75]
 
 analysis_mode: advanced
+
+agents:
+  # Strings are shorthand for key=agent=name.
+  - hermes
+  - key: pi
+    label: Pi
+    agent: pi
+    # Optional Harbor installed-agent version and opaque kwargs.
+    # version: 0.9.0
+    # kwargs: {}
 
 models:
   - key: model-a
@@ -109,13 +133,13 @@ root-level shorthand.
 A block is the complete Cartesian product:
 
 ```text
-models × treatments × max_turns × budget_warning_ratio × selected tasks
+agents × models × treatments × max_turns × budget_warning_ratio × selected tasks
 ```
 
 Every cell appears exactly once in each block. Forge Bench constructs the whole
-block first and then performs one seeded shuffle over all cells. Model order,
-treatment order, and task order are therefore interleaved rather than running
-one model or treatment as a batch.
+block first and then performs one seeded shuffle over all cells. Agent, model,
+treatment, and task order are therefore interleaved rather than running one
+agent, model, or treatment as a batch.
 
 Additional blocks receive independently derived seeds. The master seed,
 per-block seeds, global run index, and within-block position are all written to
@@ -127,6 +151,13 @@ calculated. This preserves task as the independent experimental unit while
 keeping the two agent-budget factors separate.
 
 ## Analysis hierarchy
+
+Current reporting was built around model × treatment studies. Agent identity is now
+retained in `run_plan.csv`, Harbor intents, and normalized Harbor results, but
+agent-effect inferential tables are a follow-up migration step. Until that lands,
+do not interpret existing model/treatment summaries as an agent-comparison
+analysis.
+
 
 For multi-model designs the primary inferential unit is the selected task, not
 an API call, tool event, or randomized run. If `blocks > 1`, Forge Bench first
