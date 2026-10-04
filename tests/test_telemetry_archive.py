@@ -193,6 +193,34 @@ class TelemetryArchiveTests(unittest.TestCase):
             errors = verify_archive(paths)
             self.assertTrue(any("sha256 mismatch" in error for error in errors))
 
+    def test_sealed_archive_is_write_closed_through_archive_api(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = initialize_archive(
+                Path(tmp) / "experiment",
+                experiment_id="experiment-1",
+            )
+            ensure_cell_layout(paths, "forge-0001-abc")
+            seal_archive(paths, state=ArchiveState.COMPLETE)
+            with self.assertRaisesRegex(RuntimeError, "sealed"):
+                ensure_cell_layout(paths, "forge-0002-def")
+            with self.assertRaisesRegex(RuntimeError, "already sealed"):
+                seal_archive(paths, state=ArchiveState.COMPLETE)
+
+    def test_existing_archive_rejects_capture_profile_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "experiment"
+            initialize_archive(
+                root,
+                experiment_id="experiment-1",
+                capture_profile=CaptureProfile.MAXIMAL,
+            )
+            with self.assertRaisesRegex(ValueError, "capture profile"):
+                initialize_archive(
+                    root,
+                    experiment_id="experiment-1",
+                    capture_profile=CaptureProfile.MINIMAL,
+                )
+
     def test_partial_archive_is_a_valid_sealed_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = initialize_archive(
