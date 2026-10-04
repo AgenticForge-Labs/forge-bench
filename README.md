@@ -6,31 +6,62 @@ The project is intended to grow beyond this first study. Future work can add mod
 
 ## Execution architecture migration
 
-Forge Bench owns the scientific experiment: task selection, factor definitions, randomized complete blocks, reproducibility metadata, and statistical analysis. The execution layer is being migrated to [Harbor](https://www.harborframework.com/) so Harbor can own commodity task/trial execution, sandbox environments, verification, retries, and artifacts.
+Forge Bench owns the scientific experiment: task selection, factor definitions,
+randomized complete blocks, reproducibility metadata, normalized observations,
+and statistical analysis. The execution layer is being migrated to
+[Harbor](https://www.harborframework.com/) so Harbor can own commodity
+task/trial execution, agent installation, sandbox environments, verification,
+retries, trajectories, and artifacts.
 
-The migration is staged. The normal `forge-bench` command still executes through the legacy Forge Bench Hermes/Docker harness, but Harbor-mapped plans now have an opt-in execution path through `forge-bench-harbor`. Forge subclasses Harbor's first-party Hermes adapter only to apply the experimental treatment, provider-route, turn-budget, and reminder factors plus patch evidence; Harbor retains task-environment execution, Hermes installation/session export, ATIF trajectory handling, and verification.
+The Harbor path now treats **agent** and **model** as independent Forge factors.
+A baseline design can therefore cross Harbor-native agents such as Hermes, Pi,
+OpenCode, or Codex with model identifiers without Forge reimplementing those
+agents. Agent-specific options can be carried as opaque `agents[].kwargs`, and
+agent version is recorded separately from model identity.
 
-`harbor_plan.json` remains a deterministic projection beside `run_plan.csv`, preserving the exact randomized Forge cells. SWE-bench Verified projections are executable through the Harbor path; unmapped datasets remain projection-only.
+The migration is still staged. The normal `forge-bench` command remains the
+legacy Hermes runtime for existing treatment studies. Multi-agent or non-Hermes
+designs are planned with `forge-bench --plan-only` and executed through the
+opt-in `forge-bench-harbor` path.
+
+Existing Caveman/Ponytail and Forge-controlled budget behavior is preserved only
+for Hermes through the existing compatibility specialization. Forge does **not**
+port those plugins to other agents in this stage. If a design asks a non-Hermes
+agent to participate in a non-baseline treatment or Forge-controlled budget
+factor, `harbor_plan.json` is marked non-executable instead of silently
+approximating the treatment.
+
+`harbor_plan.json` remains a deterministic projection beside `run_plan.csv`,
+preserving exact randomized cells. For baseline Harbor-native agent comparisons,
+iteration/budget behavior is currently **agent-default** and is recorded as such;
+a later capability-negotiation step is required before turn-budget factors can
+be compared fairly across heterogeneous agents.
 
 The target layering is:
 
 ```text
-Forge Bench design / randomization / analysis
+Forge Bench
+  design / randomization / provenance / analysis
                  |
                  v
               Harbor
-       trials / grading / artifacts
-          |             |
-        Docker         Modal
+  agent x model trials / grading / ATIF / artifacts
+          |                     |
+      local Docker            Modal
           |
-   optional OpenShell later
+  optional secure capability attachments
+  (for example a bounded robot broker)
 
-operational spans -> OpenTelemetry
+OpenTelemetry correlation comes later.
+Direct LLM/VLM trials are planned as a separate trial kind over the same
+local/Modal execution boundary.
 ```
 
-See [docs/architecture.md](docs/architecture.md) for the ownership boundary and migration state.
+See [docs/architecture.md](docs/architecture.md) for the ownership boundary and
+migration state.
 
-To materialize or execute the Harbor path during the migration, use the pinned Harbor version without adding it to the core Forge Bench environment:
+To materialize or execute a Harbor plan during the migration, use the pinned
+Harbor version without adding it to the core Forge Bench environment:
 
 ```bash
 uv run --with harbor==0.23.0 forge-bench-harbor \
@@ -39,7 +70,11 @@ uv run --with harbor==0.23.0 forge-bench-harbor \
   --materialize-only
 ```
 
-Remove `--materialize-only` only when you intend to run the model calls and Harbor verification.
+Remove `--materialize-only` only when you intend to run model calls and Harbor
+verification.
+
+A no-call agent×model example is provided at
+`designs/harbor-agent-model-smoke.yaml`.
 
 ## Why test token-saving tools?
 
