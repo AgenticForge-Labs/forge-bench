@@ -53,6 +53,7 @@ def extra_instructions_for_intent(intent: dict[str, Any]) -> list[str]:
 
 def _harbor_imports():
     try:
+        from harbor.agents.factory import AgentFactory
         from harbor.models.environment_type import EnvironmentType
         from harbor.models.job.config import DatasetConfig
         from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TrialConfig
@@ -62,7 +63,7 @@ def _harbor_imports():
             "Harbor execution requires harbor==0.23.0. "
             "Use an environment that installs the pinned Harbor version."
         ) from exc
-    return EnvironmentType, DatasetConfig, AgentConfig, EnvironmentConfig, TrialConfig, Trial
+    return AgentFactory, EnvironmentType, DatasetConfig, AgentConfig, EnvironmentConfig, TrialConfig, Trial
 
 
 def build_harbor_trial_config(
@@ -73,6 +74,7 @@ def build_harbor_trial_config(
     environment: str = "docker",
 ) -> Any:
     (
+        AgentFactory,
         EnvironmentType,
         _DatasetConfig,
         AgentConfig,
@@ -106,16 +108,19 @@ def build_harbor_trial_config(
     except ValueError as exc:
         raise ValueError(f"Unsupported Harbor environment: {environment!r}") from exc
 
+    agent_config = AgentConfig(
+        name=str(agent_name) if agent_name else None,
+        import_path=str(import_path) if import_path else None,
+        model_name=model_name,
+        kwargs=agent_kwargs,
+    )
+    AgentFactory.run_preflight(agent_config)
+
     return TrialConfig(
         task=task_config,
         trial_name=str(intent["forge_cell_id"]),
         trials_dir=Path(trials_dir),
-        agent=AgentConfig(
-            name=str(agent_name) if agent_name else None,
-            import_path=str(import_path) if import_path else None,
-            model_name=model_name,
-            kwargs=agent_kwargs,
-        ),
+        agent=agent_config,
         environment=EnvironmentConfig(type=environment_type),
         extra_instructions=extra_instructions_for_intent(intent),
     )
@@ -137,6 +142,7 @@ async def materialize_harbor_trial_configs(
         )
 
     (
+        _AgentFactory,
         _EnvironmentType,
         DatasetConfig,
         _AgentConfig,
