@@ -155,7 +155,25 @@ Modal is likewise an execution choice beneath Harbor. A scientifically identical
 Forge design should be able to execute through Docker or Modal without changing
 the Forge factors or analysis.
 
-## Observability
+## Telemetry and observability
+
+Forge Bench now defines a versioned raw telemetry/archive contract independently
+of any particular observability backend. Raw time-resolved evidence is the
+scientific authority; derived time-series/features and public share packages are
+rebuildable projections.
+
+The archive preserves stable experiment/cell identity, wall-clock and monotonic
+time, explicit telemetry-capability availability, and an integrity manifest over
+sealed raw evidence. See `docs/telemetry.md`.
+
+Concrete resource collectors are intentionally layered on top of this contract.
+Planned sources include local process/CPU/RAM, container/disk/network, NVIDIA
+GPU, model/tool/ATIF events, and equivalent available signals from Modal.
+
+OpenTelemetry is still planned for distributed operational correlation and
+optional export. It must not become the sole copy of scientific telemetry.
+Stable Forge experiment/cell IDs and Harbor trial IDs will be the join keys.
+
 
 OpenTelemetry is planned for operational spans and resource/runtime telemetry.
 It is complementary to, not a replacement for, immutable benchmark artifacts

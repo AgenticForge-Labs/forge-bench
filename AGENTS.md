@@ -52,6 +52,33 @@ described as implemented before they merge.
 
 See `docs/architecture.md`.
 
+## Telemetry archive boundary
+
+Forge Bench treats raw time-resolved telemetry as scientific evidence. The
+versioned contracts and immutable archive layout are defined in
+`src/forge_bench/telemetry_contracts.py`,
+`src/forge_bench/telemetry_archive.py`, and `docs/telemetry.md`.
+
+The archive has three tiers:
+
+- `raw/`: authoritative evidence. Once sealed, files are hash-checked and must
+  not be edited in place.
+- `derived/`: rebuildable temporal tables and features.
+- `share/`: compact CSVs, figures, reports, and privacy-aware exports.
+
+Do not repair an experiment by editing sealed raw telemetry. Fix the collector
+or authoritative execution path and rerun/rederive as appropriate.
+
+Every time-varying record must retain both wall-clock and monotonic time plus
+stable experimental joins such as `experiment_id` and `forge_cell_id`.
+Unavailable telemetry is not zero: capability records must distinguish captured,
+unavailable, not-applicable, and error states.
+
+The telemetry-contract foundation does **not** yet collect CPU/RAM/GPU/container
+data and does not yet install or export OpenTelemetry. Those are dependent
+follow-up layers and must not be described as implemented on `main` until they
+merge.
+
 ## Live-run inspection helpers
 
 Agents should use the reusable live monitor instead of guessing timestamped run-directory names or manually parsing partial output.

@@ -138,6 +138,33 @@ cells. Results are returned in authoritative Forge run order even when execution
 overlaps.
 
 
+## Raw telemetry archive
+
+Forge Bench is also building a high-resolution experimental record for temporal
+and multivariate analysis. The foundation is now a versioned telemetry contract
+and immutable archive layout; actual CPU/RAM/GPU/container collectors and
+OpenTelemetry export remain follow-up work.
+
+The archive separates:
+
+```text
+raw/       immutable time-resolved evidence
+derived/   rebuildable Parquet/time-series/features
+share/     compact CSV/figures/reports
+```
+
+Raw evidence is sealed with SHA-256 hashes, byte counts, and JSONL record counts
+where applicable. Derived and share outputs are deliberately excluded from the
+raw integrity root so analytical methods can evolve without rewriting evidence.
+
+Telemetry records preserve both wall-clock and monotonic timestamps and stable
+experiment/cell joins. Missing channels are recorded explicitly as unavailable,
+not silently converted to zero. The default research intent is maximal capture,
+with standard/minimal profiles reserved for lower-overhead use.
+
+See [docs/telemetry.md](docs/telemetry.md) for the contract and staged collector
+roadmap.
+
 ## Why test token-saving tools?
 
 People want coding agents to finish useful work with fewer tokens, lower cost, and less waiting. [Caveman](https://github.com/JuliusBrussee/caveman/tree/542442bab314973709f95b85b1ac0b3f6f5b5dc6/skills/caveman) asks agents to communicate more directly and avoid unnecessary response tokens. [Ponytail](https://github.com/DietrichGebert/ponytail/tree/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156) encourages reuse, native features, and the smallest solution that meets the task.
