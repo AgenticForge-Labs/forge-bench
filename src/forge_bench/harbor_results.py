@@ -36,6 +36,29 @@ def _environment_name(trial_result: Any) -> str | None:
     return str(getattr(value, "value", value))
 
 
+def _environment_resources(trial_result: Any) -> dict[str, int | None]:
+    config = getattr(trial_result, "config", None)
+    environment = getattr(config, "environment", None)
+    if environment is None:
+        return {
+            "cpus": None,
+            "memory_mb": None,
+            "storage_mb": None,
+            "gpus": None,
+        }
+
+    def optional_int(name: str) -> int | None:
+        value = getattr(environment, name, None)
+        return None if value is None else int(value)
+
+    return {
+        "cpus": optional_int("override_cpus"),
+        "memory_mb": optional_int("override_memory_mb"),
+        "storage_mb": optional_int("override_storage_mb"),
+        "gpus": optional_int("override_gpus"),
+    }
+
+
 def normalize_harbor_trial_result(
     trial_result: Any,
     forge_intent: dict[str, Any],
@@ -193,6 +216,7 @@ def normalize_harbor_trial_result(
         repo_name = source
 
     run_dir = str(getattr(trial_result, "trial_uri", "") or "")
+    environment_resources = _environment_resources(trial_result)
     controls = dict(agent_intent.get("control_semantics") or {})
     max_turns = (
         int(cell["max_turns"])
@@ -273,6 +297,10 @@ def normalize_harbor_trial_result(
         agent=expected_agent or observed_agent,
         agent_version=observed_agent_version,
         environment=_environment_name(trial_result),
+        environment_cpus=environment_resources["cpus"],
+        environment_memory_mb=environment_resources["memory_mb"],
+        environment_storage_mb=environment_resources["storage_mb"],
+        environment_gpus=environment_resources["gpus"],
         harbor_trial_id=str(getattr(trial_result, "id", "") or "") or None,
         trial_kind="agentic",
     )
