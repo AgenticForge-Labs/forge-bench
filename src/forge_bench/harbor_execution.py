@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import shutil
 from typing import Any
 
 SUPPORTED_HARBOR_ENVIRONMENTS = ("docker", "modal")
@@ -79,7 +80,11 @@ def execution_from_plan(
 def require_execution_dependencies(config: HarborExecutionConfig) -> None:
     """Fail early before a paid/cloud run when optional runtime pieces are absent."""
     resolved = config.validated()
-    if resolved.environment != "modal":
+    if resolved.environment == "docker":
+        if shutil.which("docker") is None:
+            raise RuntimeError(
+                "Local Docker execution requires the docker CLI on PATH."
+            )
         return
 
     try:
