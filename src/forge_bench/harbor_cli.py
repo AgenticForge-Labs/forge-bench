@@ -19,6 +19,10 @@ from .harbor_runtime import (
 )
 from .telemetry_archive import read_manifest
 from .telemetry_contracts import CaptureProfile
+from .local_resources import (
+    LocalProcessResourceSampler,
+    record_local_resources_not_applicable,
+)
 from .telemetry_recorder import ExperimentTelemetryRecorder
 
 
@@ -73,6 +77,15 @@ def parse_args() -> argparse.Namespace:
         "--no-telemetry",
         action="store_true",
         help="Disable the raw lifecycle telemetry recorder for this execution.",
+    )
+    parser.add_argument(
+        "--resource-sample-interval",
+        type=float,
+        help=(
+            "Local host/process CPU/RAM sampling interval in seconds. Defaults "
+            "to 1.0 for maximal, 2.0 for standard, and disabled for minimal. "
+            "Only applies to local Docker execution in this layer."
+        ),
     )
     parser.add_argument(
         "--materialize-only",
@@ -192,12 +205,23 @@ async def _main_async(args: argparse.Namespace) -> int:
             )
         else:
             with recorder:
-                _harbor, forge_results = await run_harbor_plan(
-                    plan,
-                    trials_dir=args.trials_dir,
-                    execution=execution,
-                    telemetry=recorder,
+                sampler = _start_local_resource_sampler(
+                    recorder,
+                    execution_environment=execution.environment,
+                    requested_interval=args.resource_sample_interval,
+                    telemetry_settings=telemetry_settings,
                 )
+                try:
+                    _harbor, forge_results = await run_harbor_plan(
+                        plan,
+                        trials_dir=args.trials_dir,
+                        execution=execution,
+                        telemetry=recorder,
+                    )
+                finally:
+                    if sampler is not None:
+                        stats = sampler.stop()
+                        telemetry_settings["resource_sampling"]["stats"] = asdict(stats)
     finally:
         if telemetry_settings is not None:
             if recorder is not None:
@@ -270,8 +294,103 @@ def _resolve_telemetry_settings(
         "root": str(root.resolve()),
         "experiment_id": experiment_id,
         "capture_profile": capture_profile.value,
-        "durability": "fsync_each_record",
+        "durability": "lifecycle_fsync_each_record; resource_streams_periodic_fsync",
+        "resource_sampling": {
+            "requested_interval_seconds": args.resource_sample_interval,
+            "active": False,
+        },
     }
+
+
+def _start_local_resource_sampler(
+    recorder: ExperimentTelemetryRecorder,
+    *,
+    execution_environment: str,
+    requested_interval: float | None,
+    telemetry_settings: dict,
+) -> LocalProcessResourceSampler | None:
+    settings = telemetry_settings["resource_sampling"]
+    if execution_environment != "docker":
+        reason = (
+            "local host/process telemetry is not used for Modal because the "
+            "orchestrator host would not represent the remote trial sandbox; "
+            "Modal resource parity is implemented in a later layer"
+        )
+        try:
+            record_local_resources_not_applicable(recorder, reason=reason)
+        except Exception as exc:
+            recorder.issue("local_resources.not_applicable", exc)
+        settings.update(
+            {
+                "active": False,
+                "scope": "remote_modal_not_sampled",
+                "reason": reason,
+            }
+        )
+        return None
+
+    interval = _resource_sampling_interval(
+        recorder.capture_profile,
+        requested_interval=requested_interval,
+    )
+    if interval is None:
+        reason = "minimal capture profile records lifecycle evidence only"
+        settings.update(
+            {
+                "active": False,
+                "scope": "local_host_and_forge_process_tree",
+                "reason": reason,
+            }
+        )
+        return None
+
+    try:
+        sampler = LocalProcessResourceSampler(
+            recorder,
+            interval_seconds=interval,
+        )
+        sampler.start()
+    except Exception as exc:
+        recorder.issue("local_resources.initialize", exc)
+        settings.update(
+            {
+                "active": False,
+                "scope": "local_host_and_forge_process_tree",
+                "initialization_error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+        return None
+
+    settings.update(
+        {
+            "active": True,
+            "scope": "local_host_and_forge_process_tree",
+            "interval_seconds": interval,
+            "container_workload_included": False,
+        }
+    )
+    return sampler
+
+
+def _resource_sampling_interval(
+    profile: CaptureProfile,
+    *,
+    requested_interval: float | None,
+) -> float | None:
+    if requested_interval is not None:
+        if requested_interval <= 0:
+            raise SystemExit("--resource-sample-interval must be > 0")
+        if profile == CaptureProfile.MINIMAL:
+            raise SystemExit(
+                "--resource-sample-interval cannot be used with "
+                "--telemetry-profile minimal"
+            )
+        return float(requested_interval)
+    if profile == CaptureProfile.MAXIMAL:
+        return 1.0
+    if profile == CaptureProfile.STANDARD:
+        return 2.0
+    return None
 
 
 def _new_experiment_id(plan: dict) -> str:
