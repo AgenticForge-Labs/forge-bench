@@ -637,6 +637,7 @@ jobs:
           grep -q -- '--experiment-id' /tmp/forge-bench-harbor-help.txt
           grep -q -- '--telemetry-profile' /tmp/forge-bench-harbor-help.txt
           grep -q -- '--no-telemetry' /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--resource-sample-interval' /tmp/forge-bench-harbor-help.txt
           grep -q -- 'docker' /tmp/forge-bench-harbor-help.txt
           grep -q -- 'modal' /tmp/forge-bench-harbor-help.txt
       - run: uv run forge-bench --help
