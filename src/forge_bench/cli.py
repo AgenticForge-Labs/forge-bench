@@ -36,6 +36,7 @@ from .designs import ModelSpec, default_design, load_design
 from .harbor_plan import write_harbor_plan
 from .planning import build_run_plan
 from .credentials import (
+    CredentialSelection,
     available_hermes_credential_files,
     select_openrouter_credential,
 )
@@ -502,14 +503,10 @@ def main() -> int:
         )
         return 1
 
-    try:
-        credential = select_openrouter_credential()
-    except (OSError, ValueError) as exc:
-        raise SystemExit(f"Invalid Forge Bench OpenRouter credential file: {exc}")
-    if credential.value:
-        # Use the resolved key for every fresh Docker profile. Keeping the
-        # value in the subprocess environment avoids putting it in command args.
-        os.environ["OPENROUTER_API_KEY"] = credential.value
+    # Planning, selection and reanalysis do not require a model credential.
+    # The legacy Hermes runtime resolves its OpenRouter credential only after
+    # the plan-only and multi-agent guards below.
+    credential = CredentialSelection(None, None)
 
     design = load_design(args.design) if args.design is not None else default_design()
     if args.design is not None:
@@ -813,6 +810,26 @@ def main() -> int:
             "Use --plan-only followed by forge-bench-harbor for multi-agent "
             "or non-Hermes designs."
         )
+    if any(model.api_provider != "openrouter" for model in design.models):
+        raise SystemExit(
+            "The legacy forge-bench Hermes runtime only supports api_provider=openrouter. "
+            "Use the Harbor path for other provider/model routes."
+        )
+
+    try:
+        credential = select_openrouter_credential()
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Invalid Forge Bench OpenRouter credential file: {exc}")
+    if credential.value:
+        # Use the resolved key for every fresh Docker profile. Keeping the
+        # value in the subprocess environment avoids putting it in command args.
+        os.environ["OPENROUTER_API_KEY"] = credential.value
+    meta["credential_source"] = credential.source or "hermes_home_files"
+    meta["hermes_home_credentials_isolated"] = bool(credential.value)
+    (output / "metadata.json").write_text(
+        json.dumps(meta, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     hermes_image = _preflight(args)
     if hermes_image:
