@@ -73,16 +73,27 @@ class LocalProcessResourceSampler:
             recorder.paths.raw / "system.jsonl",
             durable=False,
         )
-        self._process_journal = AppendOnlyJsonlJournal(
-            recorder.paths.raw / "processes.jsonl",
-            durable=False,
-        )
-        self._capabilities_journal = AppendOnlyJsonlJournal(
-            recorder.paths.raw / "resource-capabilities.jsonl",
-            durable=True,
-        )
-        self._capabilities_journal.append(self._capabilities())
-        self._capabilities_journal.close()
+        try:
+            self._process_journal = AppendOnlyJsonlJournal(
+                recorder.paths.raw / "processes.jsonl",
+                durable=False,
+            )
+            self._capabilities_journal = AppendOnlyJsonlJournal(
+                recorder.paths.raw / "resource-capabilities.jsonl",
+                durable=True,
+            )
+            try:
+                self._capabilities_journal.append(self._capabilities())
+            finally:
+                self._capabilities_journal.close()
+        except Exception:
+            try:
+                self._system_journal.close()
+            finally:
+                process_journal = getattr(self, "_process_journal", None)
+                if process_journal is not None:
+                    process_journal.close()
+            raise
 
     @property
     def stats(self) -> LocalResourceSamplerStats:
@@ -347,7 +358,7 @@ class LocalProcessResourceSampler:
             time=point,
             source="psutil",
             pid=process.pid,
-            parent_pid=_optional_int(parent_pid),
+            parent_pid=_optional_positive_int(parent_pid),
             process_start_unix_ns=key[1],
             status=None if status in (None, "") else str(status),
             thread_count=_optional_int(thread_count),
@@ -694,6 +705,13 @@ def _attr_int(value: Any, name: str) -> int | None:
     except (TypeError, ValueError):
         return None
     return max(0, number)
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    parsed = _optional_int(value)
+    if parsed is None or parsed < 1:
+        return None
+    return parsed
 
 
 def _optional_int(value: Any) -> int | None:
