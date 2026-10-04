@@ -27,12 +27,24 @@ def _reward(trial_result: Any) -> float | None:
     return float(value)
 
 
+def _environment_name(trial_result: Any) -> str | None:
+    config = getattr(trial_result, "config", None)
+    environment = getattr(config, "environment", None)
+    value = getattr(environment, "type", None)
+    if value is None:
+        return None
+    return str(getattr(value, "value", value))
+
+
 def normalize_harbor_trial_result(
     trial_result: Any,
     forge_intent: dict[str, Any],
 ) -> Result:
     """Convert one Harbor TrialResult into the existing Forge observation model."""
     cell = dict(forge_intent["forge"])
+    agent_intent = dict(forge_intent.get("agent") or {})
+    compatibility_mode = agent_intent.get("mode") == "forge-hermes-compat"
+
     context = getattr(trial_result, "agent_result", None)
     metadata = dict(getattr(context, "metadata", None) or {})
 
@@ -66,7 +78,14 @@ def normalize_harbor_trial_result(
 
     patch_nonempty = bool(metadata.get("forge_patch_nonempty", False))
     patch_capture_error = str(metadata.get("forge_patch_capture_error") or "")
-    eval_ok = evaluation_completed or not patch_nonempty
+    if compatibility_mode:
+        eval_ok = evaluation_completed or not patch_nonempty
+        patch_ok = not patch_capture_error
+    else:
+        # Harbor-native agents do not use Forge's Hermes-specific patch observer.
+        # Their task verifier is the authoritative coding-task outcome.
+        eval_ok = evaluation_completed
+        patch_ok = True
 
     context_cost = getattr(context, "cost_usd", None) if context is not None else None
     estimated_cost = metadata.get("forge_estimated_cost_usd")
@@ -77,33 +96,50 @@ def normalize_harbor_trial_result(
     actual_cost = float(actual_cost) if actual_cost not in (None, "") else None
     if actual_cost is not None and actual_cost > 0:
         cost = actual_cost
-        cost_source = "openrouter_actual"
+        cost_source = "provider_actual"
     elif estimated_cost is not None:
         cost = estimated_cost
-        cost_source = str(metadata.get("forge_cost_source") or "hermes_estimate")
+        cost_source = str(metadata.get("forge_cost_source") or "agent_estimate")
     elif context_cost is not None:
         cost = float(context_cost)
         cost_source = "harbor_agent_context"
     else:
         cost = None
         cost_source = "unavailable"
-    model_info = getattr(getattr(trial_result, "agent_info", None), "model_info", None)
+
+    agent_info = getattr(trial_result, "agent_info", None)
+    observed_agent = str(getattr(agent_info, "name", None) or cell.get("agent") or "")
+    observed_agent_version = str(getattr(agent_info, "version", None) or "") or None
+    model_info = getattr(agent_info, "model_info", None)
     observed_model = str(getattr(model_info, "name", None) or cell["model"])
+    model_provider = getattr(model_info, "provider", None)
+
+    expected_agent = str(cell.get("agent") or "")
+    if compatibility_mode:
+        agent_ok = expected_agent == "hermes"
+    else:
+        agent_ok = observed_agent == expected_agent
     model_ok = observed_model == str(cell["model"])
-    provider_ok = str(metadata.get("forge_api_provider") or cell["api_provider"]).lower() == str(
-        cell["api_provider"]
-    ).lower()
-    upstream_ok = str(
-        metadata.get("forge_upstream_provider") or cell["upstream_provider"]
-    ) == str(cell["upstream_provider"])
-    reasoning_ok = str(metadata.get("forge_reasoning") or cell["reasoning"]) == str(
-        cell["reasoning"]
-    )
+
+    provider_ok = True
+    upstream_ok = True
+    reasoning_ok = True
+    if compatibility_mode:
+        provider_ok = str(
+            metadata.get("forge_api_provider") or cell["api_provider"]
+        ).lower() == str(cell["api_provider"]).lower()
+        upstream_ok = str(
+            metadata.get("forge_upstream_provider") or cell["upstream_provider"]
+        ) == str(cell["upstream_provider"])
+        reasoning_ok = str(
+            metadata.get("forge_reasoning") or cell["reasoning"]
+        ) == str(cell["reasoning"])
 
     valid = (
         (completed or budget_censored)
         and eval_ok
-        and not patch_capture_error
+        and patch_ok
+        and agent_ok
         and model_ok
         and provider_ok
         and upstream_ok
@@ -119,35 +155,59 @@ def normalize_harbor_trial_result(
         )
     if budget_censored:
         errors.append("iteration budget reached")
-    if patch_nonempty and not evaluation_completed:
+    if not evaluation_completed:
         errors.append("Harbor verification did not produce a reward")
-    if patch_capture_error:
+    if compatibility_mode and patch_capture_error:
         errors.append("patch capture: " + patch_capture_error)
+    if not agent_ok:
+        errors.append("wrong agent: " + observed_agent)
     if not model_ok:
         errors.append("wrong model: " + observed_model)
-    if not provider_ok:
+    if compatibility_mode and not provider_ok:
         errors.append(
             "wrong API provider: " + str(metadata.get("forge_api_provider") or "")
         )
-    if not upstream_ok:
+    if compatibility_mode and not upstream_ok:
         errors.append(
             "wrong upstream provider: "
             + str(metadata.get("forge_upstream_provider") or "")
         )
-    if not reasoning_ok:
+    if compatibility_mode and not reasoning_ok:
         errors.append(
             "wrong reasoning mode: " + str(metadata.get("forge_reasoning") or "")
         )
 
-    repo = str(cell.get("repo") or "")
+    repo_name = str(cell.get("repo") or "")
     difficulty = str(cell.get("difficulty") or "")
     config = getattr(trial_result, "config", None)
     task = getattr(config, "task", None)
     source = getattr(task, "source", None)
     if isinstance(source, str):
-        repo = source
+        repo_name = source
 
     run_dir = str(getattr(trial_result, "trial_uri", "") or "")
+    controls = dict(agent_intent.get("control_semantics") or {})
+    max_turns = (
+        int(cell["max_turns"])
+        if controls.get("max_turns") == "forge-controlled"
+        else None
+    )
+    budget_warning_ratio = (
+        cell["budget_warning_ratio"]
+        if controls.get("budget_warning_ratio") == "forge-controlled"
+        else None
+    )
+
+    api_provider = (
+        str(metadata.get("forge_api_provider") or cell.get("api_provider") or "")
+        if compatibility_mode
+        else str(model_provider or "")
+    )
+    upstream_provider = (
+        str(metadata.get("forge_upstream_provider") or cell.get("upstream_provider") or "")
+        if compatibility_mode
+        else ""
+    )
 
     return Result(
         arm=str(cell["arm"]),
@@ -162,11 +222,11 @@ def normalize_harbor_trial_result(
         exit_code=0 if completed else 1,
         wall_seconds=_seconds(getattr(trial_result, "agent_execution", None)),
         evaluation_seconds=_seconds(getattr(trial_result, "verifier", None)),
-        repo=repo,
+        repo=repo_name,
         difficulty=difficulty,
         model=observed_model,
-        api_provider=str(cell["api_provider"]),
-        upstream_provider=str(cell["upstream_provider"]),
+        api_provider=api_provider,
+        upstream_provider=upstream_provider,
         session_id=str(metadata.get("forge_session_id") or ""),
         input_tokens=uncached_input,
         output_tokens=output_tokens,
@@ -188,9 +248,13 @@ def normalize_harbor_trial_result(
         diff_lines=int(metadata.get("forge_diff_lines", 0) or 0),
         run_dir=run_dir,
         error="; ".join(errors),
-        max_turns=int(cell["max_turns"]),
-        budget_warning_ratio=cell["budget_warning_ratio"],
-        main_api_calls=int(metadata.get("forge_api_calls", 0) or 0),
+        max_turns=max_turns,
+        budget_warning_ratio=budget_warning_ratio,
+        main_api_calls=(
+            int(metadata.get("forge_api_calls", 0) or 0)
+            if metadata.get("forge_api_calls") is not None
+            else None
+        ),
         auxiliary_api_calls=None,
         iterations_used=(
             int(metadata["forge_iterations_used"])
@@ -199,4 +263,9 @@ def normalize_harbor_trial_result(
         ),
         turn_exit_reason=turn_exit_reason,
         trace_exported=bool(metadata.get("forge_trace_exported", False)),
+        agent=expected_agent or observed_agent,
+        agent_version=observed_agent_version,
+        environment=_environment_name(trial_result),
+        harbor_trial_id=str(getattr(trial_result, "id", "") or "") or None,
+        trial_kind="agentic",
     )
