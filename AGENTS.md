@@ -10,7 +10,9 @@ Forge Bench owns experimental design, randomized cells, reproducibility metadata
 
 The authoritative scientific order is `run_plan.csv`. `harbor_plan.json` is a deterministic projection of those exact cells and must preserve every model, treatment, budget factor, task, block, and run index.
 
-As of the Harbor-plan foundation, the projection is intentionally marked non-executable. The existing Hermes/Docker harness remains the current runtime until the Harbor Hermes adapter and result normalization land in a follow-up PR. Do not describe Harbor execution as implemented before that merge.
+For Harbor-mapped datasets, the projection can now be materialized and executed through the opt-in `forge-bench-harbor` path. That path uses Harbor's first-party Hermes implementation through the thin `ForgeBenchHermes` specialization, which owns only Forge experimental factors and patch evidence. Harbor owns the task environment, Hermes installation/session export, ATIF trajectory, and verification.
+
+The normal `forge-bench` command still uses the legacy Forge Hermes/Docker runtime during this migration. Do not describe Harbor as the default runtime until the later cutover PR lands. Harbor execution should use the pinned Harbor 0.23.0 and Hermes v2026.9.14 compatibility contract.
 
 OpenShell is optional future Harbor environment infrastructure, not a Forge Bench foundation. Modal is likewise an environment choice beneath Harbor; changing Docker vs Modal must not redefine the scientific design.
 
