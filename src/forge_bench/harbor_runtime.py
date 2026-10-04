@@ -4,18 +4,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .harbor_contracts import (
-    FORGE_HERMES_IMPORT_PATH,
-    PINNED_HERMES_VERSION,
-    toolsets_for_treatment,
-)
 from .harbor_results import normalize_harbor_trial_result
 
 FORGE_SHARED_INSTRUCTIONS = """Forge Bench execution constraints:
 - Work only from the supplied repository state and task instruction.
 - Do not access the internet, external repositories, issue trackers, pull requests, patches, or prior benchmark sessions.
 - Do not git fetch, add a network git remote, or delegate the task to another agent.
-- Otherwise use the normal local Hermes tools and workflow you consider useful.
+- Otherwise use the normal tools and workflow exposed by the selected Harbor agent.
 - Make the smallest complete production-code fix that addresses the issue.
 - Inspect relevant code before editing.
 - Run relevant tests or targeted checks when the local environment permits.
@@ -33,15 +28,24 @@ def load_harbor_plan(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if payload.get("kind") != "forge-bench-harbor-plan":
         raise ValueError("Not a Forge Bench Harbor plan")
-    if int(payload.get("schema_version", 0)) != 1:
-        raise ValueError(
-            f"Unsupported Harbor plan schema: {payload.get('schema_version')!r}"
-        )
+    schema = int(payload.get("schema_version", 0))
+    if schema != 2:
+        if schema == 1:
+            raise ValueError(
+                "Harbor plan schema 1 predates the agent factor; regenerate the "
+                "plan with the current 'forge-bench --plan-only' command"
+            )
+        raise ValueError(f"Unsupported Harbor plan schema: {schema!r}")
     return payload
 
 
-def extra_instructions_for_treatment(treatment: str) -> list[str]:
+def extra_instructions_for_intent(intent: dict[str, Any]) -> list[str]:
     instructions = [FORGE_SHARED_INSTRUCTIONS]
+    agent_intent = dict(intent.get("agent") or {})
+    if agent_intent.get("mode") != "forge-hermes-compat":
+        return instructions
+
+    treatment = str(intent["forge"]["arm"])
     if treatment in {"caveman", "caveman_ponytail", "all_three"}:
         instructions.append(CAVEMAN_INSTRUCTION)
     return instructions
@@ -77,23 +81,25 @@ def build_harbor_trial_config(
         _Trial,
     ) = _harbor_imports()
 
-    cell = dict(intent["forge"])
-    treatment = str(cell["arm"])
-    agent_kwargs = dict(intent.get("agent", {}).get("kwargs") or {})
-    agent_kwargs.update(
-        {
-            "treatment": treatment,
-            "api_provider": str(cell["api_provider"]),
-            "upstream_provider": str(cell["upstream_provider"]),
-            "reasoning": str(cell["reasoning"]),
-            "max_turns": int(cell["max_turns"]),
-            "budget_warning_ratio": cell["budget_warning_ratio"],
-            "toolsets": toolsets_for_treatment(treatment),
-            "version": PINNED_HERMES_VERSION,
-        }
-    )
-    if treatment in {"ponytail", "caveman_ponytail", "all_three"}:
-        agent_kwargs["extra_env"] = {"PONYTAIL_DEFAULT_MODE": "full"}
+    if not bool(intent.get("supported", True)):
+        reason = str(
+            (intent.get("agent") or {}).get("unsupported_reason")
+            or "unsupported Forge/Harbor cell"
+        )
+        raise ValueError(reason)
+
+    agent_intent = dict(intent.get("agent") or {})
+    model_name = str(agent_intent.get("model_name") or "").strip()
+    if not model_name:
+        raise ValueError("Harbor trial intent is missing agent.model_name")
+
+    agent_kwargs = dict(agent_intent.get("kwargs") or {})
+    agent_name = agent_intent.get("name")
+    import_path = agent_intent.get("import_path")
+    if bool(agent_name) == bool(import_path):
+        raise ValueError(
+            "Harbor trial intent must define exactly one of agent.name or agent.import_path"
+        )
 
     try:
         environment_type = EnvironmentType(environment)
@@ -105,12 +111,13 @@ def build_harbor_trial_config(
         trial_name=str(intent["forge_cell_id"]),
         trials_dir=Path(trials_dir),
         agent=AgentConfig(
-            import_path=FORGE_HERMES_IMPORT_PATH,
-            model_name=str(cell["model"]),
+            name=str(agent_name) if agent_name else None,
+            import_path=str(import_path) if import_path else None,
+            model_name=model_name,
             kwargs=agent_kwargs,
         ),
         environment=EnvironmentConfig(type=environment_type),
-        extra_instructions=extra_instructions_for_treatment(treatment),
+        extra_instructions=extra_instructions_for_intent(intent),
     )
 
 
@@ -121,8 +128,12 @@ async def materialize_harbor_trial_configs(
     environment: str | None = None,
 ) -> list[tuple[dict[str, Any], Any]]:
     if not plan.get("executable"):
+        reasons = list(plan.get("unsupported_reasons") or [])
+        detail = "; ".join(str(reason) for reason in reasons)
+        suffix = f": {detail}" if detail else ""
         raise ValueError(
-            "Harbor plan is not executable; check dataset mapping and migration state"
+            "Harbor plan is not executable; check dataset mapping and supported "
+            f"agent/treatment/budget combinations{suffix}"
         )
 
     (
@@ -188,9 +199,8 @@ async def run_harbor_plan(
 ) -> tuple[list[Any], list[Any]]:
     """Execute explicit Forge cells through Harbor in randomized plan order.
 
-    PR 2 is intentionally sequential. This preserves the established Forge run
-    order while the execution boundary is validated. Controlled Harbor
-    concurrency belongs in the later full execution migration.
+    This validation-stage runner is intentionally sequential. Controlled Harbor
+    concurrency belongs in the later local/Modal execution PR.
     """
     *_, Trial = _harbor_imports()
     materialized = await materialize_harbor_trial_configs(
