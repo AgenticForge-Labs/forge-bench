@@ -5,9 +5,14 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
+from .harbor_contracts import (
+    FORGE_HERMES_IMPORT_PATH,
+    PINNED_HARBOR_VERSION,
+    PINNED_HERMES_VERSION,
+    toolsets_for_treatment,
+)
+
 HARBOR_PLAN_SCHEMA_VERSION = 1
-HARBOR_API_BASELINE = "0.23.0"
-HARBOR_HERMES_ADAPTER = "forge-bench-hermes"
 
 HARBOR_DATASET_BY_FORGE_DATASET = {
     "SWE-bench/SWE-bench_Verified": "swe-bench/swe-bench-verified",
@@ -52,9 +57,9 @@ def compile_harbor_plan(
 ) -> dict[str, Any]:
     """Project a Forge randomized plan into Harbor-oriented trial intents.
 
-    This PR intentionally emits *trial intents*, not runnable Harbor TrialConfig
-    objects. The follow-up Hermes adapter will turn each intent into a real
-    Harbor trial while retaining the Forge run index and factor assignment.
+    The projection preserves explicit Forge cells rather than asking Harbor to
+    regenerate a Cartesian experiment. The Harbor runner materializes each
+    intent as one TrialConfig in Forge's randomized order.
 
     Keeping this projection separate prevents Harbor's normal Cartesian job
     expansion from silently changing Forge Bench's already-randomized cells.
@@ -93,7 +98,7 @@ def compile_harbor_plan(
                     "task_names": [str(item["instance_id"])],
                 },
                 "agent": {
-                    "name": HARBOR_HERMES_ADAPTER,
+                    "import_path": FORGE_HERMES_IMPORT_PATH,
                     "model_name": str(item["model"]),
                     "kwargs": {
                         "treatment": str(item["arm"]),
@@ -102,6 +107,8 @@ def compile_harbor_plan(
                         "api_provider": str(item["api_provider"]),
                         "upstream_provider": str(item["upstream_provider"]),
                         "reasoning": str(item["reasoning"]),
+                        "toolsets": toolsets_for_treatment(str(item["arm"])),
+                        "version": PINNED_HERMES_VERSION,
                     },
                 },
                 "environment": {"type": environment},
@@ -112,11 +119,11 @@ def compile_harbor_plan(
     return {
         "schema_version": HARBOR_PLAN_SCHEMA_VERSION,
         "kind": "forge-bench-harbor-plan",
-        "harbor_api_baseline": HARBOR_API_BASELINE,
-        "executable": False,
+        "harbor_api_baseline": PINNED_HARBOR_VERSION,
+        "hermes_version": PINNED_HERMES_VERSION,
+        "executable": dataset_mapped,
         "execution_status": (
-            "projection-only: a follow-up PR must provide the Forge Bench Hermes "
-            "Harbor agent adapter and execution/result normalization"
+            "ready for explicit-cell Harbor execution through forge-bench-harbor"
             if dataset_mapped
             else "projection-only: Forge dataset has no explicit Harbor mapping yet"
         ),
