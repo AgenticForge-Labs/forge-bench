@@ -334,12 +334,19 @@ async def run_materialized_trials(
             if cell is not None:
                 cell.close()
 
-    completed = await asyncio.gather(
-        *(
-            run_one(index, intent, config)
-            for index, (intent, config) in enumerate(materialized)
-        )
-    )
+    tasks = [
+        asyncio.create_task(run_one(index, intent, config))
+        for index, (intent, config) in enumerate(materialized)
+    ]
+    try:
+        completed = await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
     completed.sort(key=lambda item: item[0])
     return (
         [item[1] for item in completed],
