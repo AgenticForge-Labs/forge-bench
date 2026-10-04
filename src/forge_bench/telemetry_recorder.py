@@ -14,6 +14,7 @@ from .telemetry_archive import (
     assert_raw_writable,
     ensure_cell_layout,
     initialize_archive,
+    read_manifest,
     seal_archive,
 )
 from .telemetry_contracts import (
@@ -207,12 +208,20 @@ class ExperimentTelemetryRecorder:
         capture_profile: CaptureProfile = CaptureProfile.MAXIMAL,
         durable: bool = True,
     ) -> None:
+        root_path = Path(root)
+        manifest_preexisted = (root_path / "archive_manifest.json").exists()
         self.paths = initialize_archive(
-            root,
+            root_path,
             experiment_id=experiment_id,
             capture_profile=capture_profile,
         )
         assert_raw_writable(self.paths)
+        if manifest_preexisted:
+            raise RuntimeError(
+                "existing open telemetry archives are not resumed automatically; "
+                "seal the interrupted archive partial and start a new experiment "
+                "so monotonic elapsed clocks cannot silently reset"
+            )
         self.experiment_id = experiment_id
         self.capture_profile = capture_profile
         self.durable = bool(durable)
@@ -412,6 +421,34 @@ class ExperimentTelemetryRecorder:
         else:
             self.interrupt(exc)
         return False
+
+
+def recover_interrupted_archive(
+    root: str | Path,
+    *,
+    reason: str,
+) -> ArchiveState:
+    """Recover torn JSONL tails and seal an abandoned open archive partial.
+
+    This intentionally does not resume the experiment: monotonic elapsed clocks
+    belong to the original process and cannot be reconstructed after a hard
+    process/system failure.
+    """
+    paths = TelemetryArchivePaths(Path(root))
+    manifest = read_manifest(paths.manifest)
+    if manifest.state != ArchiveState.OPEN:
+        raise RuntimeError(
+            f"telemetry archive is already sealed as {manifest.state.value}"
+        )
+    for path in sorted(paths.raw.rglob("*.jsonl")):
+        journal = AppendOnlyJsonlJournal(path)
+        journal.close()
+    sealed = seal_archive(
+        paths,
+        state=ArchiveState.PARTIAL,
+        notes=(f"recovered interrupted archive: {reason}",),
+    )
+    return sealed.state
 
 
 def _factor_payload(forge: dict[str, Any]) -> dict[str, Any]:
