@@ -76,6 +76,68 @@ verification.
 A no-call agent×model example is provided at
 `designs/harbor-agent-model-smoke.yaml`.
 
+### Local Docker and Modal execution
+
+Execution location is deliberately separate from Forge's scientific cell identity.
+Changing Docker to Modal does not change `forge_cell_id`, the randomized cell
+order, or the source `run_plan_sha256`. The selected execution settings are
+written to a sibling `*-execution.json` manifest and Harbor's per-trial config;
+normalized Forge results also retain environment and requested CPU/RAM/storage/GPU
+resources.
+
+Materialize the local Docker configuration without running anything:
+
+```bash
+uv run --with harbor==0.23.0 forge-bench-harbor \
+  --plan benchmark-results/my-study/harbor_plan.json \
+  --trials-dir benchmark-results/my-study/harbor-trials \
+  --environment docker \
+  --n-concurrent 4 \
+  --materialize-only
+```
+
+Run locally after reviewing the materialized configs:
+
+```bash
+uv run --with harbor==0.23.0 forge-bench-harbor \
+  --plan benchmark-results/my-study/harbor_plan.json \
+  --trials-dir benchmark-results/my-study/harbor-trials \
+  --environment docker \
+  --n-concurrent 4
+```
+
+Modal uses the same plan and cell identities:
+
+```bash
+uv run --with 'harbor[modal]==0.23.0' forge-bench-harbor \
+  --plan benchmark-results/my-study/harbor_plan.json \
+  --trials-dir benchmark-results/my-study/harbor-trials-modal \
+  --environment modal \
+  --n-concurrent 16 \
+  --cpus 4 \
+  --memory-mb 16384
+```
+
+For GPU-backed task environments add, for example, `--gpus 1`. GPU *type*
+selection is intentionally deferred to the direct/self-hosted LLM/VLM layer,
+where model-runtime requirements can be represented explicitly instead of
+overloading coding-agent experiments.
+
+Local execution fails early if the Docker CLI is unavailable. Modal execution
+fails early if Harbor's Modal extra is not installed; authentication remains
+Modal's normal user/runtime configuration. CI validates Docker/Modal
+materialization and resource propagation without provisioning cloud resources or
+making paid model calls. A real authenticated Modal smoke test is a separate
+provider validation gate.
+
+Concurrency is implemented around Forge's already-materialized explicit Harbor
+`TrialConfig` objects. Forge intentionally does not hand its scientific design
+to Harbor `JobConfig`, because Harbor's normal job expansion would regenerate
+a task × agent Cartesian product rather than consume Forge's exact randomized
+cells. Results are returned in authoritative Forge run order even when execution
+overlaps.
+
+
 ## Why test token-saving tools?
 
 People want coding agents to finish useful work with fewer tokens, lower cost, and less waiting. [Caveman](https://github.com/JuliusBrussee/caveman/tree/542442bab314973709f95b85b1ac0b3f6f5b5dc6/skills/caveman) asks agents to communicate more directly and avoid unnecessary response tokens. [Ponytail](https://github.com/DietrichGebert/ponytail/tree/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156) encourages reuse, native features, and the smallest solution that meets the task.
