@@ -392,7 +392,7 @@ def _telemetry_cell(
         environment_value = str(getattr(environment, "value", environment) or "unknown")
         return telemetry.cell(intent, environment=environment_value)
     except Exception as exc:
-        telemetry._issue("runtime.cell", exc)
+        telemetry.issue("runtime.cell", exc)
         return None
 
 
@@ -414,7 +414,7 @@ def _cell_event(
             attributes=attributes,
         )
     except Exception as exc:
-        recorder.parent._issue(f"runtime.event:{name}", exc)
+        recorder.parent.issue(f"runtime.event:{name}", exc)
 
 
 def _object_id(value: Any) -> str | None:
