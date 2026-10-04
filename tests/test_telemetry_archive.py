@@ -41,6 +41,7 @@ class TelemetryContractTests(unittest.TestCase):
             model="provider/model",
             task="task-a",
             environment="docker",
+            factors={"treatment": "baseline", "max_turns": 100},
         )
 
     def test_event_and_metric_are_stable_json_records(self):
@@ -79,6 +80,7 @@ class TelemetryContractTests(unittest.TestCase):
 
     def test_capability_matrix_requires_explicit_unavailable_reason(self):
         capabilities = TelemetryCapabilities(
+            context=self._context(),
             profile=CaptureProfile.MAXIMAL,
             capabilities=(
                 TelemetryCapability(
@@ -105,6 +107,20 @@ class TelemetryContractTests(unittest.TestCase):
                 status=AvailabilityStatus.UNAVAILABLE,
                 source="nvml",
             )
+
+    def test_context_preserves_arbitrary_experimental_factors(self):
+        payload = record_to_dict(
+            TelemetryCapabilities(
+                context=self._context(),
+                profile=CaptureProfile.MAXIMAL,
+                capabilities=(),
+            )
+        )
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(
+            payload["context"]["factors"],
+            {"treatment": "baseline", "max_turns": 100},
+        )
 
     def test_artifact_reference_rejects_archive_escape(self):
         with self.assertRaisesRegex(ValueError, "within the archive"):
