@@ -435,7 +435,20 @@ class LocalProcessResourceSampler:
                 source="psutil",
                 unit="{switch}",
             ),
-            _full_memory_capability(root),
+            (
+                _full_memory_capability(root)
+                if self.profile == CaptureProfile.MAXIMAL
+                else TelemetryCapability(
+                    name="process.memory_full",
+                    status=AvailabilityStatus.NOT_APPLICABLE,
+                    source="forge_bench",
+                    reason=(
+                        "USS/PSS/swap sampling is reserved for the maximal "
+                        "capture profile"
+                    ),
+                    unit="By",
+                )
+            ),
             _page_fault_capability(root.pid),
             _frequency_capability(),
             TelemetryCapability(
