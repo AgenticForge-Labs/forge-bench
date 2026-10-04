@@ -203,5 +203,9 @@ class Result:
     agent: str = "hermes"
     agent_version: str | None = None
     environment: str | None = None
+    environment_cpus: int | None = None
+    environment_memory_mb: int | None = None
+    environment_storage_mb: int | None = None
+    environment_gpus: int | None = None
     harbor_trial_id: str | None = None
     trial_kind: str = "agentic"
