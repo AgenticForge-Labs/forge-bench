@@ -624,6 +624,10 @@ jobs:
           PY
       - name: Run focused unit tests
         run: uv run python -m unittest discover -s tests -v
+      - name: Verify Harbor 0.23 compatibility
+        run: |
+          uv run --with harbor==0.23.0 python tests/test_harbor_compat.py
+          uv run --with harbor==0.23.0 forge-bench-harbor --help
       - run: uv run forge-bench --help
       - name: Verify reanalysis CLI accepts existing output
         run: |
@@ -646,7 +650,7 @@ jobs:
           root = Path("/tmp/forge-bench-design-plan")
           plan = json.loads((root / "harbor_plan.json").read_text())
           assert plan["kind"] == "forge-bench-harbor-plan"
-          assert plan["executable"] is False
+          assert plan["executable"] is True
           assert plan["trial_count"] == 40
           assert [row["forge_run_index"] for row in plan["trials"]] == list(range(1, 41))
           assert {row["dataset"]["name"] for row in plan["trials"]} == {"swe-bench/swe-bench-verified"}
