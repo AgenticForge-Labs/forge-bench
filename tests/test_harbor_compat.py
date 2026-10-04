@@ -12,6 +12,15 @@ HARBOR_AVAILABLE = importlib.util.find_spec("harbor") is not None
 
 @unittest.skipUnless(HARBOR_AVAILABLE, "Harbor is an optional migration dependency")
 class HarborCompatibilityTests(unittest.TestCase):
+    def test_known_harbor_agents_preflight_without_custom_forge_adapters(self):
+        from harbor.agents.factory import AgentFactory
+        from harbor.models.trial.config import AgentConfig
+
+        for name in ("hermes", "pi", "opencode", "codex"):
+            AgentFactory.run_preflight(
+                AgentConfig(name=name, model_name="provider/model-one")
+            )
+
     def test_native_harbor_agent_materializes_by_name_and_model(self):
         from harbor.models.trial.config import TaskConfig
 
