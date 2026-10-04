@@ -622,6 +622,8 @@ jobs:
               assert (analysis_dir / "advanced_latency_efficiency.csv").is_file()
               assert (analysis_dir / "advanced_timing_evidence.csv").is_file()
           PY
+      - name: Run focused unit tests
+        run: uv run python -m unittest discover -s tests -v
       - run: uv run forge-bench --help
       - name: Verify reanalysis CLI accepts existing output
         run: |
@@ -637,6 +639,18 @@ jobs:
           uv run forge-bench             --design designs/deepseek-v4-v41-relace.yaml             --plan-only             --output /tmp/forge-bench-design-plan
           test -f /tmp/forge-bench-design-plan/design.yaml
           test -f /tmp/forge-bench-design-plan/run_plan.csv
+          test -f /tmp/forge-bench-design-plan/harbor_plan.json
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("/tmp/forge-bench-design-plan")
+          plan = json.loads((root / "harbor_plan.json").read_text())
+          assert plan["kind"] == "forge-bench-harbor-plan"
+          assert plan["executable"] is False
+          assert plan["trial_count"] == 40
+          assert [row["forge_run_index"] for row in plan["trials"]] == list(range(1, 41))
+          assert {row["dataset"]["name"] for row in plan["trials"]} == {"swe-bench/swe-bench-verified"}
+          PY
           test "$(tail -n +2 /tmp/forge-bench-design-plan/run_plan.csv | wc -l)" -eq 40
           grep -q 'deepseek/deepseek-v4-flash-0731' /tmp/forge-bench-design-plan/run_plan.csv
           grep -q 'deepseek/deepseek-v4.1-flash' /tmp/forge-bench-design-plan/run_plan.csv
