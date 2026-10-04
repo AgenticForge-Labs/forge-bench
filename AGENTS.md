@@ -34,7 +34,18 @@ Multi-agent/non-Hermes execution belongs to `forge-bench-harbor` until the
 later cutover. Harbor execution should use the pinned Harbor 0.23.0
 compatibility contract.
 
-Modal is an execution environment beneath Harbor, not a scientific redesign.
+Docker and Modal are execution environments beneath Harbor, not scientific
+redesigns. The explicit Forge cell list must be materialized first; do not use
+Harbor JobConfig to regenerate a tasks × agents product after Forge
+randomization. Bounded concurrency may overlap explicit trials, but returned
+results and scientific identity remain in Forge run order.
+
+Environment selection and CPU/RAM/storage/GPU overrides are execution
+provenance. They do not change `forge_cell_id` unless a future experiment
+explicitly promotes environment to a scientific factor. Actual Modal execution
+requires Harbor's Modal extra and normal Modal authentication; CI
+materialization is not evidence of a successful provider run.
+
 Direct LLM/VLM inference, secure broker capability attachments, OpenTelemetry,
 and legacy-runtime retirement are planned follow-up layers and must not be
 described as implemented before they merge.
