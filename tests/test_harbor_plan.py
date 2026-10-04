@@ -92,12 +92,16 @@ class HarborPlanCompilerTests(unittest.TestCase):
                 forge_dataset="SWE-bench/SWE-bench_Verified",
             )
 
-    def test_projection_requires_explicit_dataset_mapping(self):
-        with self.assertRaisesRegex(ValueError, "No Harbor dataset mapping"):
-            compile_harbor_plan(
-                self._plan(),
-                forge_dataset="SWE-bench/SWE-bench_Lite",
-            )
+    def test_unmapped_dataset_is_recorded_without_breaking_forge_plan(self):
+        projection = compile_harbor_plan(
+            self._plan(),
+            forge_dataset="SWE-bench/SWE-bench_Lite",
+        )
+        self.assertFalse(projection["dataset_mapped"])
+        self.assertIsNone(projection["harbor_dataset"])
+        self.assertTrue(
+            all(trial["dataset"]["name"] is None for trial in projection["trials"])
+        )
 
     def test_write_harbor_plan_round_trips_json(self):
         run_plan = self._plan()
