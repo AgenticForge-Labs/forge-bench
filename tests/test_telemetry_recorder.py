@@ -13,6 +13,7 @@ from forge_bench.telemetry_contracts import ArchiveState, CaptureProfile, Teleme
 from forge_bench.telemetry_recorder import (
     AppendOnlyJsonlJournal,
     ExperimentTelemetryRecorder,
+    recover_interrupted_archive,
 )
 
 
@@ -151,6 +152,32 @@ class ExperimentRecorderTests(unittest.TestCase):
             manifest = read_manifest(root / "archive_manifest.json")
             self.assertEqual(manifest.state, ArchiveState.PARTIAL)
             self.assertTrue(any("disk trouble" in note for note in manifest.notes))
+
+    def test_existing_open_archive_is_not_resumed_with_reset_clocks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "telemetry"
+            recorder = ExperimentTelemetryRecorder(
+                root,
+                experiment_id="experiment-1",
+            )
+            recorder.event("experiment.synthetic")
+            recorder._experiment_journal.close()
+            with self.assertRaisesRegex(RuntimeError, "not resumed automatically"):
+                ExperimentTelemetryRecorder(
+                    root,
+                    experiment_id="experiment-1",
+                )
+
+            state = recover_interrupted_archive(
+                root,
+                reason="synthetic hard crash",
+            )
+            self.assertEqual(state, ArchiveState.PARTIAL)
+            manifest = read_manifest(root / "archive_manifest.json")
+            self.assertTrue(
+                any("synthetic hard crash" in note for note in manifest.notes)
+            )
+            self.assertEqual(verify_archive(recorder.paths), [])
 
     def test_sealed_archive_cannot_be_reopened_for_recording(self):
         with tempfile.TemporaryDirectory() as tmp:
