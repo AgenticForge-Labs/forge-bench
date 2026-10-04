@@ -205,6 +205,12 @@ archive `partial` if the recorder was degraded. A Python exception or
 cancellation during the benchmark also seals available evidence `partial`
 before the original exception is re-raised.
 
+A hard process/system crash can leave the manifest `open`. Forge does not
+resume that archive automatically because the original monotonic clock origin
+cannot be reconstructed safely. `recover_interrupted_archive()` validates the
+surviving journals, preserves any torn trailing bytes, and seals the abandoned
+archive `partial`; the next execution starts a new experiment archive.
+
 Real `forge-bench-harbor` execution enables this lifecycle archive by default.
 The CLI supports `--telemetry-dir`, `--experiment-id`,
 `--telemetry-profile`, and `--no-telemetry`. Materialization-only runs do not
