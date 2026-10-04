@@ -112,6 +112,11 @@ def initialize_archive(
                 "archive already belongs to experiment "
                 f"{existing.experiment_id!r}, not {experiment_id!r}"
             )
+        if existing.capture_profile != capture_profile:
+            raise ValueError(
+                "archive capture profile is already "
+                f"{existing.capture_profile.value!r}, not {capture_profile.value!r}"
+            )
         return paths
 
     manifest = ArchiveManifest(
@@ -128,9 +133,19 @@ def ensure_cell_layout(
     paths: TelemetryArchivePaths,
     forge_cell_id: str,
 ) -> Path:
+    assert_raw_writable(paths)
     cell = paths.cell_raw(forge_cell_id)
     cell.mkdir(parents=True, exist_ok=True)
     return cell
+
+
+def assert_raw_writable(paths: TelemetryArchivePaths) -> None:
+    manifest = read_manifest(paths.manifest)
+    if manifest.state != ArchiveState.OPEN:
+        raise RuntimeError(
+            "raw telemetry archive is sealed "
+            f"({manifest.state.value}); create a new archive instead of editing evidence"
+        )
 
 
 def seal_archive(
@@ -143,6 +158,10 @@ def seal_archive(
         raise ValueError("seal_archive state must be partial or complete")
 
     existing = read_manifest(paths.manifest)
+    if existing.state != ArchiveState.OPEN:
+        raise RuntimeError(
+            f"archive is already sealed as {existing.state.value}"
+        )
     raw_files = tuple(_raw_file_records(paths))
     manifest = ArchiveManifest(
         experiment_id=existing.experiment_id,
