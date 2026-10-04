@@ -275,7 +275,7 @@ def _resolve_telemetry_settings(
 
 
 def _new_experiment_id(plan: dict) -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     plan_hash = str(plan.get("run_plan_sha256") or "unhashed")[:12]
     return f"forge-{timestamp}-{plan_hash}"
 
