@@ -4,6 +4,18 @@
 
 This repository is Forge Bench, a reproducible benchmark harness for comparing AI coding-agent strategies on SWE-bench tasks. Preserve experimental reproducibility: do not silently change models, providers, task panels, randomization, treatment definitions, turn budgets, or analysis rules.
 
+## Harbor migration boundary
+
+Forge Bench owns experimental design, randomized cells, reproducibility metadata, scientific result normalization, and analysis. Harbor is the target owner for commodity task/trial execution, environments, verification, retries, and artifacts.
+
+The authoritative scientific order is `run_plan.csv`. `harbor_plan.json` is a deterministic projection of those exact cells and must preserve every model, treatment, budget factor, task, block, and run index.
+
+As of the Harbor-plan foundation, the projection is intentionally marked non-executable. The existing Hermes/Docker harness remains the current runtime until the Harbor Hermes adapter and result normalization land in a follow-up PR. Do not describe Harbor execution as implemented before that merge.
+
+OpenShell is optional future Harbor environment infrastructure, not a Forge Bench foundation. Modal is likewise an environment choice beneath Harbor; changing Docker vs Modal must not redefine the scientific design.
+
+See `docs/architecture.md`.
+
 ## Live-run inspection helpers
 
 Agents should use the reusable live monitor instead of guessing timestamped run-directory names or manually parsing partial output.
