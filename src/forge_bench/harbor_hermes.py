@@ -20,6 +20,7 @@ class ForgeBenchHermesOptions(HermesOptions):
     upstream_provider: str = Field(default="relace", min_length=1)
     reasoning: str = Field(default="none", min_length=1)
     budget_warning_ratio: float | None = Field(default=None, gt=0.0, lt=1.0)
+    max_turns: int | None = Field(default=None, ge=1)
 
     @field_validator("treatment")
     @classmethod
@@ -99,9 +100,18 @@ class ForgeBenchHermes(Hermes):
 
     @override
     def _build_config_yaml(self, model: str, max_turns: int | None = None) -> str:
-        config = yaml.safe_load(super()._build_config_yaml(model, max_turns)) or {}
+        # Harbor 0.23.0's Hermes adapter hard-codes 90 turns and exposes no
+        # max_turns option. Override that here so Forge's randomized budget
+        # remains authoritative. This stays compatible with the later Harbor
+        # signature because Forge owns the final config value.
+        config = yaml.safe_load(super()._build_config_yaml(model)) or {}
 
+        effective_max_turns = (
+            max_turns if max_turns is not None else self.options.max_turns
+        )
         agent = config.setdefault("agent", {})
+        if effective_max_turns is not None:
+            agent["max_turns"] = int(effective_max_turns)
         agent["reasoning_effort"] = self.options.reasoning
         agent["budget_warning_ratio"] = self.options.budget_warning_ratio
 
@@ -156,6 +166,10 @@ class ForgeBenchHermes(Hermes):
         try:
             await super().run(instruction, environment, context)
         finally:
+            try:
+                await self._refresh_session_export(environment)
+            except Exception:
+                pass
             metadata = dict(context.metadata or {})
             metadata.update(
                 {
@@ -221,6 +235,70 @@ class ForgeBenchHermes(Hermes):
             "forge_diff_lines": diff_lines,
         }
 
+    async def _refresh_session_export(self, environment: BaseEnvironment) -> None:
+        """Re-export the primary oneshot session for pinned modern Hermes.
+
+        Harbor 0.23.0 still asks for source=cli, while Hermes v2026.9.14 stores
+        finite chat -q sessions as source=oneshot. Prefer oneshot and fall back
+        to cli for compatibility with older Hermes releases.
+        """
+        command = (
+            'export PATH="$HOME/.local/bin:$PATH"; '
+            "rm -f /logs/agent/hermes-session.jsonl; "
+            "(hermes sessions export /logs/agent/hermes-session.jsonl "
+            "--format jsonl --source oneshot "
+            "|| hermes sessions export /logs/agent/hermes-session.jsonl "
+            "--format jsonl --source cli) >/dev/null 2>&1 || true"
+        )
+        await self.exec_as_agent(
+            environment,
+            command=command,
+            env={"HERMES_HOME": "/tmp/hermes"},
+            timeout_sec=60,
+        )
+
+    @staticmethod
+    def _session_records(text: str) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for line in (text or "").splitlines():
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            session = payload.get("session")
+            if isinstance(session, dict):
+                record = dict(session)
+                if isinstance(payload.get("messages"), list):
+                    record["messages"] = payload["messages"]
+                records.append(record)
+            else:
+                records.append(payload)
+        if records:
+            return records
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(payload, list):
+            return [row for row in payload if isinstance(row, dict)]
+        if isinstance(payload, dict):
+            session = payload.get("session")
+            return [dict(session)] if isinstance(session, dict) else [payload]
+        return []
+
+    @staticmethod
+    def _usage_record(
+        records: list[dict[str, Any]],
+        session_id: str,
+    ) -> dict[str, Any]:
+        if session_id:
+            for record in records:
+                if str(record.get("id") or record.get("session_id") or "") == session_id:
+                    return record
+        return records[0] if records else {}
+
     @override
     def populate_context_post_run(self, context: AgentContext) -> None:
         super().populate_context_post_run(context)
@@ -230,29 +308,87 @@ class ForgeBenchHermes(Hermes):
         if session_path.is_file():
             text = session_path.read_text(encoding="utf-8")
             metadata["forge_trace_exported"] = (self.logs_dir / "trajectory.json").is_file()
-            metadata["forge_session_id"] = self._extract_native_session_id(text) or ""
-            api_calls = 0
-            tool_calls = 0
-            for line in text.splitlines():
+            session_id = self._extract_native_session_id(text) or ""
+            metadata["forge_session_id"] = session_id
+
+            records = self._session_records(text)
+            usage = self._usage_record(records, session_id)
+
+            def as_int(value: Any) -> int:
                 try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                messages = (
-                    record.get("messages", [])
-                    if isinstance(record, dict) and isinstance(record.get("messages"), list)
-                    else [record]
+                    return int(value or 0)
+                except (TypeError, ValueError):
+                    return 0
+
+            def as_float(value: Any) -> float | None:
+                try:
+                    return None if value in (None, "") else float(value)
+                except (TypeError, ValueError):
+                    return None
+
+            uncached_input = as_int(usage.get("input_tokens"))
+            output_tokens = as_int(usage.get("output_tokens"))
+            cache_read = as_int(usage.get("cache_read_tokens"))
+            cache_write = as_int(usage.get("cache_write_tokens"))
+            reasoning_tokens = as_int(usage.get("reasoning_tokens"))
+            api_calls = as_int(usage.get("api_call_count"))
+            estimated_cost = as_float(usage.get("estimated_cost_usd"))
+            actual_cost = as_float(usage.get("actual_cost_usd"))
+
+            if any(
+                key in usage
+                for key in (
+                    "input_tokens",
+                    "output_tokens",
+                    "cache_read_tokens",
+                    "cache_write_tokens",
                 )
-                for message in messages:
-                    if not isinstance(message, dict):
-                        continue
-                    if message.get("role") == "assistant":
-                        if isinstance(message.get("usage"), dict) and message["usage"]:
-                            api_calls += 1
-                        calls = message.get("tool_calls")
-                        if isinstance(calls, list):
-                            tool_calls += len(calls)
-            metadata["forge_api_calls"] = api_calls
+            ):
+                # Harbor's AgentContext input count is inclusive of cache.
+                context.n_input_tokens = uncached_input + cache_read + cache_write
+                context.n_cache_tokens = cache_read + cache_write
+                context.n_output_tokens = output_tokens
+                if actual_cost is not None and actual_cost > 0:
+                    context.cost_usd = actual_cost
+                elif estimated_cost is not None:
+                    context.cost_usd = estimated_cost
+
+                metadata.update(
+                    {
+                        "forge_uncached_input_tokens": uncached_input,
+                        "forge_output_tokens": output_tokens,
+                        "forge_cache_read_tokens": cache_read,
+                        "forge_cache_write_tokens": cache_write,
+                        "forge_reasoning_tokens": reasoning_tokens,
+                        "forge_total_tokens": as_int(usage.get("total_tokens"))
+                        or (
+                            uncached_input
+                            + output_tokens
+                            + cache_read
+                            + cache_write
+                        ),
+                        "forge_api_calls": api_calls,
+                        "forge_estimated_cost_usd": estimated_cost,
+                        "forge_actual_cost_usd": actual_cost,
+                        "forge_cost_status": str(usage.get("cost_status") or ""),
+                        "forge_cost_source": str(usage.get("cost_source") or ""),
+                    }
+                )
+
+            tool_calls = 0
+            fallback_api_calls = 0
+            messages = usage.get("messages") if isinstance(usage.get("messages"), list) else []
+            for message in messages:
+                if not isinstance(message, dict):
+                    continue
+                if message.get("role") == "assistant":
+                    if isinstance(message.get("usage"), dict) and message["usage"]:
+                        fallback_api_calls += 1
+                    calls = message.get("tool_calls")
+                    if isinstance(calls, list):
+                        tool_calls += len(calls)
+            if not metadata.get("forge_api_calls"):
+                metadata["forge_api_calls"] = fallback_api_calls
             metadata["forge_tool_calls"] = tool_calls
 
         context.metadata = metadata
