@@ -14,7 +14,7 @@ The Forge design remains the source of truth for the scientific experiment. Forg
 
 During the Harbor migration, `--plan-only` also writes `harbor_plan.json`. It contains one Harbor-oriented trial intent per Forge cell, in the same order, with stable cell IDs and the exact model/provider/treatment/budget/task assignment.
 
-The current projection is a migration contract, not yet an executable Harbor job. The Hermes Harbor adapter and result normalization are follow-up work.
+For explicitly mapped datasets, the projection is now executable through the opt-in `forge-bench-harbor` runner. The runner materializes one Harbor `TrialConfig` per Forge cell in the exact randomized order and normalizes Harbor results back into Forge's existing observation model. Unmapped datasets remain projection-only. The normal `forge-bench` runtime is still legacy until the later cutover PR.
 
 ## Run a design
 
