@@ -83,7 +83,13 @@ def _trial_result(
         verifier=_timing(3.5),
         config=SimpleNamespace(
             task=SimpleNamespace(source="swe-bench/swe-bench-verified"),
-            environment=SimpleNamespace(type=SimpleNamespace(value="docker")),
+            environment=SimpleNamespace(
+                type=SimpleNamespace(value="docker"),
+                override_cpus=2,
+                override_memory_mb=4096,
+                override_storage_mb=8192,
+                override_gpus=1,
+            ),
         ),
         trial_uri="file:///tmp/trial",
     )
@@ -98,6 +104,10 @@ class HarborResultNormalizationTests(unittest.TestCase):
         self.assertEqual(result.agent_version, "1.2.3")
         self.assertEqual(result.model, "deepseek/deepseek-v4-flash-0731")
         self.assertEqual(result.environment, "docker")
+        self.assertEqual(result.environment_cpus, 2)
+        self.assertEqual(result.environment_memory_mb, 4096)
+        self.assertEqual(result.environment_storage_mb, 8192)
+        self.assertEqual(result.environment_gpus, 1)
         self.assertEqual(
             result.harbor_trial_id,
             "00000000-0000-0000-0000-000000000123",
