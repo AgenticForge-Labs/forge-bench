@@ -336,14 +336,22 @@ async def run_materialized_trials(
         for index, (intent, config) in enumerate(materialized)
     ]
     try:
-        completed = await asyncio.gather(*tasks)
-    except BaseException:
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+    except asyncio.CancelledError:
         for task in tasks:
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
 
+    failures = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+    if failures:
+        # Do not cancel scientifically independent sibling cells merely because
+        # one trial failed. Settle the explicit Forge batch first so successful
+        # cells finish and every cell can close its telemetry journal.
+        raise failures[0]
+
+    completed = [outcome for outcome in outcomes if not isinstance(outcome, BaseException)]
     completed.sort(key=lambda item: item[0])
     return (
         [item[1] for item in completed],
