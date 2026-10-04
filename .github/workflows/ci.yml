@@ -633,6 +633,10 @@ jobs:
           grep -q -- '--cpus' /tmp/forge-bench-harbor-help.txt
           grep -q -- '--memory-mb' /tmp/forge-bench-harbor-help.txt
           grep -q -- '--gpus' /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--telemetry-dir' /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--experiment-id' /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--telemetry-profile' /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--no-telemetry' /tmp/forge-bench-harbor-help.txt
           grep -q -- 'docker' /tmp/forge-bench-harbor-help.txt
           grep -q -- 'modal' /tmp/forge-bench-harbor-help.txt
       - run: uv run forge-bench --help

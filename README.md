@@ -162,8 +162,18 @@ experiment/cell joins. Missing channels are recorded explicitly as unavailable,
 not silently converted to zero. The default research intent is maximal capture,
 with standard/minimal profiles reserved for lower-overhead use.
 
-See [docs/telemetry.md](docs/telemetry.md) for the contract and staged collector
-roadmap.
+Harbor execution now writes low-frequency lifecycle evidence into that archive
+by default. Each cell has an independent append-only JSONL journal with monotonic
+sequence numbers and fsync-per-record durability. Python exceptions/cancellation
+seal the available archive as partial; recorder failures are reported but do not
+invalidate otherwise usable benchmark work.
+
+Use `--telemetry-dir` or `--experiment-id` to control archive identity,
+`--telemetry-profile` to record the intended capture profile, or
+`--no-telemetry` when lifecycle recording is explicitly undesired.
+
+See [docs/telemetry.md](docs/telemetry.md) for the contract, journal format, and
+staged collector roadmap.
 
 ## Why test token-saving tools?
 

@@ -74,10 +74,16 @@ stable experimental joins such as `experiment_id` and `forge_cell_id`.
 Unavailable telemetry is not zero: capability records must distinguish captured,
 unavailable, not-applicable, and error states.
 
-The telemetry-contract foundation does **not** yet collect CPU/RAM/GPU/container
-data and does not yet install or export OpenTelemetry. Those are dependent
-follow-up layers and must not be described as implemented on `main` until they
-merge.
+Harbor-backed execution now records durable low-frequency experiment/cell/trial
+lifecycle events into the raw archive. Journals are append-only JSONL with
+per-journal sequence numbers and fsync-per-record durability; interrupted Python
+execution seals available evidence partial. Telemetry failures must not invalidate
+an otherwise valid benchmark run.
+
+The recorder does **not** yet collect CPU/RAM/GPU/container data and does not yet
+install or export OpenTelemetry. Environment/agent/verifier internals,
+model/tool events, and high-frequency resource streams are dependent follow-up
+layers and must not be described as implemented on `main` until they merge.
 
 ## Live-run inspection helpers
 

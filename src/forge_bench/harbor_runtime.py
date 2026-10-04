@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 from .harbor_execution import HarborExecutionConfig, execution_from_plan
 from .harbor_results import normalize_harbor_trial_result
+from .telemetry_recorder import CellTelemetryRecorder, ExperimentTelemetryRecorder
 
 FORGE_SHARED_INSTRUCTIONS = """Forge Bench execution constraints:
 - Work only from the supplied repository state and task instruction.
@@ -221,6 +223,7 @@ async def run_materialized_trials(
     *,
     n_concurrent: int = 1,
     trial_class: Any | None = None,
+    telemetry: ExperimentTelemetryRecorder | None = None,
 ) -> tuple[list[Any], list[Any]]:
     """Run explicit TrialConfigs concurrently without regenerating Forge cells.
 
@@ -240,18 +243,115 @@ async def run_materialized_trials(
         intent: dict[str, Any],
         config: Any,
     ) -> tuple[int, Any, Any]:
-        async with semaphore:
-            trial = await trial_class.create(config)
-            trial_result = await trial.run()
-            forge_result = normalize_harbor_trial_result(trial_result, intent)
-            return index, trial_result, forge_result
-
-    completed = await asyncio.gather(
-        *(
-            run_one(index, intent, config)
-            for index, (intent, config) in enumerate(materialized)
+        cell = _telemetry_cell(telemetry, intent, config)
+        queued_ns = time.monotonic_ns()
+        _cell_event(
+            cell,
+            "cell.queued",
+            phase="queue",
+            attributes={"forge_run_index": intent.get("forge_run_index")},
         )
-    )
+        try:
+            async with semaphore:
+                _cell_event(
+                    cell,
+                    "cell.started",
+                    phase="execution",
+                    attributes={
+                        "queue_wait_ns": max(0, time.monotonic_ns() - queued_ns),
+                    },
+                )
+                _cell_event(cell, "harbor.trial.create.started", phase="trial_create")
+                trial = await trial_class.create(config)
+                trial_id = _object_id(trial)
+                _cell_event(
+                    cell,
+                    "harbor.trial.create.completed",
+                    phase="trial_create",
+                    attributes={"harbor_trial_id": trial_id},
+                )
+
+                _cell_event(
+                    cell,
+                    "harbor.trial.run.started",
+                    phase="trial_run",
+                    attributes={"harbor_trial_id": trial_id},
+                )
+                trial_result = await trial.run()
+                result_trial_id = _object_id(trial_result) or trial_id
+                exception_info = getattr(trial_result, "exception_info", None)
+                _cell_event(
+                    cell,
+                    "harbor.trial.run.completed",
+                    phase="trial_run",
+                    severity="error" if exception_info is not None else "info",
+                    attributes={
+                        "harbor_trial_id": result_trial_id,
+                        "reported_exception": exception_info is not None,
+                    },
+                )
+
+                _cell_event(
+                    cell,
+                    "forge.result.normalize.started",
+                    phase="normalize",
+                    attributes={"harbor_trial_id": result_trial_id},
+                )
+                forge_result = normalize_harbor_trial_result(trial_result, intent)
+                result_summary = _best_effort_result_summary(forge_result)
+                _cell_event(
+                    cell,
+                    "forge.result.normalize.completed",
+                    phase="normalize",
+                    attributes={
+                        "harbor_trial_id": result_trial_id,
+                        **result_summary,
+                    },
+                )
+                _cell_event(
+                    cell,
+                    "cell.completed",
+                    phase="execution",
+                    attributes=result_summary,
+                )
+                return index, trial_result, forge_result
+        except BaseException as exc:
+            _cell_event(
+                cell,
+                "cell.failed",
+                phase="execution",
+                severity="error",
+                attributes={
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                },
+            )
+            raise
+        finally:
+            if cell is not None:
+                cell.close()
+
+    tasks = [
+        asyncio.create_task(run_one(index, intent, config))
+        for index, (intent, config) in enumerate(materialized)
+    ]
+    try:
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+    except asyncio.CancelledError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+    failures = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+    if failures:
+        # Do not cancel scientifically independent sibling cells merely because
+        # one trial failed. Settle the explicit Forge batch first so successful
+        # cells finish and every cell can close its telemetry journal.
+        raise failures[0]
+
+    completed = [outcome for outcome in outcomes if not isinstance(outcome, BaseException)]
     completed.sort(key=lambda item: item[0])
     return (
         [item[1] for item in completed],
@@ -265,6 +365,7 @@ async def run_harbor_plan(
     trials_dir: str | Path,
     environment: str | None = None,
     execution: HarborExecutionConfig | None = None,
+    telemetry: ExperimentTelemetryRecorder | None = None,
 ) -> tuple[list[Any], list[Any]]:
     """Execute the exact Forge cells through Harbor Docker or Modal.
 
@@ -286,4 +387,69 @@ async def run_harbor_plan(
     return await run_materialized_trials(
         materialized,
         n_concurrent=resolved_execution.n_concurrent,
+        telemetry=telemetry,
     )
+
+
+
+def _telemetry_cell(
+    telemetry: ExperimentTelemetryRecorder | None,
+    intent: dict[str, Any],
+    config: Any,
+) -> CellTelemetryRecorder | None:
+    if telemetry is None:
+        return None
+    try:
+        environment = getattr(getattr(config, "environment", None), "type", None)
+        environment_value = str(getattr(environment, "value", environment) or "unknown")
+        return telemetry.cell(intent, environment=environment_value)
+    except Exception as exc:
+        telemetry.issue("runtime.cell", exc)
+        return None
+
+
+def _cell_event(
+    recorder: CellTelemetryRecorder | None,
+    name: str,
+    *,
+    phase: str,
+    severity: str = "info",
+    attributes: dict[str, Any] | None = None,
+) -> None:
+    if recorder is None:
+        return
+    try:
+        recorder.event(
+            name,
+            phase=phase,
+            severity=severity,
+            attributes=attributes,
+        )
+    except Exception as exc:
+        recorder.parent.issue(f"runtime.event:{name}", exc)
+
+
+def _best_effort_result_summary(value: Any) -> dict[str, Any]:
+    """Extract optional result fields without making telemetry a run dependency."""
+    summary: dict[str, Any] = {}
+    for name in ("valid", "resolved", "completed", "evaluation_completed"):
+        try:
+            field_value = getattr(value, name)
+        except Exception:
+            continue
+        if field_value is not None:
+            summary[name] = bool(field_value)
+    try:
+        error = getattr(value, "error")
+    except Exception:
+        error = None
+    if error not in (None, ""):
+        summary["error"] = str(error)
+    return summary
+
+
+def _object_id(value: Any) -> str | None:
+    identifier = getattr(value, "id", None)
+    if identifier in (None, ""):
+        return None
+    return str(identifier)
