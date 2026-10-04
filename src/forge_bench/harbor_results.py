@@ -39,7 +39,21 @@ def normalize_harbor_trial_result(
     n_input = int(getattr(context, "n_input_tokens", 0) or 0)
     n_cache = int(getattr(context, "n_cache_tokens", 0) or 0)
     n_output = int(getattr(context, "n_output_tokens", 0) or 0)
-    noncache_input = max(0, n_input - n_cache)
+
+    uncached_input = int(
+        metadata.get("forge_uncached_input_tokens", max(0, n_input - n_cache)) or 0
+    )
+    cache_read = int(metadata.get("forge_cache_read_tokens", n_cache) or 0)
+    cache_write = int(metadata.get("forge_cache_write_tokens", 0) or 0)
+    output_tokens = int(metadata.get("forge_output_tokens", n_output) or 0)
+    reasoning_tokens = int(metadata.get("forge_reasoning_tokens", 0) or 0)
+    total_tokens = int(
+        metadata.get(
+            "forge_total_tokens",
+            uncached_input + cache_read + cache_write + output_tokens,
+        )
+        or 0
+    )
 
     reward = _reward(trial_result)
     evaluation_completed = reward is not None
@@ -54,7 +68,25 @@ def normalize_harbor_trial_result(
     patch_capture_error = str(metadata.get("forge_patch_capture_error") or "")
     eval_ok = evaluation_completed or not patch_nonempty
 
-    cost = getattr(context, "cost_usd", None) if context is not None else None
+    context_cost = getattr(context, "cost_usd", None) if context is not None else None
+    estimated_cost = metadata.get("forge_estimated_cost_usd")
+    actual_cost = metadata.get("forge_actual_cost_usd")
+    estimated_cost = (
+        float(estimated_cost) if estimated_cost not in (None, "") else None
+    )
+    actual_cost = float(actual_cost) if actual_cost not in (None, "") else None
+    if actual_cost is not None and actual_cost > 0:
+        cost = actual_cost
+        cost_source = "openrouter_actual"
+    elif estimated_cost is not None:
+        cost = estimated_cost
+        cost_source = str(metadata.get("forge_cost_source") or "hermes_estimate")
+    elif context_cost is not None:
+        cost = float(context_cost)
+        cost_source = "harbor_agent_context"
+    else:
+        cost = None
+        cost_source = "unavailable"
     model_info = getattr(getattr(trial_result, "agent_info", None), "model_info", None)
     observed_model = str(getattr(model_info, "name", None) or cell["model"])
     model_ok = observed_model == str(cell["model"])
@@ -136,17 +168,17 @@ def normalize_harbor_trial_result(
         api_provider=str(cell["api_provider"]),
         upstream_provider=str(cell["upstream_provider"]),
         session_id=str(metadata.get("forge_session_id") or ""),
-        input_tokens=noncache_input,
-        output_tokens=n_output,
-        reasoning_tokens=int(metadata.get("forge_reasoning_tokens", 0) or 0),
-        cache_read_tokens=n_cache,
-        cache_write_tokens=int(metadata.get("forge_cache_write_tokens", 0) or 0),
-        total_tokens=n_input + n_output,
+        input_tokens=uncached_input,
+        output_tokens=output_tokens,
+        reasoning_tokens=reasoning_tokens,
+        cache_read_tokens=cache_read,
+        cache_write_tokens=cache_write,
+        total_tokens=total_tokens,
         api_calls=int(metadata.get("forge_api_calls", 0) or 0),
-        estimated_cost_usd=None,
-        actual_cost_usd=float(cost) if cost is not None else None,
-        cost_usd=float(cost) if cost is not None else None,
-        cost_source="harbor_agent_context" if cost is not None else "unavailable",
+        estimated_cost_usd=estimated_cost,
+        actual_cost_usd=actual_cost,
+        cost_usd=cost,
+        cost_source=cost_source,
         tool_calls=(
             int(metadata["forge_tool_calls"])
             if metadata.get("forge_tool_calls") is not None
