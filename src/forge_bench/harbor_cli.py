@@ -17,6 +17,9 @@ from .harbor_runtime import (
     materialize_harbor_trial_configs,
     run_harbor_plan,
 )
+from .telemetry_archive import read_manifest
+from .telemetry_contracts import CaptureProfile
+from .telemetry_recorder import ExperimentTelemetryRecorder
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +49,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--storage-mb", type=int, help="Storage override per Harbor trial.")
     parser.add_argument("--gpus", type=int, help="GPU count override per Harbor trial.")
     parser.add_argument(
+        "--telemetry-dir",
+        type=Path,
+        help=(
+            "Raw telemetry archive root. By default a unique experiment archive "
+            "is created beside the normalized Harbor results."
+        ),
+    )
+    parser.add_argument(
+        "--experiment-id",
+        help=(
+            "Stable experiment identifier for telemetry. If omitted, Forge "
+            "creates one from UTC time plus the source plan hash."
+        ),
+    )
+    parser.add_argument(
+        "--telemetry-profile",
+        choices=[profile.value for profile in CaptureProfile],
+        default=CaptureProfile.MAXIMAL.value,
+        help="Telemetry capture profile recorded in the raw archive.",
+    )
+    parser.add_argument(
+        "--no-telemetry",
+        action="store_true",
+        help="Disable the raw lifecycle telemetry recorder for this execution.",
+    )
+    parser.add_argument(
         "--materialize-only",
         action="store_true",
         help=(
@@ -63,6 +92,7 @@ def _execution_manifest(
     output: Path,
     execution,
     materialize_only: bool,
+    telemetry: dict | None = None,
 ) -> dict:
     return {
         "schema_version": 1,
@@ -74,6 +104,7 @@ def _execution_manifest(
         "scientific_cell_identity_changed": False,
         "mode": "materialize-only" if materialize_only else "execute",
         "execution": execution.as_dict(),
+        "telemetry": telemetry,
         "results": str(output),
     }
 
@@ -94,20 +125,21 @@ async def _main_async(args: argparse.Namespace) -> int:
     ).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     manifest_path = output.with_name(output.stem + "-execution.json")
-    manifest_path.write_text(
-        json.dumps(
-            _execution_manifest(
-                plan=plan,
-                plan_path=args.plan,
-                output=output,
-                execution=execution,
-                materialize_only=args.materialize_only,
-            ),
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+
+    telemetry_settings = (
+        None
+        if args.materialize_only or args.no_telemetry
+        else _resolve_telemetry_settings(args, plan, output)
     )
+    execution_manifest = _execution_manifest(
+        plan=plan,
+        plan_path=args.plan,
+        output=output,
+        execution=execution,
+        materialize_only=args.materialize_only,
+        telemetry=telemetry_settings,
+    )
+    _write_json(manifest_path, execution_manifest)
 
     if args.materialize_only:
         materialized = await materialize_harbor_trial_configs(
@@ -130,11 +162,55 @@ async def _main_async(args: argparse.Namespace) -> int:
         return 0
 
     require_execution_dependencies(execution)
-    _harbor, forge_results = await run_harbor_plan(
-        plan,
-        trials_dir=args.trials_dir,
-        execution=execution,
-    )
+
+    recorder = None
+    if telemetry_settings is not None:
+        try:
+            recorder = ExperimentTelemetryRecorder(
+                telemetry_settings["root"],
+                experiment_id=telemetry_settings["experiment_id"],
+                capture_profile=CaptureProfile(telemetry_settings["capture_profile"]),
+            )
+            telemetry_settings["active"] = True
+        except Exception as exc:
+            telemetry_settings["active"] = False
+            telemetry_settings["initialization_error"] = (
+                f"{type(exc).__name__}: {exc}"
+            )
+            print(
+                "WARNING: telemetry initialization failed; benchmark execution "
+                "will continue without raw lifecycle telemetry:",
+                telemetry_settings["initialization_error"],
+            )
+
+    try:
+        if recorder is None:
+            _harbor, forge_results = await run_harbor_plan(
+                plan,
+                trials_dir=args.trials_dir,
+                execution=execution,
+            )
+        else:
+            with recorder:
+                _harbor, forge_results = await run_harbor_plan(
+                    plan,
+                    trials_dir=args.trials_dir,
+                    execution=execution,
+                    telemetry=recorder,
+                )
+    finally:
+        if telemetry_settings is not None:
+            if recorder is not None:
+                telemetry_settings["degraded"] = recorder.degraded
+                telemetry_settings["issue_count"] = len(recorder.issues)
+                telemetry_settings["sealed_state"] = (
+                    recorder.sealed_state.value
+                    if recorder.sealed_state is not None
+                    else None
+                )
+            execution_manifest["telemetry"] = telemetry_settings
+            _write_json(manifest_path, execution_manifest)
+
     output.write_text(
         json.dumps([asdict(result) for result in forge_results], indent=2) + "\n",
         encoding="utf-8",
@@ -148,7 +224,67 @@ async def _main_async(args: argparse.Namespace) -> int:
     print("Concurrency:", execution.n_concurrent)
     print("Forge-normalized results:", output)
     print("Execution manifest:", manifest_path)
+    if telemetry_settings is not None:
+        print("Telemetry archive:", telemetry_settings["root"])
+        if telemetry_settings.get("degraded"):
+            print(
+                "WARNING: telemetry archive was sealed partial because recorder "
+                f"issues occurred ({telemetry_settings.get('issue_count', 0)} issue(s))."
+            )
     return 0 if usable == len(forge_results) else 1
+
+
+def _resolve_telemetry_settings(
+    args: argparse.Namespace,
+    plan: dict,
+    output: Path,
+) -> dict:
+    capture_profile = CaptureProfile(args.telemetry_profile)
+    requested_root = args.telemetry_dir.resolve() if args.telemetry_dir else None
+
+    if requested_root is not None and (requested_root / "archive_manifest.json").exists():
+        existing = read_manifest(requested_root / "archive_manifest.json")
+        if args.experiment_id and args.experiment_id != existing.experiment_id:
+            raise SystemExit(
+                "--experiment-id does not match the existing telemetry archive: "
+                f"{existing.experiment_id}"
+            )
+        if capture_profile != existing.capture_profile:
+            raise SystemExit(
+                "--telemetry-profile does not match the existing telemetry archive: "
+                f"{existing.capture_profile.value}"
+            )
+        experiment_id = existing.experiment_id
+        root = requested_root
+    else:
+        experiment_id = args.experiment_id or _new_experiment_id(plan)
+        root = (
+            requested_root
+            if requested_root is not None
+            else output.parent / "telemetry" / experiment_id
+        )
+
+    return {
+        "requested": True,
+        "active": False,
+        "root": str(root.resolve()),
+        "experiment_id": experiment_id,
+        "capture_profile": capture_profile.value,
+        "durability": "fsync_each_record",
+    }
+
+
+def _new_experiment_id(plan: dict) -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    plan_hash = str(plan.get("run_plan_sha256") or "unhashed")[:12]
+    return f"forge-{timestamp}-{plan_hash}"
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.write_text(
+        json.dumps(payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def main() -> int:
