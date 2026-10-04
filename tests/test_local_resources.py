@@ -61,12 +61,14 @@ class LocalProcessResourceSamplerTests(unittest.TestCase):
                     )
                     system_one, processes_one = sampler.sample_once()
                     time.sleep(0.03)
-                    _system_two, processes_two = sampler.sample_once()
+                    system_two, processes_two = sampler.sample_once()
                     stats = sampler.stop()
 
                 self.assertGreater(system_one.memory_total_bytes or 0, 0)
                 self.assertGreaterEqual(system_one.cpu_user_seconds or 0.0, 0.0)
-                self.assertGreater(len(system_one.cpu_per_core_percent), 0)
+                self.assertEqual(system_one.cpu_per_core_percent, ())
+                self.assertGreater(len(system_two.cpu_per_core_percent), 0)
+                self.assertIsNotNone(system_two.cpu_total_percent)
 
                 pids = {sample.pid for sample in processes_one}
                 self.assertIn(os.getpid(), pids)
