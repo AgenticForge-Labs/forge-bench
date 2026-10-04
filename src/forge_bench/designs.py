@@ -201,8 +201,8 @@ def load_design(path: Path) -> ExperimentDesign:
     api_provider = str(provider.get("api") or "openrouter").strip().lower()
     upstream = str(provider.get("upstream") or PINNED_OPENROUTER_UPSTREAM).strip()
     require_same_upstream = bool(provider.get("require_same_upstream", True))
-    if api_provider != "openrouter":
-        raise ValueError("Forge Bench experiment designs currently support api: openrouter only")
+    if not api_provider:
+        raise ValueError("provider.api must be non-empty")
     if not upstream:
         raise ValueError("provider.upstream must be non-empty")
 
@@ -221,8 +221,8 @@ def load_design(path: Path) -> ExperimentDesign:
         model_api = str(entry.get("api_provider") or api_provider).strip().lower()
         model_upstream = str(entry.get("upstream_provider") or upstream).strip()
         reasoning = str(entry.get("reasoning") or root.get("reasoning") or PINNED_REASONING).strip()
-        if model_api != "openrouter":
-            raise ValueError(f"models[{index}] uses unsupported api_provider {model_api!r}")
+        if not model_api:
+            raise ValueError(f"models[{index}].api_provider must be non-empty")
         models.append(
             ModelSpec(
                 key=key,
