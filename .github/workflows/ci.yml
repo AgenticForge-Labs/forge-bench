@@ -627,7 +627,14 @@ jobs:
       - name: Verify Harbor 0.23 compatibility
         run: |
           uv run --with harbor==0.23.0 python tests/test_harbor_compat.py
-          uv run --with harbor==0.23.0 forge-bench-harbor --help
+          uv run --with harbor==0.23.0 forge-bench-harbor --help | tee /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--environment' /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--n-concurrent' /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--cpus' /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--memory-mb' /tmp/forge-bench-harbor-help.txt
+          grep -q -- '--gpus' /tmp/forge-bench-harbor-help.txt
+          grep -q -- 'docker' /tmp/forge-bench-harbor-help.txt
+          grep -q -- 'modal' /tmp/forge-bench-harbor-help.txt
       - run: uv run forge-bench --help
       - name: Verify reanalysis CLI accepts existing output
         run: |

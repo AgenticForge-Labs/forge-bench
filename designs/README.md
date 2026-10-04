@@ -28,6 +28,41 @@ remain Hermes-only on the Harbor migration path. Selecting a non-Hermes agent
 with those controls makes the Harbor plan non-executable rather than emulating
 the plugin or silently dropping the factor.
 
+## Execute the same plan locally or on Modal
+
+Environment and resource choices are execution settings, not scientific design
+fields by default. Generate the Forge plan once, then choose the execution
+backend when invoking `forge-bench-harbor`.
+
+Local Docker materialization:
+
+```bash
+uv run --with harbor==0.23.0 forge-bench-harbor \
+  --plan benchmark-results/my-study/harbor_plan.json \
+  --trials-dir benchmark-results/my-study/harbor-trials \
+  --environment docker \
+  --n-concurrent 4 \
+  --materialize-only
+```
+
+Modal uses the same `harbor_plan.json` and therefore the same
+`forge_cell_id` values:
+
+```bash
+uv run --with 'harbor[modal]==0.23.0' forge-bench-harbor \
+  --plan benchmark-results/my-study/harbor_plan.json \
+  --trials-dir benchmark-results/my-study/harbor-trials-modal \
+  --environment modal \
+  --n-concurrent 16 \
+  --cpus 4 \
+  --memory-mb 16384
+```
+
+Every invocation writes an execution-manifest JSON beside the requested output.
+That manifest records the source run-plan hash, environment, concurrency, and
+resource overrides. Modal authentication is external provider state and a real
+provider smoke test remains distinct from CI materialization.
+
 ## Run a design
 
 Preview the exact randomized order without making model calls:

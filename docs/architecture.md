@@ -84,21 +84,44 @@ the selected agent's own defaults. The plan labels those semantics
 agents until a later capability-negotiation layer provides equivalent validated
 controls.
 
+### Local/Modal execution layer
+
+The explicit-cell Harbor runner now supports both local Docker and Harbor's
+native Modal environment with the same Forge plan. Environment, bounded
+concurrency, and optional CPU/RAM/storage/GPU overrides are execution settings,
+not scientific factors by default.
+
+Forge does not use Harbor `JobConfig` for this layer. Harbor jobs normally
+expand tasks × agents × attempts, which would regenerate the experiment after
+Forge has already randomized it. Forge instead materializes the exact
+`TrialConfig` list and runs those Harbor trials under a bounded asynchronous
+semaphore. Harbor still owns each trial's environment, agent setup, verifier,
+trajectory, and artifacts.
+
+Environment changes do not participate in `forge_cell_id`. Each run writes an
+execution manifest containing the source plan hash and execution settings, while
+normalized results retain the actual environment and requested resource
+overrides. This permits Docker/Modal reruns of the same scientific cells without
+pretending they are a different experiment.
+
+Software tests validate both environment configurations and Harbor 0.23 resource
+fields without starting cloud resources. Real Modal execution additionally
+requires `harbor[modal]==0.23.0` and normal Modal authentication; an
+authenticated provider smoke is a separate validation gate.
+
 ### Not implemented yet
 
 The normal `forge-bench` command still uses the legacy Forge
 Hermes/subprocess/Docker machinery. Follow-up PRs will proceed linearly:
 
-1. validate local Harbor/Docker execution parity for multi-agent designs,
-   including concurrency and agent-aware reporting;
-2. add Harbor/Modal parity so the same Forge cell identities run locally or on
-   burst cloud compute;
-3. add a direct LLM/VLM trial kind for model-only experiments without a coding
+1. add agent-aware reporting over completed Harbor multi-agent experiments;
+2. add a direct LLM/VLM trial kind for model-only experiments without a coding
    harness confound;
-4. add optional self-hosted local/Modal model inference for open LLMs/VLMs;
-5. add secure external capability attachments such as the bounded SO-ARM101
+3. add optional self-hosted local/Modal model inference for open LLMs/VLMs,
+   including explicit GPU type/runtime provenance;
+4. add secure external capability attachments such as the bounded SO-ARM101
    broker without exposing hardware devices to agent containers;
-6. add OpenTelemetry correlation and then retire the legacy execution harness
+5. add OpenTelemetry correlation and then retire the legacy execution harness
    after parity is demonstrated.
 
 OpenShell remains optional hardening around a capability boundary or future
@@ -109,7 +132,7 @@ Harbor environment integration; it is not a second Forge execution architecture.
 A Forge design is randomized *before* execution. Each cell couples:
 
 ```text
-block x model x treatment x max_turns x budget_warning_ratio x task
+block x agent x model x treatment x max_turns x budget_warning_ratio x task
 ```
 
 Harbor's normal JobConfig is excellent for generating Cartesian trials, but

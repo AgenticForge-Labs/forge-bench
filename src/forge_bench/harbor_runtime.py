@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
 
+from .harbor_execution import HarborExecutionConfig, execution_from_plan
 from .harbor_results import normalize_harbor_trial_result
 
 FORGE_SHARED_INSTRUCTIONS = """Forge Bench execution constraints:
@@ -72,6 +74,7 @@ def build_harbor_trial_config(
     *,
     trials_dir: str | Path,
     environment: str = "docker",
+    execution: HarborExecutionConfig | None = None,
 ) -> Any:
     (
         AgentFactory,
@@ -103,10 +106,17 @@ def build_harbor_trial_config(
             "Harbor trial intent must define exactly one of agent.name or agent.import_path"
         )
 
+    resolved_execution = (
+        execution.validated()
+        if execution is not None
+        else HarborExecutionConfig(environment=environment).validated()
+    )
     try:
-        environment_type = EnvironmentType(environment)
+        environment_type = EnvironmentType(resolved_execution.environment)
     except ValueError as exc:
-        raise ValueError(f"Unsupported Harbor environment: {environment!r}") from exc
+        raise ValueError(
+            f"Unsupported Harbor environment: {resolved_execution.environment!r}"
+        ) from exc
 
     agent_config = AgentConfig(
         name=str(agent_name) if agent_name else None,
@@ -121,7 +131,10 @@ def build_harbor_trial_config(
         trial_name=str(intent["forge_cell_id"]),
         trials_dir=Path(trials_dir),
         agent=agent_config,
-        environment=EnvironmentConfig(type=environment_type),
+        environment=EnvironmentConfig(
+            type=environment_type,
+            **resolved_execution.environment_kwargs(),
+        ),
         extra_instructions=extra_instructions_for_intent(intent),
     )
 
@@ -131,6 +144,7 @@ async def materialize_harbor_trial_configs(
     *,
     trials_dir: str | Path,
     environment: str | None = None,
+    execution: HarborExecutionConfig | None = None,
 ) -> list[tuple[dict[str, Any], Any]]:
     if not plan.get("executable"):
         reasons = list(plan.get("unsupported_reasons") or [])
@@ -182,7 +196,11 @@ async def materialize_harbor_trial_configs(
             "Harbor dataset did not resolve Forge task(s): " + ", ".join(missing)
         )
 
-    chosen_environment = str(environment or plan.get("environment") or "docker")
+    resolved_execution = (
+        execution.validated()
+        if execution is not None
+        else execution_from_plan(plan, environment=environment)
+    )
     return [
         (
             intent,
@@ -190,11 +208,55 @@ async def materialize_harbor_trial_configs(
                 intent,
                 task_by_instance[str(intent["forge"]["instance_id"])],
                 trials_dir=trials_dir,
-                environment=chosen_environment,
+                environment=resolved_execution.environment,
+                execution=resolved_execution,
             ),
         )
         for intent in intents
     ]
+
+
+async def run_materialized_trials(
+    materialized: list[tuple[dict[str, Any], Any]],
+    *,
+    n_concurrent: int = 1,
+    trial_class: Any | None = None,
+) -> tuple[list[Any], list[Any]]:
+    """Run explicit TrialConfigs concurrently without regenerating Forge cells.
+
+    Result ordering always follows the authoritative randomized Forge plan even
+    when multiple trials overlap in wall-clock execution.
+    """
+    if int(n_concurrent) < 1:
+        raise ValueError("n_concurrent must be >= 1")
+
+    if trial_class is None:
+        *_, trial_class = _harbor_imports()
+
+    semaphore = asyncio.Semaphore(int(n_concurrent))
+
+    async def run_one(
+        index: int,
+        intent: dict[str, Any],
+        config: Any,
+    ) -> tuple[int, Any, Any]:
+        async with semaphore:
+            trial = await trial_class.create(config)
+            trial_result = await trial.run()
+            forge_result = normalize_harbor_trial_result(trial_result, intent)
+            return index, trial_result, forge_result
+
+    completed = await asyncio.gather(
+        *(
+            run_one(index, intent, config)
+            for index, (intent, config) in enumerate(materialized)
+        )
+    )
+    completed.sort(key=lambda item: item[0])
+    return (
+        [item[1] for item in completed],
+        [item[2] for item in completed],
+    )
 
 
 async def run_harbor_plan(
@@ -202,24 +264,26 @@ async def run_harbor_plan(
     *,
     trials_dir: str | Path,
     environment: str | None = None,
+    execution: HarborExecutionConfig | None = None,
 ) -> tuple[list[Any], list[Any]]:
-    """Execute explicit Forge cells through Harbor in randomized plan order.
+    """Execute the exact Forge cells through Harbor Docker or Modal.
 
-    This validation-stage runner is intentionally sequential. Controlled Harbor
-    concurrency belongs in the later local/Modal execution PR.
+    Forge owns the explicit randomized cell list. Harbor owns each individual
+    trial's environment, agent, verification, trajectory, and artifacts.
+    Concurrency changes execution overlap only; it never regenerates cell
+    identities or changes the returned scientific order.
     """
-    *_, Trial = _harbor_imports()
+    resolved_execution = (
+        execution.validated()
+        if execution is not None
+        else execution_from_plan(plan, environment=environment)
+    )
     materialized = await materialize_harbor_trial_configs(
         plan,
         trials_dir=trials_dir,
-        environment=environment,
+        execution=resolved_execution,
     )
-
-    harbor_results: list[Any] = []
-    forge_results: list[Any] = []
-    for intent, config in materialized:
-        trial = await Trial.create(config)
-        trial_result = await trial.run()
-        harbor_results.append(trial_result)
-        forge_results.append(normalize_harbor_trial_result(trial_result, intent))
-    return harbor_results, forge_results
+    return await run_materialized_trials(
+        materialized,
+        n_concurrent=resolved_execution.n_concurrent,
+    )
