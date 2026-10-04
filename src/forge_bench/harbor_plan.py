@@ -60,11 +60,7 @@ def compile_harbor_plan(
     expansion from silently changing Forge Bench's already-randomized cells.
     """
     harbor_dataset = HARBOR_DATASET_BY_FORGE_DATASET.get(forge_dataset)
-    if harbor_dataset is None:
-        raise ValueError(
-            "No Harbor dataset mapping is defined for Forge dataset "
-            f"{forge_dataset!r}. Add an explicit verified mapping before execution."
-        )
+    dataset_mapped = harbor_dataset is not None
 
     trials: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
@@ -121,7 +117,10 @@ def compile_harbor_plan(
         "execution_status": (
             "projection-only: a follow-up PR must provide the Forge Bench Hermes "
             "Harbor agent adapter and execution/result normalization"
+            if dataset_mapped
+            else "projection-only: Forge dataset has no explicit Harbor mapping yet"
         ),
+        "dataset_mapped": dataset_mapped,
         "forge_dataset": forge_dataset,
         "harbor_dataset": harbor_dataset,
         "environment": environment,
