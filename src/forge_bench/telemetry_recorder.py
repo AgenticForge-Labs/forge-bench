@@ -11,6 +11,7 @@ from typing import Any, Iterable
 
 from .telemetry_archive import (
     TelemetryArchivePaths,
+    assert_raw_writable,
     ensure_cell_layout,
     initialize_archive,
     seal_archive,
@@ -211,6 +212,7 @@ class ExperimentTelemetryRecorder:
             experiment_id=experiment_id,
             capture_profile=capture_profile,
         )
+        assert_raw_writable(self.paths)
         self.experiment_id = experiment_id
         self.capture_profile = capture_profile
         self.durable = bool(durable)
@@ -383,6 +385,9 @@ class ExperimentTelemetryRecorder:
             self._issue(operation, exc)
             return False
 
+    def issue(self, operation: str, exc: BaseException) -> None:
+        self._issue(operation, exc)
+
     def _issue(self, operation: str, exc: BaseException) -> None:
         self.issues.append(
             RecorderIssue(
@@ -512,7 +517,8 @@ def _recover_trailing_fragment(path: Path) -> RecoveryFragment | None:
 
 
 def _find_last_newline(handle) -> int | None:
-    end = handle.tell() + 1
+    handle.seek(0, os.SEEK_END)
+    end = handle.tell()
     position = end
     chunk_size = 64 * 1024
     while position > 0:
