@@ -67,6 +67,7 @@ class LocalProcessResourceSampler:
         self._process_samples = 0
         self._max_processes = 0
         self._previous_process_cpu: dict[tuple[int, int], tuple[int, float]] = {}
+        self._previous_system_cpu_times: tuple[Any, ...] | None = None
 
         self._system_journal = AppendOnlyJsonlJournal(
             recorder.paths.raw / "system.jsonl",
@@ -82,10 +83,6 @@ class LocalProcessResourceSampler:
         )
         self._capabilities_journal.append(self._capabilities())
         self._capabilities_journal.close()
-
-        # Prime psutil's non-blocking CPU percentage state before the first
-        # timed sample. Cumulative CPU counters are also stored independently.
-        psutil.cpu_percent(interval=None, percpu=True)
 
     @property
     def stats(self) -> LocalResourceSamplerStats:
@@ -211,15 +208,13 @@ class LocalProcessResourceSampler:
                 break
 
     def _system_sample(self, point: TimePoint) -> SystemSample:
-        per_core = tuple(float(value) for value in psutil.cpu_percent(
-            interval=None,
-            percpu=True,
-        ))
-        cpu_total = (
-            sum(per_core) / len(per_core)
-            if per_core
-            else None
+        cpu_times_per_core = tuple(psutil.cpu_times(percpu=True))
+        per_core = _cpu_percent_from_times(
+            self._previous_system_cpu_times,
+            cpu_times_per_core,
         )
+        self._previous_system_cpu_times = cpu_times_per_core
+        cpu_total = sum(per_core) / len(per_core) if per_core else None
         cpu_times = psutil.cpu_times()
         virtual_memory = psutil.virtual_memory()
         swap = psutil.swap_memory()
@@ -521,6 +516,43 @@ def record_local_resources_not_applicable(
         )
     finally:
         journal.close()
+
+
+def _cpu_percent_from_times(
+    previous: tuple[Any, ...] | None,
+    current: tuple[Any, ...],
+) -> tuple[float, ...]:
+    if previous is None or len(previous) != len(current):
+        return ()
+
+    percentages: list[float] = []
+    for old, new in zip(previous, current, strict=True):
+        old_total, old_busy = _cpu_total_busy(old)
+        new_total, new_busy = _cpu_total_busy(new)
+        total_delta = new_total - old_total
+        busy_delta = new_busy - old_busy
+        if total_delta <= 0:
+            percentages.append(0.0)
+        else:
+            percentages.append(
+                min(100.0, max(0.0, busy_delta / total_delta * 100.0))
+            )
+    return tuple(percentages)
+
+
+def _cpu_total_busy(sample: Any) -> tuple[float, float]:
+    fields = getattr(sample, "_fields", ())
+    total = 0.0
+    idle = 0.0
+    for name in fields:
+        if name in {"guest", "guest_nice"}:
+            # Linux guest time is already included in user/nice.
+            continue
+        value = float(getattr(sample, name, 0.0) or 0.0)
+        total += value
+        if name in {"idle", "iowait"}:
+            idle += value
+    return total, max(0.0, total - idle)
 
 
 def _process_value(
