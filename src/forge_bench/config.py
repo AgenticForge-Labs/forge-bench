@@ -199,3 +199,9 @@ class Result:
     timing_event_count: int = 0
     skill_lifecycle_event_count: int = 0
     trace_exported: bool = False
+    # Execution provenance for Harbor-backed multi-agent experiments.
+    agent: str = "hermes"
+    agent_version: str | None = None
+    environment: str | None = None
+    harbor_trial_id: str | None = None
+    trial_kind: str = "agentic"
