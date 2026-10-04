@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 from .harbor_execution import HarborExecutionConfig, execution_from_plan
 from .harbor_results import normalize_harbor_trial_result
+from .telemetry_recorder import CellTelemetryRecorder, ExperimentTelemetryRecorder
 
 FORGE_SHARED_INSTRUCTIONS = """Forge Bench execution constraints:
 - Work only from the supplied repository state and task instruction.
@@ -221,6 +223,7 @@ async def run_materialized_trials(
     *,
     n_concurrent: int = 1,
     trial_class: Any | None = None,
+    telemetry: ExperimentTelemetryRecorder | None = None,
 ) -> tuple[list[Any], list[Any]]:
     """Run explicit TrialConfigs concurrently without regenerating Forge cells.
 
@@ -240,11 +243,96 @@ async def run_materialized_trials(
         intent: dict[str, Any],
         config: Any,
     ) -> tuple[int, Any, Any]:
-        async with semaphore:
-            trial = await trial_class.create(config)
-            trial_result = await trial.run()
-            forge_result = normalize_harbor_trial_result(trial_result, intent)
-            return index, trial_result, forge_result
+        cell = _telemetry_cell(telemetry, intent, config)
+        queued_ns = time.monotonic_ns()
+        _cell_event(
+            cell,
+            "cell.queued",
+            phase="queue",
+            attributes={"forge_run_index": intent.get("forge_run_index")},
+        )
+        try:
+            async with semaphore:
+                _cell_event(
+                    cell,
+                    "cell.started",
+                    phase="execution",
+                    attributes={
+                        "queue_wait_ns": max(0, time.monotonic_ns() - queued_ns),
+                    },
+                )
+                _cell_event(cell, "harbor.trial.create.started", phase="trial_create")
+                trial = await trial_class.create(config)
+                trial_id = _object_id(trial)
+                _cell_event(
+                    cell,
+                    "harbor.trial.create.completed",
+                    phase="trial_create",
+                    attributes={"harbor_trial_id": trial_id},
+                )
+
+                _cell_event(
+                    cell,
+                    "harbor.trial.run.started",
+                    phase="trial_run",
+                    attributes={"harbor_trial_id": trial_id},
+                )
+                trial_result = await trial.run()
+                result_trial_id = _object_id(trial_result) or trial_id
+                exception_info = getattr(trial_result, "exception_info", None)
+                _cell_event(
+                    cell,
+                    "harbor.trial.run.completed",
+                    phase="trial_run",
+                    severity="error" if exception_info is not None else "info",
+                    attributes={
+                        "harbor_trial_id": result_trial_id,
+                        "reported_exception": exception_info is not None,
+                    },
+                )
+
+                _cell_event(
+                    cell,
+                    "forge.result.normalize.started",
+                    phase="normalize",
+                    attributes={"harbor_trial_id": result_trial_id},
+                )
+                forge_result = normalize_harbor_trial_result(trial_result, intent)
+                _cell_event(
+                    cell,
+                    "forge.result.normalize.completed",
+                    phase="normalize",
+                    attributes={
+                        "harbor_trial_id": result_trial_id,
+                        "valid": bool(forge_result.valid),
+                        "resolved": bool(forge_result.resolved),
+                    },
+                )
+                _cell_event(
+                    cell,
+                    "cell.completed",
+                    phase="execution",
+                    attributes={
+                        "valid": bool(forge_result.valid),
+                        "resolved": bool(forge_result.resolved),
+                    },
+                )
+                return index, trial_result, forge_result
+        except BaseException as exc:
+            _cell_event(
+                cell,
+                "cell.failed",
+                phase="execution",
+                severity="error",
+                attributes={
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                },
+            )
+            raise
+        finally:
+            if cell is not None:
+                cell.close()
 
     completed = await asyncio.gather(
         *(
@@ -265,6 +353,7 @@ async def run_harbor_plan(
     trials_dir: str | Path,
     environment: str | None = None,
     execution: HarborExecutionConfig | None = None,
+    telemetry: ExperimentTelemetryRecorder | None = None,
 ) -> tuple[list[Any], list[Any]]:
     """Execute the exact Forge cells through Harbor Docker or Modal.
 
@@ -286,4 +375,50 @@ async def run_harbor_plan(
     return await run_materialized_trials(
         materialized,
         n_concurrent=resolved_execution.n_concurrent,
+        telemetry=telemetry,
     )
+
+
+
+def _telemetry_cell(
+    telemetry: ExperimentTelemetryRecorder | None,
+    intent: dict[str, Any],
+    config: Any,
+) -> CellTelemetryRecorder | None:
+    if telemetry is None:
+        return None
+    try:
+        environment = getattr(getattr(config, "environment", None), "type", None)
+        environment_value = str(getattr(environment, "value", environment) or "unknown")
+        return telemetry.cell(intent, environment=environment_value)
+    except Exception as exc:
+        telemetry._issue("runtime.cell", exc)
+        return None
+
+
+def _cell_event(
+    recorder: CellTelemetryRecorder | None,
+    name: str,
+    *,
+    phase: str,
+    severity: str = "info",
+    attributes: dict[str, Any] | None = None,
+) -> None:
+    if recorder is None:
+        return
+    try:
+        recorder.event(
+            name,
+            phase=phase,
+            severity=severity,
+            attributes=attributes,
+        )
+    except Exception as exc:
+        recorder.parent._issue(f"runtime.event:{name}", exc)
+
+
+def _object_id(value: Any) -> str | None:
+    identifier = getattr(value, "id", None)
+    if identifier in (None, ""):
+        return None
+    return str(identifier)
