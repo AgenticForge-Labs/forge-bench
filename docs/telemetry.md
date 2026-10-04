@@ -145,21 +145,85 @@ record counts, and sealing notes.
 The integrity root intentionally excludes derived/share products so analytical
 methods and presentation can evolve without mutating raw evidence.
 
+## Durable lifecycle recorder
+
+Harbor-backed execution now uses an append-only lifecycle recorder by default.
+Each experiment writes `raw/experiment-events.jsonl`; each explicit Forge cell
+writes its own `raw/cells/<forge_cell_id>/events.jsonl`. Per-cell journals avoid
+a single contended event file when Harbor trials execute concurrently.
+
+Each JSONL row is a journal envelope containing:
+
+```text
+journal_schema_version
+sequence
+persisted_wall_time_unix_ns
+record
+```
+
+The record is one of the versioned telemetry contracts from this document.
+Sequence numbers are strictly increasing within each journal and are validated
+when a journal is reopened.
+
+Lifecycle journals currently use **uncompressed JSONL with fsync after every
+record**. That choice is deliberate: these are low-frequency control/lifecycle
+events and durability is more important than compression. High-frequency CPU,
+RAM, container, GPU, model, and tool streams will use their own buffering and
+storage strategy in later PRs rather than weakening lifecycle durability.
+
+If a previous process left a torn final JSONL line, reopening does not silently
+discard it. The incomplete bytes are preserved under a raw `recovery/`
+directory with their SHA-256 identity, then the live journal is truncated back
+to the last complete newline before appending resumes. Invalid complete journal
+rows fail closed rather than being rewritten.
+
+Current lifecycle events include:
+
+```text
+experiment.started
+experiment.completed / experiment.interrupted
+
+cell.queued
+cell.started
+harbor.trial.create.started
+harbor.trial.create.completed
+harbor.trial.run.started
+harbor.trial.run.completed
+forge.result.normalize.started
+forge.result.normalize.completed
+cell.completed / cell.failed
+```
+
+These events describe boundaries Forge can observe directly. Environment setup,
+agent subphases, verifier internals, model calls, tool calls, and artifact
+collection are intentionally not fabricated from outside Harbor; those deeper
+events belong to the later Harbor/ATIF/model-tool integration layer.
+
+Recorder failures are **fail-open for benchmark execution**. Forge records a
+telemetry issue when possible, continues the benchmark, and seals the telemetry
+archive `partial` if the recorder was degraded. A Python exception or
+cancellation during the benchmark also seals available evidence `partial`
+before the original exception is re-raised.
+
+Real `forge-bench-harbor` execution enables this lifecycle archive by default.
+The CLI supports `--telemetry-dir`, `--experiment-id`,
+`--telemetry-profile`, and `--no-telemetry`. Materialization-only runs do not
+create a telemetry archive because no trial executes.
+
 ## Planned layers
 
 This foundation deliberately does not collect resource telemetry yet. Dependent
 work should proceed linearly:
 
-1. durable append-only event recorder and crash-safe local spool;
-2. local process/CPU/RAM sampling;
-3. container/disk/network sampling;
-4. NVIDIA GPU sampling;
-5. OpenTelemetry correlation;
-6. model/tool/ATIF temporal integration;
-7. local OTel Collector profile;
-8. Modal telemetry parity;
-9. canonical Parquet temporal datasets;
-10. temporal feature engine and refreshed multivariate/share outputs.
+1. local process/CPU/RAM sampling;
+2. container/disk/network sampling;
+3. NVIDIA GPU sampling;
+4. OpenTelemetry correlation;
+5. model/tool/ATIF temporal integration;
+6. local OTel Collector profile;
+7. Modal telemetry parity;
+8. canonical Parquet temporal datasets;
+9. temporal feature engine and refreshed multivariate/share outputs.
 
 Old PR #13 contains useful trajectory-analysis concepts, but its data-capture
 assumptions predate this archive. Those concepts should be salvaged later onto
