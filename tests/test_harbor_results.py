@@ -52,7 +52,7 @@ def _trial_result(
     *,
     reward=1.0,
     metadata=None,
-    model="deepseek/deepseek-v4-flash-0731",
+    model="deepseek-v4-flash-0731",
     agent="pi",
     agent_version="1.2.3",
     exception=None,
@@ -77,7 +77,7 @@ def _trial_result(
         agent_info=SimpleNamespace(
             name=agent,
             version=agent_version,
-            model_info=SimpleNamespace(name=model, provider="openrouter"),
+            model_info=SimpleNamespace(name=model, provider="deepseek"),
         ),
         agent_execution=_timing(15.0),
         verifier=_timing(3.5),
@@ -96,6 +96,7 @@ class HarborResultNormalizationTests(unittest.TestCase):
         self.assertTrue(result.resolved)
         self.assertEqual(result.agent, "pi")
         self.assertEqual(result.agent_version, "1.2.3")
+        self.assertEqual(result.model, "deepseek/deepseek-v4-flash-0731")
         self.assertEqual(result.environment, "docker")
         self.assertEqual(
             result.harbor_trial_id,
@@ -129,7 +130,7 @@ class HarborResultNormalizationTests(unittest.TestCase):
 
     def test_model_mismatch_invalidates_scientific_observation(self):
         result = normalize_harbor_trial_result(
-            _trial_result(model="deepseek/wrong-model"),
+            _trial_result(model="wrong-model"),
             _intent(),
         )
         self.assertFalse(result.valid)
