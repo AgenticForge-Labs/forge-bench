@@ -87,6 +87,7 @@ class TelemetryContext:
     model: str | None = None
     task: str | None = None
     environment: str | None = None
+    factors: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.experiment_id.strip():
@@ -97,6 +98,7 @@ class TelemetryContext:
             raise ValueError("run_index must be >= 1 when supplied")
         if self.repeat is not None and self.repeat < 1:
             raise ValueError("repeat must be >= 1 when supplied")
+        _validate_json_mapping(self.factors)
 
 
 @dataclass(frozen=True)
@@ -120,8 +122,10 @@ class TelemetryCapability:
 
 @dataclass(frozen=True)
 class TelemetryCapabilities:
+    context: TelemetryContext
     profile: CaptureProfile
     capabilities: tuple[TelemetryCapability, ...]
+    schema_version: int = TELEMETRY_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         names = [capability.name for capability in self.capabilities]
@@ -178,6 +182,7 @@ class MetricSample:
 class ProcessSample:
     context: TelemetryContext
     time: TimePoint
+    source: str
     pid: int
     parent_pid: int | None = None
     process_start_unix_ns: int | None = None
@@ -198,6 +203,8 @@ class ProcessSample:
     schema_version: int = TELEMETRY_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        if not self.source.strip():
+            raise ValueError("source must be non-empty")
         if self.pid < 1:
             raise ValueError("pid must be >= 1")
         if self.parent_pid is not None and self.parent_pid < 1:
@@ -210,6 +217,7 @@ class ProcessSample:
 class SystemSample:
     context: TelemetryContext
     time: TimePoint
+    source: str
     cpu_total_percent: float | None = None
     cpu_per_core_percent: tuple[float, ...] = ()
     load_1m: float | None = None
@@ -227,6 +235,8 @@ class SystemSample:
     schema_version: int = TELEMETRY_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        if not self.source.strip():
+            raise ValueError("source must be non-empty")
         _validate_nonnegative_fields(self)
         if any(value < 0 for value in self.cpu_per_core_percent):
             raise ValueError("per-core CPU percentages must be non-negative")
@@ -237,6 +247,7 @@ class SystemSample:
 class GpuSample:
     context: TelemetryContext
     time: TimePoint
+    source: str
     device_index: int
     device_uuid: str | None = None
     device_name: str | None = None
@@ -252,6 +263,8 @@ class GpuSample:
     schema_version: int = TELEMETRY_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        if not self.source.strip():
+            raise ValueError("source must be non-empty")
         if self.device_index < 0:
             raise ValueError("device_index must be >= 0")
         _validate_nonnegative_fields(self)
@@ -353,6 +366,7 @@ def _validate_nonnegative_fields(record: object) -> None:
             "parent_pid",
             "context",
             "time",
+            "source",
             "status",
             "device_uuid",
             "device_name",
