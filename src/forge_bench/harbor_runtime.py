@@ -298,24 +298,21 @@ async def run_materialized_trials(
                     attributes={"harbor_trial_id": result_trial_id},
                 )
                 forge_result = normalize_harbor_trial_result(trial_result, intent)
+                result_summary = _best_effort_result_summary(forge_result)
                 _cell_event(
                     cell,
                     "forge.result.normalize.completed",
                     phase="normalize",
                     attributes={
                         "harbor_trial_id": result_trial_id,
-                        "valid": bool(forge_result.valid),
-                        "resolved": bool(forge_result.resolved),
+                        **result_summary,
                     },
                 )
                 _cell_event(
                     cell,
                     "cell.completed",
                     phase="execution",
-                    attributes={
-                        "valid": bool(forge_result.valid),
-                        "resolved": bool(forge_result.resolved),
-                    },
+                    attributes=result_summary,
                 )
                 return index, trial_result, forge_result
         except BaseException as exc:
@@ -422,6 +419,25 @@ def _cell_event(
         )
     except Exception as exc:
         recorder.parent.issue(f"runtime.event:{name}", exc)
+
+
+def _best_effort_result_summary(value: Any) -> dict[str, Any]:
+    """Extract optional result fields without making telemetry a run dependency."""
+    summary: dict[str, Any] = {}
+    for name in ("valid", "resolved", "completed", "evaluation_completed"):
+        try:
+            field_value = getattr(value, name)
+        except Exception:
+            continue
+        if field_value is not None:
+            summary[name] = bool(field_value)
+    try:
+        error = getattr(value, "error")
+    except Exception:
+        error = None
+    if error not in (None, ""):
+        summary["error"] = str(error)
+    return summary
 
 
 def _object_id(value: Any) -> str | None:
