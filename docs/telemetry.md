@@ -81,7 +81,13 @@ agent / agent_version
 model
 task
 environment
+factors             # arbitrary design factors preserved without schema churn
 ```
+
+Resource and metric records also carry an explicit measurement `source` such
+as `procfs`, `psutil`, `cgroup`, or `nvml`. This prevents values collected
+through different mechanisms from being treated as interchangeable merely
+because they share a metric name.
 
 The clock representation stores both wall-clock and monotonic time:
 
