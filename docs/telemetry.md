@@ -291,7 +291,9 @@ A verified event includes serving-provider name, latency, costs, tokens and
 preferred versus secondary route selection. Missing metadata is marked
 unverified, never imputed from the configured upstream. Failures without a
 generation cannot be assigned to an actual provider, so provider-specific
-reliability is not computed. The report preserves reported cost/latency
+reliability is not computed. Model-level completion rates pool only the supplied
+event sample and may include multiple routing policies; they are not individual
+provider reliability estimates. The report preserves reported cost/latency
 provenance separately from the Runtime fallback measurements. These imported
 events are a **low-frequency derived analysis**, not implementation of the
 still-planned OpenTelemetry or model/tool stream collector.
