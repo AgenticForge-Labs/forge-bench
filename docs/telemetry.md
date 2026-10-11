@@ -278,6 +278,24 @@ For Modal execution, local host/process sampling is recorded as not applicable:
 the local orchestrator machine would not represent the remote Modal sandbox.
 Modal-side resource telemetry is a later parity layer.
 
+## Imported Platform provider observations
+
+The optional `forge-bench-provider-report` reader consumes exported Platform
+`af_events` JSONL and deterministically joins confirmed
+`ai.execution.provider_observed` to `ai.execution.completed` using real
+OpenRouter generation IDs. The authoritative event/evidence remains Platform's,
+rather than a duplicated Forge Bench log. The reader never mutates or repairs
+sealed raw archive files and does not make upstream API requests.
+
+A verified event includes serving-provider name, latency, costs, tokens and
+preferred versus secondary route selection. Missing metadata is marked
+unverified, never imputed from the configured upstream. Failures without a
+generation cannot be assigned to an actual provider, so provider-specific
+reliability is not computed. The report preserves reported cost/latency
+provenance separately from the Runtime fallback measurements. These imported
+events are a **low-frequency derived analysis**, not implementation of the
+still-planned OpenTelemetry or model/tool stream collector.
+
 ## Planned layers
 
 This foundation deliberately does not collect resource telemetry yet. Dependent
