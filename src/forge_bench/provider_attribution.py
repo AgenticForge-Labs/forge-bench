@@ -173,11 +173,11 @@ def analyze_events(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
     completed_by_model = dict(sorted(Counter(
         str(_payload(x).get("model")) for x in completions.values()
     ).items()))
-    model_route_reliability = []
+    model_request_outcomes = []
     for model in sorted(set(failures_by_model) | set(completed_by_model)):
         succeeded = completed_by_model.get(model, 0)
         failed = failures_by_model.get(model, 0)
-        model_route_reliability.append({
+        model_request_outcomes.append({
             "model": model,
             "completed": succeeded,
             "failed": failed,
@@ -197,7 +197,7 @@ def analyze_events(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "generations": rows,
         "failures": failures,
         "per_provider": per_provider,
-        "model_route_reliability": model_route_reliability,
+        "model_request_outcomes": model_request_outcomes,
         "limits": [
             "Actual serving providers are included only when OpenRouter metadata verified them",
             "Secondary endpoint selection does not prove fallback",
