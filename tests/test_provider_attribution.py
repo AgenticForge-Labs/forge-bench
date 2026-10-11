@@ -81,7 +81,7 @@ class ProviderAttributionTests(unittest.TestCase):
         self.assertIsNone(digital["reliability_rate"])
         self.assertIsNone(report["generations"][0]["fallback_used"])
         self.assertTrue(report["generations"][1]["secondary_provider_selected"])
-        self.assertAlmostEqual(report["model_route_reliability"][0]["completion_rate"], 2 / 3)
+        self.assertAlmostEqual(report["model_request_outcomes"][0]["completion_rate"], 2 / 3)
         self.assertIsNone(report["failures"][0]["serving_provider"])
 
     def test_unverified_never_inherits_requested_provider(self) -> None:
