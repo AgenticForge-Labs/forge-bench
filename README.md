@@ -138,6 +138,34 @@ cells. Results are returned in authoritative Forge run order even when execution
 overlaps.
 
 
+## Verified OpenRouter provider analysis
+
+Forge Bench can read a JSONL export of Platform's `af_events` containing
+`ai.execution.completed`, `ai.execution.provider_observed`, and
+`ai.execution.failed` events. Only OpenRouter generation-metadata verified
+`serving_provider` values count as observed upstream providers. Unlike the
+legacy configured `upstream_provider` field, provider identity is **not
+inferred** from a pinned experiment cell.
+
+```bash
+forge-bench-provider-report /path/to/platform-af-events.jsonl \\
+  --output-dir benchmark-results/provider-observations
+```
+
+The command writes `provider-report.json`,
+`provider-generations.csv`, and `provider-summary.csv`. These are
+**derived reports**, not repairs to Platform's authoritative events. They
+summarize verified provider selection, timing and billing, and count unverified
+responses. Failed calls lacking a successful generation ID contribute to
+model-level failure rates across the captured routing policies, **not provider-specific success rates**.
+Secondary provider selection is not counted as a proven fallback.
+
+The importer uses only Python's standard library, makes no network calls,
+and does not copy prompt bodies or private raw generation evidence into
+its outputs. Use a reviewed/redacted event export and keep raw evidence in
+its owning Platform archive. This is a descriptive analysis surface;
+it does not introduce OpenTelemetry collection or change Harbor execution.
+
 ## Raw telemetry archive
 
 Forge Bench is also building a high-resolution experimental record for temporal
