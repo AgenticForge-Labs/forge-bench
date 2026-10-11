@@ -155,6 +155,16 @@ Modal is likewise an execution choice beneath Harbor. A scientifically identical
 Forge design should be able to execute through Docker or Modal without changing
 the Forge factors or analysis.
 
+## Platform provider attribution import
+
+Forge Bench may import **verified** serving-provider observations from the
+shared Platform AI Runtime's append-only events. Platform alone owns OpenRouter
+generation-metadata verification; Forge Bench owns reproducible analysis.
+Import never changes experiment randomization, treatment cells, Harbor agent
+configuration, or the configured upstream factor. The observation's generation
+ID—not a provider preference—is the join key. When metadata is unavailable,
+provider identity and per-provider reliability stay unknown.
+
 ## Telemetry and observability
 
 Forge Bench now defines a versioned raw telemetry/archive contract independently
