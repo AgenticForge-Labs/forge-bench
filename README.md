@@ -157,7 +157,7 @@ The command writes `provider-report.json`,
 **derived reports**, not repairs to Platform's authoritative events. They
 summarize verified provider selection, timing and billing, and count unverified
 responses. Failed calls lacking a successful generation ID contribute to
-model/route-level failure rates, **not provider-specific success rates**.
+model-level failure rates across the captured routing policies, **not provider-specific success rates**.
 Secondary provider selection is not counted as a proven fallback.
 
 The importer uses only Python's standard library, makes no network calls,
