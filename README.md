@@ -1,5 +1,26 @@
 # Forge Bench
 
+## Portfolio research independence — November 2026
+
+Forge Bench remains the reproducible controlled **benchmarking and
+experimental-design owner** for models/agents and, where validated, robot
+benchmark studies. Forge Researcher handles broader operating evidence
+and publication/outcome analytics. Platform archives operational traces;
+Bench must not become another company WorkItem runner or silently
+reinterpret its original randomized trial designs.
+
+The first company gateway/six-role/Shopify/social acceptance does not
+require adopting unfinished Harbor or robot-scoring PRs. Keep
+[PR #13](https://github.com/AgenticForge-Labs/forge-bench/pull/13)
+as a separately reviewed scientific analysis change and
+[PR #17](https://github.com/AgenticForge-Labs/forge-bench/pull/17)
+as deferred physical benchmark work until its motion/ground-truth
+acceptance is explicit. Do not claim model/physical experiments have run
+simply because their source/tests exist.
+
+See [company activation roadmap](https://github.com/AgenticForge-Labs/agenticforge-platform/blob/main/docs/company-activation-roadmap-2026-11.md).
+This changes no benchmark design or results.
+
 Forge Bench is a basic, reproducible tool for comparing AI coding-agent harnesses, models, and providers. It uses experimental design and trace-level data science to understand long-running agent runs: how interventions change behavior, where tokens and time go, and which pain points are worth optimizing.
 
 The project is intended to grow beyond this first study. Future work can add models, providers, tasks, harnesses, and broader execution environments such as Harbor. The goal is to test community assumptions with pinned configurations, raw traces, and analysis code that researchers can inspect, reproduce, and challenge.
