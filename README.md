@@ -316,3 +316,7 @@ Rebuild the tables and figures from the published aggregate data:
 ```
 
 The analysis is descriptive. There is one run per model × treatment × task cell in each study, and the upstream provider changed for V4.1 between studies.
+
+## License
+
+AgenticForge Labs-authored code is licensed under the [Apache License 2.0](LICENSE). Third-party dependencies, datasets, recordings, and other externally sourced materials retain their respective licenses and attribution requirements.
